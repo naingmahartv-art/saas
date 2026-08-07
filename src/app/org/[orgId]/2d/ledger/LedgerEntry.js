@@ -1,0 +1,1544 @@
+'use client';
+import { useMemo, useRef, useState, useEffect, Fragment } from 'react';
+import { parseNumberExpression, MAX_ENTRIES } from '@/lib/lottery/numberParser.js';
+import { createRuleEngine } from '@/lib/lottery/ruleEngine.js';
+import { useI18n } from '@/lib/i18n/index.js';
+import AgentCombobox from './AgentCombobox.js';
+
+const ALLOWED_CHARS = /[^0-9RASZDGPBWNFXT+\-*/.[\]]/gi;
+
+// Strips disallowed characters, then converts the convenience shorthand `/`
+// to `P` (numpad-friendly alias for the Part modifier) and converts `*` to `R`.
+function normalizeInput(raw) {
+  return raw.replace(ALLOWED_CHARS, '').replaceAll('/', 'P').replaceAll('*', 'R').toUpperCase();
+}
+
+// Only the sparse special-category tables (10-20 numbers each) are worth
+// surfacing as a restriction warning. Brade/Part/SM classify ALL 100
+// numbers, so flagging them per-entry would just be noise on every number —
+// they remain purely input to the B/P/F expansion modifiers in numberParser.js.
+const WARN_RULES = new Set(['Power', 'APoo', 'NetKhat', 'Brother']);
+const SLOT_LABEL_KEY = { '09:00': 'slot0900', '12:00': 'slot1200', '04:00': 'slot0400' };
+const ruleEngine = createRuleEngine();
+
+function ruleMatchesFor(num) {
+  return ruleEngine.evaluate(num).matches
+    .filter(m => WARN_RULES.has(m.rule))
+    .map(m => m.rule);
+}
+
+function normalizeCheckInput(value) {
+  const digits = String(value ?? '').replace(/[^0-9]/g, '');
+  if (!digits) return null;
+  return digits.slice(0, 2).padStart(2, '0');
+}
+
+let tokenSeq = 0;
+function nextTokenId() {
+  tokenSeq += 1;
+  return `t${Date.now()}_${tokenSeq}`;
+}
+
+// Parses one committed group into a voucher-token row: the raw text is kept
+// as typed (source of truth); entries are only derived for display (subtotal,
+// warnings) and for building the save payload.
+function tokenFromText(rawText, t) {
+  const text = rawText.trim();
+  if (!text) return { token: null, error: null };
+  const { entries, error } = parseNumberExpression(text, { maxEntries: MAX_ENTRIES });
+  if (error) return { token: null, error };
+  if (!entries.length) return { token: null, error: t('ledger.couldNotParse', { text }) };
+  return { token: { id: nextTokenId(), tokenText: text, entries }, error: null };
+}
+
+const GRID_NUMBERS = Array.from({ length: 10 }, (_, tens) =>
+  Array.from({ length: 10 }, (_, units) => `${tens}${units}`)
+);
+
+// Legacy table layout: 00-99 split into 4 column-groups, read top-to-bottom
+// within each group, laid out as rows of [num, amount] pairs side by side —
+// matching the old system's table view rather than a 10x10 button grid.
+// Parametrized over the numbers list (instead of a fixed constant) so the
+// same visual shape works whether sorted by number or by amount.
+const NUMBER_TABLE_COLUMNS = 4;
+const ALL_NUMBERS_FLAT = GRID_NUMBERS.flat();
+
+function buildNumberTable(numbersFlat) {
+  const groupSize = Math.ceil(numbersFlat.length / NUMBER_TABLE_COLUMNS);
+  const groups = Array.from({ length: NUMBER_TABLE_COLUMNS }, (_, g) =>
+    numbersFlat.slice(g * groupSize, (g + 1) * groupSize)
+  );
+  const rows = Math.max(...groups.map(g => g.length));
+  return Array.from({ length: rows }, (_, r) => groups.map(g => g[r] ?? null));
+}
+
+export default function LedgerEntry({
+  orgId,
+  activeSession,
+  agents,
+  rate,
+  limit,
+  notBuyNumbers,
+  hotNumbers,
+  luckyNumber,
+  totals,
+  editingVoucher,
+  onSaved,
+  onCancelEdit,
+  onOpenHistory,
+  onOpenSessionPicker,
+  onOpenReports,
+}) {
+  const { t } = useI18n();
+  const [agentId, setAgentId] = useState('');
+  const [inputValue, setInputValue] = useState('');
+  const [pendingTokens, setPendingTokens] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [editingSrNo, setEditingSrNo] = useState(null);
+  const [error, setError] = useState('');
+  const [warnings, setWarnings] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [successMsg, setSuccessMsg] = useState('');
+  const [search, setSearch] = useState('');
+  const [sortKey, setSortKey] = useState(null); // null | 'tokenText' | 'amount'
+  const [sortDir, setSortDir] = useState('asc');
+  const [editingTokenId, setEditingTokenId] = useState(null);
+  const [editingTokenValue, setEditingTokenValue] = useState('');
+  const [luckyNo, setLuckyNo] = useState(luckyNumber || null);
+  const [luckyOpen, setLuckyOpen] = useState(false);
+  const [luckyInput, setLuckyInput] = useState('');
+  const [luckySaving, setLuckySaving] = useState(false);
+  const [luckyError, setLuckyError] = useState('');
+  const [cellPopup, setCellPopup] = useState(null); // { num, amount } | null
+  const [limitValue, setLimitValue] = useState(limit?.limitValue || 0);
+  const [limitOpen, setLimitOpen] = useState(false);
+  const [limitInput, setLimitInput] = useState('');
+  const [limitSaving, setLimitSaving] = useState(false);
+  const [limitError, setLimitError] = useState('');
+  const [rateValue, setRateValue] = useState(rate?.num1Rate || 0);
+  const [rateOpen, setRateOpen] = useState(false);
+  const [rateInput, setRateInput] = useState('');
+  const [rateSaving, setRateSaving] = useState(false);
+  const [rateError, setRateError] = useState('');
+  const [checkOpen, setCheckOpen] = useState(false);
+  const [checkInput, setCheckInput] = useState('');
+  const [checkAgentOpen, setCheckAgentOpen] = useState(false);
+  const [checkAgentInput, setCheckAgentInput] = useState('');
+  const [checkAgentResults, setCheckAgentResults] = useState(null);
+  const [checkAgentLoading, setCheckAgentLoading] = useState(false);
+  const [exceedSortKey, setExceedSortKey] = useState('excess');
+  const [exceedSortDir, setExceedSortDir] = useState('desc');
+  const [gridSortKey, setGridSortKey] = useState('number');
+  const [gridSortDir, setGridSortDir] = useState('asc');
+  const inputRef = useRef(null);
+  const agentSelectRef = useRef(null);
+  const [quickEntryOpen, setQuickEntryOpen] = useState(false);
+  const [quickEntryNums, setQuickEntryNums] = useState('');
+  const [quickEntryAmount, setQuickEntryAmount] = useState('');
+  const quickNumsRef = useRef(null);
+  const quickAmountRef = useRef(null);
+
+  const notBuySet = useMemo(() => new Set(notBuyNumbers || []), [notBuyNumbers]);
+  const hotSet = useMemo(() => new Set(hotNumbers || []), [hotNumbers]);
+
+  // Load a voucher selected from history into this panel for editing.
+  useEffect(() => {
+    if (!editingVoucher) return;
+    const tokens = (editingVoucher.tokens || []).map(text => {
+      const { entries } = parseNumberExpression(text, { maxEntries: MAX_ENTRIES });
+      return { id: nextTokenId(), tokenText: text, entries: entries || [] };
+    });
+    setPendingTokens(tokens);
+    setEditingId(editingVoucher.id);
+    setEditingSrNo(editingVoucher.srNo);
+    const matchedAgent = agents.find(a => a.agentName === editingVoucher.agentName);
+    if (matchedAgent) setAgentId(matchedAgent.id);
+    setInputValue('');
+    setError('');
+    setWarnings([]);
+    setSuccessMsg('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingVoucher]);
+
+  // F1 creates the voucher from whatever is currently in the Entries list —
+  // same action as clicking Save. A ref keeps the listener itself stable
+  // (mounted once) while always calling into the latest handleSave/pendingTokens.
+  const saveRef = useRef();
+  useEffect(() => {
+    saveRef.current = () => handleSave(pendingTokens);
+  });
+  useEffect(() => {
+    function handleGlobalKeyDown(e) {
+      if (e.altKey) {
+        const key = e.key.toLowerCase();
+        if (key === 'a') {
+          e.preventDefault();
+          agentSelectRef.current?.focus();
+        } else if (key === 'n') {
+          e.preventDefault();
+          inputRef.current?.focus();
+        } else if (key === 'e') {
+          e.preventDefault();
+          toggleSort('tokenText');
+        } else if (key === 'c') {
+          e.preventDefault();
+          setRateOpen(false);
+          setLimitOpen(false);
+          setLuckyOpen(false);
+          setCheckAgentOpen(false);
+          if (checkOpen) {
+            setCheckOpen(false);
+            inputRef.current?.focus();
+          } else {
+            setCheckInput('');
+            setCheckOpen(true);
+          }
+        } else if (key === 'g') {
+          e.preventDefault();
+          setRateOpen(false);
+          setLimitOpen(false);
+          setLuckyOpen(false);
+          setCheckOpen(false);
+          if (checkAgentOpen) {
+            setCheckAgentOpen(false);
+            inputRef.current?.focus();
+          } else {
+            openCheckAgent();
+          }
+        } else if (key === 'k') {
+          e.preventDefault();
+          setRateOpen(false);
+          setLimitOpen(false);
+          setCheckOpen(false);
+          setCheckAgentOpen(false);
+          if (luckyOpen) {
+            setLuckyOpen(false);
+            inputRef.current?.focus();
+          } else if (activeSession) {
+            openLucky();
+          }
+        } else if (key === 'l') {
+          e.preventDefault();
+          setRateOpen(false);
+          setLuckyOpen(false);
+          setCheckOpen(false);
+          setCheckAgentOpen(false);
+          if (limitOpen) {
+            setLimitOpen(false);
+            inputRef.current?.focus();
+          } else {
+            openLimit();
+          }
+        } else if (key === 'r') {
+          e.preventDefault();
+          onOpenReports?.();
+        } else if (key === '1') {
+          e.preventDefault();
+          toggleExceedSort('num');
+        } else if (key === '2') {
+          e.preventDefault();
+          toggleExceedSort('amount');
+        } else if (key === '3') {
+          e.preventDefault();
+          toggleExceedSort('excess');
+        }
+        return;
+      }
+
+      switch (e.key) {
+        case 'F1':
+          e.preventDefault();
+          saveRef.current();
+          break;
+        case 'F2':
+          e.preventDefault();
+          agentSelectRef.current?.focus();
+          break;
+        case 'F3':
+          e.preventDefault();
+          inputRef.current?.focus();
+          break;
+        case 'F6':
+          e.preventDefault();
+          setLimitOpen(false);
+          setLuckyOpen(false);
+          setCheckOpen(false);
+          setCheckAgentOpen(false);
+          if (rateOpen) {
+            setRateOpen(false);
+            inputRef.current?.focus();
+          } else {
+            openRate();
+          }
+          break;
+        case 'F9':
+          e.preventDefault();
+          handleClear();
+          inputRef.current?.focus();
+          break;
+        case 'Escape':
+          if (checkOpen || checkAgentOpen || luckyOpen || rateOpen || limitOpen) {
+            e.preventDefault();
+            setCheckOpen(false);
+            setCheckAgentOpen(false);
+            setLuckyOpen(false);
+            setRateOpen(false);
+            setLimitOpen(false);
+            inputRef.current?.focus();
+          }
+          break;
+        default:
+          break;
+      }
+    }
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [
+    activeSession,
+    checkOpen,
+    checkAgentOpen,
+    luckyOpen,
+    rateOpen,
+    limitOpen,
+    exceedSortKey,
+    exceedSortDir,
+    sortKey,
+    sortDir,
+    onOpenReports,
+  ]);
+
+  function formatDashInput(val) {
+    const clean = val.replace(/[^0-9]/g, '');
+    const chunks = [];
+    for (let i = 0; i < clean.length; i += 2) {
+      chunks.push(clean.slice(i, i + 2));
+    }
+    return chunks.join('-');
+  }
+
+  function handleQuickNumsChange(e) {
+    const formatted = formatDashInput(e.target.value);
+    setQuickEntryNums(formatted);
+  }
+
+  function handleQuickNumsKeyDown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      quickAmountRef.current?.focus();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setQuickEntryOpen(false);
+      inputRef.current?.focus();
+    }
+  }
+
+  function handleQuickAmountKeyDown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleQuickSubmit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      quickNumsRef.current?.focus();
+    }
+  }
+
+  async function handleQuickSubmit() {
+    const cleanNums = quickEntryNums.replace(/[^0-9]/g, '');
+    if (!cleanNums) {
+      setError('Please enter some numbers.');
+      setQuickEntryOpen(false);
+      return;
+    }
+    const amountVal = parseFloat(quickEntryAmount);
+    if (isNaN(amountVal) || amountVal <= 0) {
+      setError('Please enter a valid amount.');
+      setQuickEntryOpen(false);
+      return;
+    }
+
+    const newTokens = [];
+    for (let i = 0; i < cleanNums.length; i += 2) {
+      const num = cleanNums.slice(i, i + 2);
+      if (num.length === 2) {
+        newTokens.push({ id: nextTokenId(), tokenText: `${num}${amountVal}`, entries: [{ num, amount: amountVal }] });
+      }
+    }
+
+    if (newTokens.length === 0) {
+      setError('Please enter complete 2-digit numbers.');
+      setQuickEntryOpen(false);
+      return;
+    }
+
+    setPendingTokens(prev => [...prev, ...newTokens]);
+    setQuickEntryOpen(false);
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
+  }
+
+  useEffect(() => {
+    if (quickEntryOpen) {
+      setTimeout(() => {
+        quickNumsRef.current?.focus();
+      }, 50);
+    }
+  }, [quickEntryOpen]);
+
+  function commitGroup(rawText, currentTokens) {
+    const { token, error: parseError } = tokenFromText(rawText, t);
+    if (parseError) {
+      setError(parseError);
+      return null;
+    }
+    if (!token) return currentTokens;
+
+    const msgs = [];
+    for (const e of token.entries) {
+      if (notBuySet.has(e.num)) msgs.push(t('ledger.notBuyRejected', { num: e.num }));
+      if (hotSet.has(e.num)) msgs.push(t('ledger.hotNumberMsg', { num: e.num }));
+      if (limitValue > 0 && e.amount > limitValue) msgs.push(t('ledger.overLimitMsg', { num: e.num, limit: limitValue }));
+      const matches = ruleMatchesFor(e.num);
+      if (matches.length) msgs.push(t('ledger.ruleMatchMsg', { num: e.num, rules: matches.join(', ') }));
+    }
+
+    setError('');
+    setWarnings(msgs);
+    return [...currentTokens, token];
+  }
+
+  function handleChange(e) {
+    setInputValue(normalizeInput(e.target.value));
+    setSuccessMsg('');
+  }
+
+  // Space always commits the current code into the Entries list. Enter does
+  // the same when a code has been typed; Enter on an empty box instead opens
+  // the quick-entry modal (bulk numbers + one shared amount). Neither ever
+  // saves — a voucher is only created by clicking Save or pressing F1 (see
+  // the window-level F1 listener below).
+  function handleKeyDown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (inputValue.trim()) {
+        const next = commitGroup(inputValue, pendingTokens);
+        if (next) {
+          setPendingTokens(next);
+          setInputValue('');
+        }
+        return;
+      }
+      if (!agentId) {
+        setError(t('ledger.selectAgentFirst'));
+        return;
+      }
+      setQuickEntryNums(formatDashInput(inputValue));
+      setQuickEntryAmount('');
+      setQuickEntryOpen(true);
+      setInputValue('');
+    } else if (e.key === ' ') {
+      e.preventDefault();
+      const next = commitGroup(inputValue, pendingTokens);
+      if (next) {
+        setPendingTokens(next);
+        setInputValue('');
+      }
+    }
+  }
+
+  function handleCellClick(num) {
+    setCellPopup({ num, amount: totals?.[num] ?? 0 });
+    if (!inputRef.current) return;
+    setInputValue(num);
+    inputRef.current.focus();
+  }
+
+  function removeToken(id) {
+    setPendingTokens(prev => prev.filter(p => p.id !== id));
+    if (editingTokenId === id) {
+      setEditingTokenId(null);
+      setEditingTokenValue('');
+    }
+  }
+
+  function startTokenEdit(token) {
+    setEditingTokenId(token.id);
+    setEditingTokenValue(token.tokenText);
+    setError('');
+    setSuccessMsg('');
+  }
+
+  function cancelTokenEdit() {
+    setEditingTokenId(null);
+    setEditingTokenValue('');
+    setError('');
+  }
+
+  function commitTokenEdit(id) {
+    const text = editingTokenValue.trim();
+    if (!text) {
+      removeToken(id);
+      return;
+    }
+
+    const { token, error: parseError } = tokenFromText(text, t);
+    if (parseError) {
+      setError(parseError);
+      return;
+    }
+    if (!token) {
+      removeToken(id);
+      return;
+    }
+
+    setPendingTokens(prev => prev.map(p => (p.id === id ? { ...token, id } : p)));
+    setEditingTokenId(null);
+    setEditingTokenValue('');
+    setError('');
+    setSuccessMsg('');
+  }
+
+  function handleClear() {
+    setPendingTokens([]);
+    setInputValue('');
+    setError('');
+    setWarnings([]);
+    setSuccessMsg('');
+    setEditingId(null);
+    setEditingSrNo(null);
+    if (onCancelEdit) onCancelEdit();
+  }
+
+  async function handleSave(tokensToSave) {
+    setError('');
+    if (!activeSession) {
+      setError(t('ledger.noActiveSession'));
+      return;
+    }
+    if (!agentId) {
+      setError(t('ledger.selectAgentError'));
+      return;
+    }
+    if (!tokensToSave || tokensToSave.length === 0) {
+      setError(t('ledger.noEntriesError'));
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const body = {
+        agentId,
+        onCount: activeSession.onCount,
+        ampm: activeSession.ampm,
+        onDate: activeSession.onDate,
+        machineId: activeSession.machineId,
+        tokens: tokensToSave.map(p => p.tokenText),
+      };
+      const url = editingId ? `/api/org/${orgId}/ledger/${editingId}` : `/api/org/${orgId}/ledger`;
+      const method = editingId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || t('common.failedToSave'));
+        return;
+      }
+      setPendingTokens([]);
+      setInputValue('');
+      setWarnings([]);
+      setSuccessMsg(editingId ? t('ledger.updatedSrNo', { n: editingSrNo }) : t('ledger.savedSrNo', { n: data.srNo }));
+      setEditingId(null);
+      setEditingSrNo(null);
+      if (onSaved) onSaved();
+    } catch {
+      setError(t('common.networkError'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openLucky() {
+    setLuckyInput(luckyNo || '');
+    setLuckyError('');
+    setLuckyOpen(true);
+  }
+
+  async function saveLucky() {
+    setLuckyError('');
+    if (!activeSession) {
+      setLuckyError(t('ledger.noActiveSessionShort'));
+      return;
+    }
+    if (!/^\d{2}$/.test(luckyInput)) {
+      setLuckyError(t('ledger.enter2DigitLucky'));
+      return;
+    }
+
+    setLuckySaving(true);
+    try {
+      const res = await fetch(`/api/org/${orgId}/lucky`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lNo: luckyInput,
+          onDate: activeSession.onDate,
+          ampm: activeSession.ampm,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setLuckyError(data.error || t('session.saveFailed'));
+        return;
+      }
+      setLuckyNo(data.luckyNo.lNo);
+      setLuckyOpen(false);
+    } catch {
+      setLuckyError(t('common.networkError'));
+    } finally {
+      setLuckySaving(false);
+    }
+  }
+
+  function openLimit() {
+    setLimitInput(String(limitValue || ''));
+    setLimitError('');
+    setLimitOpen(true);
+  }
+
+  async function saveLimit() {
+    setLimitError('');
+    const parsed = parseFloat(limitInput);
+    if (!limitInput.trim() || Number.isNaN(parsed) || parsed < 0) {
+      setLimitError(t('ledger.enterValidLimit'));
+      return;
+    }
+
+    setLimitSaving(true);
+    try {
+      const res = await fetch(`/api/org/${orgId}/settings/limits`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limitValue: parsed }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setLimitError(data.error || t('session.saveFailed'));
+        return;
+      }
+      setLimitValue(parsed);
+      setLimitOpen(false);
+    } catch {
+      setLimitError(t('common.networkError'));
+    } finally {
+      setLimitSaving(false);
+    }
+  }
+
+  function openRate() {
+    setRateInput(String(rateValue || ''));
+    setRateError('');
+    setRateOpen(true);
+  }
+
+  async function saveRate() {
+    setRateError('');
+    const parsed = parseFloat(rateInput);
+    if (!rateInput.trim() || Number.isNaN(parsed) || parsed < 0) {
+      setRateError(t('ledger.enterValidRate'));
+      return;
+    }
+
+    setRateSaving(true);
+    try {
+      const res = await fetch(`/api/org/${orgId}/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ num1Rate: parsed, num2Rate: rate?.num2Rate ?? 0 }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRateError(data.error || t('session.saveFailed'));
+        return;
+      }
+      setRateValue(parsed);
+      setRateOpen(false);
+    } catch {
+      setRateError(t('common.networkError'));
+    } finally {
+      setRateSaving(false);
+    }
+  }
+
+  async function openCheckAgent() {
+    setCheckAgentOpen(true);
+    setCheckAgentInput('');
+    setCheckAgentResults(null);
+  }
+
+  async function runCheckAgent(numRaw) {
+    const num = normalizeCheckInput(numRaw);
+    setCheckAgentInput(numRaw);
+    if (!num || !activeSession) {
+      setCheckAgentResults(null);
+      return;
+    }
+    setCheckAgentLoading(true);
+    try {
+      const res = await fetch(
+        `/api/org/${orgId}/ledger/totals?onCount=${activeSession.onCount}&ampm=${activeSession.ampm}&num=${num}`
+      );
+      const data = await res.json();
+      setCheckAgentResults(data.byAgent || []);
+    } catch {
+      setCheckAgentResults([]);
+    } finally {
+      setCheckAgentLoading(false);
+    }
+  }
+
+  const pendingByNum = useMemo(() => {
+    const map = new Map();
+    for (const p of pendingTokens) {
+      for (const e of p.entries) {
+        map.set(e.num, (map.get(e.num) || 0) + e.amount);
+      }
+    }
+    return map;
+  }, [pendingTokens]);
+
+  const pendingTotal = pendingTokens.reduce(
+    (sum, p) => sum + p.entries.reduce((s, e) => s + e.amount, 0),
+    0
+  );
+
+  const visibleTokens = useMemo(() => {
+    let list = pendingTokens.map(p => ({
+      ...p,
+      amount: p.entries.reduce((s, e) => s + e.amount, 0),
+    }));
+    const q = search.trim();
+    if (q) list = list.filter(p => p.tokenText.includes(q));
+    if (sortKey) {
+      list = [...list].sort((a, b) => {
+        const av = a[sortKey], bv = b[sortKey];
+        const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+        return sortDir === 'asc' ? cmp : -cmp;
+      });
+    }
+    return list;
+  }, [pendingTokens, search, sortKey, sortDir]);
+
+  function toggleSort(key) {
+    if (sortKey === key) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  }
+
+  function toggleExceedSort(key) {
+    if (exceedSortKey === key) {
+      setExceedSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setExceedSortKey(key);
+      setExceedSortDir('desc');
+    }
+  }
+
+  // Session-wide aggregates driving the grid, the exceed-limit panel, and
+  // the bottom stat row — all derived from `totals` (refetched after
+  // save/edit/delete), not from the still-unsaved pendingTokens.
+  const totalsEntries = useMemo(
+    () => Object.entries(totals || {}).map(([num, amount]) => ({ num, amount })),
+    [totals]
+  );
+  const grandTotal = totalsEntries.reduce((s, e) => s + e.amount, 0);
+  const bestSeller = totalsEntries.reduce(
+    (best, e) => (e.amount > (best?.amount ?? -Infinity) ? e : best),
+    null
+  );
+  const orangeLiability = bestSeller ? bestSeller.amount * (rateValue || 0) : 0;
+  const pinkStat = bestSeller && bestSeller.amount > 0 ? grandTotal / bestSeller.amount : 0;
+  // Legacy behavior: the exceed panel shows how much OVER the limit each
+  // number is (amount - limit), not the raw total — e.g. a 3829 total
+  // against a 1000 limit shows 2829, not 3829.
+  const exceedList = useMemo(() => {
+    if (!(limitValue > 0)) return [];
+    const list = totalsEntries
+      .filter(e => e.amount > limitValue)
+      .map(e => ({ ...e, excess: e.amount - limitValue }));
+
+    return [...list].sort((a, b) => {
+      let av = a[exceedSortKey];
+      let bv = b[exceedSortKey];
+
+      if (exceedSortKey === 'num') {
+        const cmp = av.localeCompare(bv);
+        return exceedSortDir === 'asc' ? cmp : -cmp;
+      } else {
+        const cmp = av - bv;
+        return exceedSortDir === 'asc' ? cmp : -cmp;
+      }
+    });
+  }, [totalsEntries, limitValue, exceedSortKey, exceedSortDir]);
+
+  const totalExcess = useMemo(() => {
+    return exceedList.reduce((sum, e) => sum + e.excess, 0);
+  }, [exceedList]);
+
+  const totalFree = useMemo(() => {
+    return grandTotal - totalExcess;
+  }, [grandTotal, totalExcess]);
+
+  function toggleGridSort(key) {
+    if (gridSortKey === key) {
+      setGridSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setGridSortKey(key);
+      setGridSortDir(key === 'amount' ? 'desc' : 'asc');
+    }
+  }
+
+  const sortedGridNumbers = useMemo(() => {
+    const list = [...ALL_NUMBERS_FLAT];
+    list.sort((a, b) => {
+      const cmp = gridSortKey === 'amount'
+        ? (totals?.[a] ?? 0) - (totals?.[b] ?? 0)
+        : a.localeCompare(b);
+      return gridSortDir === 'asc' ? cmp : -cmp;
+    });
+    return list;
+  }, [gridSortKey, gridSortDir, totals]);
+
+  const numberTable = useMemo(() => buildNumberTable(sortedGridNumbers), [sortedGridNumbers]);
+
+  const checkResult = useMemo(() => {
+    const num = normalizeCheckInput(checkInput);
+    if (!num) return null;
+    const currentTotal = totals?.[num] ?? 0;
+    const evaluation = ruleEngine.evaluate(num);
+    const brade = evaluation.matches.find(m => m.rule === 'Brade');
+    const part = evaluation.matches.find(m => m.rule === 'Part');
+    const sm = evaluation.matches.find(m => m.rule === 'SM');
+    return {
+      num,
+      notBuy: notBuySet.has(num),
+      hot: hotSet.has(num),
+      currentTotal,
+      overLimit: limitValue > 0 && currentTotal > limitValue,
+      ruleMatches: evaluation.matches.filter(m => WARN_RULES.has(m.rule)).map(m => m.rule),
+      bradeWeight: brade?.weight ?? null,
+      partWeight: part?.weight ?? null,
+      smFlag: sm?.flag ?? null,
+    };
+  }, [checkInput, totals, notBuySet, hotSet, limitValue]);
+
+  return (
+    <div className="max-w-[1600px] mx-auto min-h-[calc(100vh-1.5rem)] flex flex-col">
+      {/* Top bar */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-2 mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          {activeSession ? (
+            <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-gray-900">
+              <span className="badge-active">{t(`session.${SLOT_LABEL_KEY[activeSession.ampm] || 'slot0900'}`)}</span>
+              <span className="text-gray-400">•</span>
+              <span>{activeSession.onDate}</span>
+              <span className="text-gray-400">•</span>
+              <span className="text-gray-500">{t('session.machineLabel', { id: activeSession.machineId })}</span>
+              {onOpenSessionPicker && (
+                <button
+                  type="button"
+                  onClick={onOpenSessionPicker}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-0.5 rounded hover:bg-indigo-50 transition"
+                >
+                  {t('session.changeSession')}
+                </button>
+              )}
+              {editingId && (
+                <span className="badge-basic">{t('ledger.editingSrNo', { n: editingSrNo })}</span>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-red-600 font-medium">{t('session.noSessionSelected')}</p>
+              {onOpenSessionPicker && (
+                <button
+                  type="button"
+                  onClick={onOpenSessionPicker}
+                  className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-2.5 py-1 rounded-lg transition"
+                >
+                  {t('session.pickTitle')}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => (luckyOpen ? setLuckyOpen(false) : openLucky())}
+              disabled={!activeSession}
+              className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition disabled:opacity-50 ${
+                luckyNo ? 'bg-[#D4AF37]/10 border-[#D4AF37] text-[#8a6d1a]' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <span>🎯</span>
+              {luckyNo ? `${t('ledger.luckyPrefix', { no: luckyNo })} (Alt+K)` : `${t('ledger.luckyBtn')} (Alt+K)`}
+            </button>
+
+            {luckyOpen && (
+              <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-10">
+                <p className="text-xs font-medium text-gray-600 mb-2">{t('ledger.winningNumberHint')}</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={luckyInput}
+                    onChange={e => setLuckyInput(e.target.value.replace(/[^0-9]/g, '').slice(0, 2))}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveLucky(); } }}
+                    placeholder="00"
+                    autoFocus
+                    className="w-16 px-2 py-1.5 text-sm font-mono text-center border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={saveLucky}
+                    disabled={luckySaving}
+                    className="flex-1 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition"
+                  >
+                    {luckySaving ? t('common.saving') : t('common.save')}
+                  </button>
+                </div>
+                {luckyError && <p className="text-xs text-red-600 mt-2">{luckyError}</p>}
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => (rateOpen ? setRateOpen(false) : openRate())}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
+            >
+              <span>💰</span>
+              {t('ledger.ratePrefix', { n: rateValue })} (F6)
+            </button>
+
+            {rateOpen && (
+              <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-10">
+                <p className="text-xs font-medium text-gray-600 mb-2">{t('ledger.rateHint')}</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={rateInput}
+                    onChange={e => setRateInput(e.target.value.replace(/[^0-9.]/g, ''))}
+                    placeholder="80"
+                    autoFocus
+                    className="w-20 px-2 py-1.5 text-sm font-mono text-center border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={saveRate}
+                    disabled={rateSaving}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition"
+                  >
+                    {rateSaving ? t('common.saving') : t('common.save')}
+                  </button>
+                </div>
+                {rateError && <p className="text-xs text-red-600 mt-2">{rateError}</p>}
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => (limitOpen ? setLimitOpen(false) : openLimit())}
+              className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition ${
+                limitValue > 0 ? 'bg-indigo-50 border-indigo-300 text-indigo-800' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <span>🚧</span>
+              {limitValue > 0 ? `${t('ledger.limitPrefix', { n: limitValue.toLocaleString() })} (Alt+L)` : `${t('ledger.limitBtn')} (Alt+L)`}
+            </button>
+
+            {limitOpen && (
+              <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-10">
+                <p className="text-xs font-medium text-gray-600 mb-2">{t('ledger.maxAmountHint')}</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={limitInput}
+                    onChange={e => setLimitInput(e.target.value.replace(/[^0-9.]/g, ''))}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveLimit(); } }}
+                    placeholder="0"
+                    autoFocus
+                    className="w-20 px-2 py-1.5 text-sm font-mono text-center border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={saveLimit}
+                    disabled={limitSaving}
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition"
+                  >
+                    {limitSaving ? t('common.saving') : t('common.save')}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-2">{t('ledger.noLimitHint')}</p>
+                {limitError && <p className="text-xs text-red-600 mt-2">{limitError}</p>}
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                if (checkOpen) setCheckOpen(false);
+                else { setCheckInput(''); setCheckOpen(true); }
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
+            >
+              <span>🔍</span>
+              {t('ledger.checkNumBtn')} (Alt+C)
+            </button>
+
+            {checkOpen && (
+              <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-10">
+                <input
+                  type="text"
+                  value={checkInput}
+                  onChange={e => setCheckInput(e.target.value.replace(/[^0-9]/g, '').slice(0, 2))}
+                  placeholder="00"
+                  autoFocus
+                  className="w-full px-2 py-1.5 text-sm font-mono text-center border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400"
+                />
+                {checkResult ? (
+                  <div className="mt-3 space-y-1.5 text-xs">
+                    <p className="font-mono text-lg font-bold text-gray-900 text-center mb-2">{checkResult.num}</p>
+                    {checkResult.notBuy && <p className="text-gray-600">🚫 {t('ledger.notBuy')}</p>}
+                    {checkResult.hot && <p className="text-yellow-700">⚠️ {t('ledger.hot')}</p>}
+                    {checkResult.overLimit && (
+                      <p className="text-red-600">{t('ledger.overLimitMsg', { num: checkResult.num, limit: limitValue })}</p>
+                    )}
+                    {checkResult.ruleMatches.length > 0 && (
+                      <p className="text-indigo-700">{t('ledger.ruleMatchMsg', { num: checkResult.num, rules: checkResult.ruleMatches.join(', ') })}</p>
+                    )}
+                    <p className="text-gray-500">{t('ledger.checkCurrentTotal', { n: checkResult.currentTotal.toLocaleString() })}</p>
+                    <p className="text-gray-400">
+                      {t('ledger.checkClassification', { brade: checkResult.bradeWeight, part: checkResult.partWeight, sm: checkResult.smFlag })}
+                    </p>
+                    {!checkResult.notBuy && !checkResult.hot && !checkResult.overLimit && checkResult.ruleMatches.length === 0 && (
+                      <p className="text-green-700">✓ {t('ledger.normal')}</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400 mt-2 text-center">{t('ledger.checkEnterNumber')}</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => (checkAgentOpen ? setCheckAgentOpen(false) : openCheckAgent())}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
+            >
+              <span>👤</span>
+              {t('ledger.checkAgentBtn')} (Alt+G)
+            </button>
+
+            {checkAgentOpen && (
+              <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-10">
+                <input
+                  type="text"
+                  value={checkAgentInput}
+                  onChange={e => runCheckAgent(e.target.value)}
+                  placeholder="00"
+                  autoFocus
+                  className="w-full px-2 py-1.5 text-sm font-mono text-center border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400"
+                />
+                <div className="mt-3 space-y-1.5">
+                  {checkAgentLoading ? (
+                    <p className="text-xs text-gray-400 text-center">{t('common.loading')}</p>
+                  ) : checkAgentResults === null ? (
+                    <p className="text-xs text-gray-400 text-center">{t('ledger.checkEnterNumber')}</p>
+                  ) : checkAgentResults.length === 0 ? (
+                    <p className="text-xs text-gray-400 text-center">{t('ledger.checkAgentNoData')}</p>
+                  ) : (
+                    checkAgentResults.map(r => (
+                      <div key={r.agentName} className="flex items-center justify-between text-xs bg-blue-50 rounded px-2 py-1">
+                        <span className="font-medium text-blue-900">{r.agentName}</span>
+                        <span className="font-mono text-blue-700">{r.total.toLocaleString()}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpenHistory}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
+          >
+            <span>📋</span>
+            {t('ledger.historyTitle')} (F8)
+          </button>
+
+          {onOpenReports && (
+            <button
+              type="button"
+              onClick={onOpenReports}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
+            >
+              <span>📊</span>
+              {t('reports.title')} (Alt+R)
+            </button>
+          )}
+
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[0.5fr_2fr_0.75fr] gap-3 flex-1 min-h-0">
+        {/* Left panel: input + voucher token list */}
+        <div className="space-y-3">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3">
+            <div className="flex items-center gap-2 mb-3">
+              <label className="text-xs font-medium text-gray-600">{t('ledger.agentLabel')} (F2 / Alt+A)</label>
+              <AgentCombobox
+                ref={agentSelectRef}
+                agents={agents}
+                value={agentId}
+                onChange={setAgentId}
+                placeholder={t('ledger.agentSearchPlaceholder')}
+                onEnter={() => {
+                  setTimeout(() => {
+                    inputRef.current?.focus();
+                  }, 50);
+                }}
+              />
+            </div>
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={handleChange}
+              onKeyDown={handleKeyDown}
+              disabled={!activeSession || !agentId}
+              placeholder={agentId ? `${t('ledger.enterNumbers')} (F3 / Alt+N)` : t('ledger.selectAgentFirst')}
+              className="w-full px-3 py-2.5 text-base font-mono tracking-wide border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
+            />
+
+            {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mt-3">{error}</p>}
+            {!error && warnings.length > 0 && (
+              <div className="text-sm text-yellow-700 bg-yellow-50 rounded-lg px-3 py-2 mt-3 space-y-0.5">
+                {warnings.map((w, i) => <p key={i}>{w}</p>)}
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-3">
+              <button
+                type="button"
+                onClick={() => handleSave(pendingTokens)}
+                disabled={saving || !activeSession || pendingTokens.length === 0}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium py-2.5 rounded-lg transition"
+              >
+                {saving ? t('common.saving') : editingId ? t('common.update') : `${t('common.save')} (F1)`}
+              </button>
+              <button
+                type="button"
+                onClick={handleClear}
+                disabled={saving}
+                className="px-4 py-2.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+              >
+                {editingId ? t('common.cancel') : `${t('common.clear')} (F9)`}
+              </button>
+            </div>
+
+            {successMsg && <p className="text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2 mt-3">{successMsg}</p>}
+          </div>
+
+          {/* Voucher token list — raw as-typed text, not expanded numbers */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm font-semibold text-gray-800">
+                {t('ledger.entriesHeader', { current: pendingTokens.length, max: MAX_ENTRIES })}
+                {search.trim() && <span className="text-gray-400 font-normal"> — {t('ledger.matchSuffix', { n: visibleTokens.length })}</span>}
+              </span>
+              <div className="flex items-center gap-3">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder={t('ledger.findPlaceholder')}
+                  className="px-2.5 py-1.5 text-xs font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 w-24"
+                />
+                <span className="text-sm font-semibold text-gray-900">
+                  {t('ledger.totalLabel', { n: pendingTotal.toLocaleString() })}
+                </span>
+              </div>
+            </div>
+            {pendingTokens.length === 0 ? (
+              <div className="px-4 py-6 text-center text-gray-400 text-sm">{t('ledger.noEntriesYet')}</div>
+            ) : visibleTokens.length === 0 ? (
+              <div className="px-4 py-6 text-center text-gray-400 text-sm">{t('ledger.noMatchEntries', { q: search })}</div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+                    <th className="text-left px-4 py-2 font-medium">
+                      <button type="button" onClick={() => toggleSort('tokenText')} className="flex items-center gap-1 hover:text-gray-800 transition">
+                        {t('ledger.voucherCol')} (Alt+E)
+                        {sortKey === 'tokenText' && <span>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                      </button>
+                    </th>
+                    <th className="px-4 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {visibleTokens.map(p => (
+                    <tr key={p.id} className="hover:bg-gray-50 transition">
+                      <td
+                        className="px-4 py-2 font-mono font-medium text-gray-900"
+                        onClick={() => startTokenEdit(p)}
+                      >
+                        {editingTokenId === p.id ? (
+                          <input
+                            type="text"
+                            value={editingTokenValue}
+                            onChange={e => setEditingTokenValue(normalizeInput(e.target.value))}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                commitTokenEdit(p.id);
+                              } else if (e.key === 'Escape') {
+                                e.preventDefault();
+                                cancelTokenEdit();
+                              }
+                            }}
+                            onBlur={() => commitTokenEdit(p.id)}
+                            autoFocus
+                            className="w-full px-2 py-1 font-mono text-sm border border-indigo-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => startTokenEdit(p)}
+                            className="font-mono font-medium text-left hover:text-indigo-700"
+                            title="Click to edit"
+                          >
+                            {p.tokenText}
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <button
+                          onClick={() => removeToken(p.id)}
+                          className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded hover:bg-red-50 transition"
+                        >
+                          {t('common.delete')}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/* Center panel: 00-99 aggregate table, session-wide — legacy
+            layout: 3 column-groups of [Num, Amount] pairs, read top-to-bottom
+            within each group, not a 10x10 button grid. */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-2.5 h-full overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-semibold text-gray-800">00 – 99</h2>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => toggleGridSort('number')}
+                className="text-[10px] font-medium text-gray-500 hover:text-gray-800 px-1.5 py-0.5 rounded hover:bg-gray-100 transition flex items-center gap-0.5"
+              >
+                {t('ledger.numberCol')}
+                {gridSortKey === 'number' && <span>{gridSortDir === 'asc' ? '▲' : '▼'}</span>}
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleGridSort('amount')}
+                className="text-[10px] font-medium text-gray-500 hover:text-gray-800 px-1.5 py-0.5 rounded hover:bg-gray-100 transition flex items-center gap-0.5"
+              >
+                {t('ledger.amountCol')}
+                {gridSortKey === 'amount' && <span>{gridSortDir === 'asc' ? '▲' : '▼'}</span>}
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <table className="w-full text-sm border border-collapse border-gray-200">
+              <tbody>
+                {numberTable.map((row, rowIdx) => (
+                  <tr key={rowIdx}>
+                    {row.map((num, colIdx) => {
+                      if (num === null) {
+                        return <td key={colIdx} colSpan={2} className="border border-gray-200" />;
+                      }
+
+                      const amount = totals?.[num] ?? 0;
+                      const isNotBuy = notBuySet.has(num);
+                      const isHot = hotSet.has(num);
+                      const isLucky = num === luckyNo;
+                      const isOverLimit = limitValue > 0 && amount > limitValue;
+
+                      // Purple (over limit) and red (winning number) carry
+                      // through to the amount cell too — green ("has
+                      // amount") stays on the number cell only.
+                      let cls = 'bg-gray-50 text-gray-600';
+                      let amountCls = 'text-gray-700';
+                      if (isLucky) {
+                        cls = 'bg-red-600 text-white';
+                        amountCls = 'bg-red-600 text-white';
+                      } else if (isOverLimit) {
+                        cls = 'bg-purple-500 text-white';
+                        amountCls = 'bg-purple-500 text-white';
+                      } else if (amount > 0) {
+                        cls = 'bg-green-500 text-white';
+                      } else if (isNotBuy) {
+                        cls = 'bg-gray-300 text-gray-500';
+                      } else if (isHot) {
+                        cls = 'bg-yellow-300 text-yellow-900';
+                      }
+
+                      return (
+                        <Fragment key={colIdx}>
+                          <td
+                            onClick={() => handleCellClick(num)}
+                            title={amount ? `${num}: ${amount}${isLucky ? ' — 🎯' : ''}` : isLucky ? `${num} — 🎯` : num}
+                            className={`px-1 py-1 font-mono font-semibold text-center cursor-pointer hover:opacity-90 transition border border-gray-200 ${cls}`}
+                          >
+                            {num}
+                          </td>
+                          <td className={`px-1.5 py-1 text-right font-mono whitespace-nowrap border border-gray-200 ${amountCls}`}>
+                            {amount > 0 ? amount.toLocaleString() : ''}
+                          </td>
+                        </Fragment>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Orange best-seller liability bar */}
+          {bestSeller && bestSeller.amount > 0 && (
+            <div className="bg-orange-500 text-white rounded-lg px-3 py-1.5 mt-2 font-mono text-xs font-semibold">
+              [{bestSeller.num}] {bestSeller.amount.toLocaleString()} × {rateValue || 0} = {orangeLiability.toLocaleString()}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-x-2 gap-y-1 mt-2 text-[10px] text-gray-500">
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-green-500 inline-block" /> {t('ledger.hasAmountLegend')}</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-purple-500 inline-block" /> {t('ledger.overLimitLegend')}</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-yellow-300 inline-block" /> {t('ledger.hot')}</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-gray-300 inline-block" /> {t('ledger.notBuy')}</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-red-600 inline-block" /> {t('ledger.luckyLegend')}</span>
+          </div>
+
+          {/* Bottom stat row */}
+          <div className="grid grid-cols-3 gap-1.5 mt-2">
+            <div className="bg-green-100 text-green-900 rounded-lg px-2 py-1.5 text-center font-mono font-semibold text-xs">—</div>
+            <div className="bg-pink-100 text-pink-900 rounded-lg px-2 py-1.5 text-center font-mono font-semibold text-xs">
+              {pinkStat ? pinkStat.toFixed(2) : '—'}
+            </div>
+            <div className="bg-purple-100 text-purple-900 rounded-lg px-2 py-1.5 text-center font-mono font-semibold text-xs">
+              {grandTotal.toLocaleString()}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 h-full overflow-hidden flex flex-col">
+          <h2 className="text-sm font-semibold text-gray-800 mb-2">{t('ledger.exceedPanelTitle')}</h2>
+          {!(limitValue > 0) ? (
+            <p className="text-xs text-gray-400 text-center py-6">{t('ledger.noLimitHint')}</p>
+          ) : (
+            <div className="flex flex-col flex-1 min-h-0 justify-between">
+              {exceedList.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-6">{t('ledger.noExceedEntries')}</p>
+              ) : (
+                <div className="flex-1 min-h-0 overflow-y-auto mb-2">
+                  <table className="w-full text-sm border border-collapse border-gray-200">
+                    <thead>
+                      <tr className="bg-gray-50 text-[10px] text-gray-500 uppercase tracking-wide border-b border-gray-200 font-medium">
+                        <th className="px-1.5 py-1 border border-gray-200 text-center font-medium">
+                          <button
+                            type="button"
+                            onClick={() => toggleExceedSort('num')}
+                            className="hover:text-gray-800 transition font-semibold flex items-center justify-center gap-0.5 mx-auto"
+                          >
+                            {t('ledger.numberCol')} (Alt+1)
+                            {exceedSortKey === 'num' && <span>{exceedSortDir === 'asc' ? '▲' : '▼'}</span>}
+                          </button>
+                        </th>
+                        <th className="px-1.5 py-1 border border-gray-200 text-right font-medium">
+                          <button
+                            type="button"
+                            onClick={() => toggleExceedSort('amount')}
+                            className="hover:text-gray-800 transition font-semibold flex items-center justify-center gap-0.5 ml-auto"
+                          >
+                            {t('ledger.amountCol')} (Alt+2)
+                            {exceedSortKey === 'amount' && <span>{exceedSortDir === 'asc' ? '▲' : '▼'}</span>}
+                          </button>
+                        </th>
+                        <th className="px-1.5 py-1 border border-gray-200 text-right font-medium bg-purple-50">
+                          <button
+                            type="button"
+                            onClick={() => toggleExceedSort('excess')}
+                            className="hover:text-gray-800 transition font-semibold flex items-center justify-center gap-0.5 ml-auto text-purple-900"
+                          >
+                            {t('ledger.exceedLabel')} (Alt+3)
+                            {exceedSortKey === 'excess' && <span>{exceedSortDir === 'asc' ? '▲' : '▼'}</span>}
+                          </button>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {exceedList.map(e => (
+                        <tr key={e.num}>
+                          <td className="px-1.5 py-1 font-mono font-semibold text-center bg-purple-500 text-white border border-gray-200">
+                            {e.num}
+                          </td>
+                          <td className="px-1.5 py-1 text-right font-mono whitespace-nowrap border border-gray-200 text-gray-700">
+                            {e.amount.toLocaleString()}
+                          </td>
+                          <td className="px-1.5 py-1 text-right font-mono whitespace-nowrap border border-gray-200 bg-purple-50 text-purple-900 font-semibold">
+                            {e.excess.toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="border-t border-gray-200 pt-3 space-y-2 text-sm">
+                <div className="flex justify-between text-gray-600 px-1 font-semibold">
+                  <span>{t('ledger.exceedLabel')}:</span>
+                  <span className="font-mono text-base">{totalExcess.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-gray-600 px-1 font-semibold">
+                  <span>{t('ledger.freeLabel')}:</span>
+                  <span className="font-mono text-base">{totalFree.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-gray-900 font-bold border-t border-gray-250 pt-2 px-1 text-base">
+                  <span>{t('common.total')}:</span>
+                  <span className="font-mono text-lg text-indigo-700">{grandTotal.toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {cellPopup && (
+        <div className="fixed bottom-6 right-6 bg-white rounded-xl shadow-xl border border-gray-200 px-6 py-4 text-center min-w-[180px] z-20 relative">
+          <button
+            type="button"
+            onClick={() => setCellPopup(null)}
+            className="absolute top-1.5 right-2 text-gray-400 hover:text-gray-600 text-sm"
+            aria-label={t('common.close')}
+          >
+            ✕
+          </button>
+          <p className="font-mono text-3xl font-bold text-gray-900">
+            {cellPopup.num}
+            {cellPopup.num === luckyNo && <span className="ml-2 align-middle text-lg">🎯</span>}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">{t('ledger.totalAmount')}</p>
+          <p className="text-xl font-semibold text-gray-900">{cellPopup.amount.toLocaleString()}</p>
+        </div>
+      )}
+
+      {quickEntryOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-gray-200 max-w-md w-full overflow-hidden animate-in fade-in zoom-in duration-150">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-800">Quick Entry</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickEntryOpen(false);
+                  inputRef.current?.focus();
+                }}
+                className="text-gray-400 hover:text-gray-600 text-base"
+                aria-label={t('common.close')}
+              >
+                ✕
+              </button>
+            </div>
+            {/* Body */}
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                  Enter Numbers Here
+                </label>
+                <input
+                  ref={quickNumsRef}
+                  type="text"
+                  value={quickEntryNums}
+                  onChange={handleQuickNumsChange}
+                  onKeyDown={handleQuickNumsKeyDown}
+                  placeholder="Enter Numbers Here"
+                  className="w-full px-3 py-2 text-sm font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                  Amount
+                </label>
+                <input
+                  ref={quickAmountRef}
+                  type="text"
+                  value={quickEntryAmount}
+                  onChange={e => setQuickEntryAmount(e.target.value.replace(/[^0-9]/g, ''))}
+                  onKeyDown={handleQuickAmountKeyDown}
+                  placeholder="100"
+                  className="w-full px-3 py-2 text-sm font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3.5 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickEntryOpen(false);
+                  inputRef.current?.focus();
+                }}
+                className="px-4 py-2 text-xs font-semibold border border-gray-300 rounded-lg hover:bg-gray-100 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleQuickSubmit}
+                className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition"
+              >
+                Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,108 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "add": "Add",
+    "clear": "Clear",
+    "total": "Total",
+    "loading": "Loading...",
+    "confirm": "Confirm",
+    "edit": "Edit",
+    "close": "Close",
+    "noData": "No data"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "session": "Session",
+    "agents": "Agents",
+    "ledger": "Ledger",
+    "results": "Results",
+    "balance": "Balance",
+    "users": "Users",
+    "settings": "Settings",
+    "signOut": "Sign out",
+    "switchApp": "← Switch App"
+  },
+  "session": {
+    "title": "Session Setup",
+    "roundNumber": "Round No.",
+    "am": "Morning (AM)",
+    "pm": "Afternoon (PM)",
+    "full": "Full Day",
+    "setSession": "Set Session",
+    "currentSession": "Current Session",
+    "noSession": "No active session",
+    "date": "Date",
+    "machine": "Machine"
+  },
+  "agents": {
+    "title": "Agent Management",
+    "agentName": "Agent Name",
+    "commission": "Commission %",
+    "addAgent": "Add Agent",
+    "noAgents": "No agents yet",
+    "editAgent": "Edit Agent",
+    "deleteAgent": "Delete Agent"
+  },
+  "ledger": {
+    "title": "Ledger Entry",
+    "enterNumbers": "Enter numbers",
+    "selectAgent": "Select Agent",
+    "totalAmount": "Total Amount",
+    "saveSlip": "Save Slip",
+    "noSession": "No active session. Please set up a session first.",
+    "notBuy": "Blocked",
+    "hot": "Hot",
+    "normal": "Normal",
+    "amount": "Amount",
+    "number": "Number",
+    "entries": "Entries",
+    "grid": "Number Grid"
+  },
+  "results": {
+    "title": "Results",
+    "luckyNumber": "Lucky Number",
+    "setLuckyNumber": "Set Lucky Number",
+    "calculate": "Calculate",
+    "totalBet": "Total Bet",
+    "totalPayout": "Total Payout",
+    "profit": "Profit",
+    "winner": "Winner",
+    "perAgent": "Per Agent Breakdown",
+    "betAmount": "Bet",
+    "payoutAmount": "Payout",
+    "profitAmount": "Profit"
+  },
+  "balance": {
+    "title": "Balance & Payments",
+    "balanceDue": "Balance Due",
+    "received": "Received",
+    "netBalance": "Net Balance",
+    "recordPayment": "Record Payment",
+    "selectAgent": "Select Agent",
+    "amount": "Amount",
+    "note": "Note",
+    "date": "Date",
+    "owes": "Owes",
+    "settled": "Settled"
+  },
+  "settings": {
+    "title": "Settings",
+    "payoutRate": "Payout Rate",
+    "betLimit": "Bet Limit (0 = no limit)",
+    "hotNumbers": "Hot Numbers",
+    "blockedNumbers": "Blocked Numbers",
+    "saveRates": "Save Rates",
+    "addNumber": "Add Number",
+    "removeNumber": "Remove",
+    "perBaht": "per baht"
+  },
+  "auth": {
+    "login": "Login",
+    "email": "Email",
+    "password": "Password",
+    "signIn": "Sign In",
+    "invalidCredentials": "Invalid email or password"
+  }
+}

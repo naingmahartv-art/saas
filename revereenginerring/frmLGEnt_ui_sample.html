@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>frmLGEnt UI Sample</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #e9eef5;
+      color: #1f2937;
+    }
+    .app-shell {
+      display: grid;
+      grid-template-columns: 280px 1fr 320px;
+      grid-template-rows: auto 1fr auto;
+      gap: 10px;
+      min-height: 100vh;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    .header {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      background: #ffffff;
+      padding: 14px 16px;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+    }
+    .header .meta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .header .meta span,
+    .header .meta select,
+    .header .meta input {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      color: #0f172a;
+      font-size: 0.92rem;
+    }
+    .header .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .header button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 14px;
+      background: #2563eb;
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+      min-width: 110px;
+    }
+    .panel {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 14px;
+      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
+      padding: 16px;
+    }
+    .panel-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin-bottom: 14px;
+      color: #111827;
+    }
+    .field-group {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+    .field label {
+      font-size: 0.85rem;
+      color: #475569;
+    }
+    .field input,
+    .field select {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 0.95rem;
+      background: #f8fafc;
+      color: #0f172a;
+    }
+    .button-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .button-grid button {
+      border: none;
+      border-radius: 10px;
+      padding: 12px 12px;
+      cursor: pointer;
+      font-weight: 700;
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .button-grid button .mnemonic {
+      text-decoration: underline;
+    }
+    .btn-primary { background: #2563eb; }
+    .btn-secondary { background: #475569; }
+    .btn-warning { background: #d97706; }
+    .btn-alert { background: #dc2626; }
+    .btn-soft { background: #64748b; }
+    .panel-columns {
+      display: grid;
+      gap: 12px;
+    }
+    .panel-columns.two {
+      grid-template-columns: 1fr 1fr;
+    }
+    .panel-columns.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .summary-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .summary-card {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      padding: 14px;
+      display: grid;
+      gap: 8px;
+    }
+    .summary-card strong {
+      font-size: 0.84rem;
+      color: #334155;
+    }
+    .main-grid table,
+    .right-grid table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+    .main-grid th,
+    .main-grid td,
+    .right-grid td {
+      border: 1px solid #cbd5e1;
+      padding: 10px 12px;
+      text-align: center;
+    }
+    .main-grid th {
+      background: #f1f5f9;
+      color: #334155;
+    }
+    .main-grid tr:nth-child(even) {
+      background: #f8fbff;
+    }
+    .right-grid td {
+      background: #ecfdf5;
+      color: #14532d;
+    }
+    .detail-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 0.92rem;
+    }
+    .detail-table th,
+    .detail-table td {
+      border: 1px solid #cbd5e1;
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .detail-table th {
+      background: #f1f5f9;
+      color: #334155;
+      font-weight: 700;
+    }
+    .detail-table td {
+      background: #ffffff;
+      color: #0f172a;
+    }
+    .wide-inputs {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin-bottom: 16px;
+    }
+    .footer {
+      grid-column: 1 / -1;
+      padding: 14px 16px;
+      border: 1px solid #cbd5e1;
+      border-radius: 14px;
+      background: #ffffff;
+      color: #475569;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="header">
+      <div class="meta">
+        <span>Machine 13</span>
+        <span>Serial [1 TO 199]</span>
+        <select aria-label="Sort by">
+          <option>Sort By Amount Format</option>
+          <option>Sort By Num Format</option>
+          <option>Sort By ROUND Format</option>
+        </select>
+      </div>
+      <div class="actions">
+        <button id="btnSave">Save (F1)</button>
+        <button id="btnSearch">Search (F8)</button>
+        <button id="btnRefresh">Refresh</button>
+      </div>
+    </header>
+
+    <aside class="panel">
+      <div class="panel-title">Agent / Buy Controls</div>
+      <div class="field-group">
+        <div class="field">
+          <label for="txtAgentName">Agent Name</label>
+          <input id="txtAgentName" type="text" placeholder="Agent name" />
+        </div>
+        <div class="field">
+          <label for="txtAgent_Num">Agent Number</label>
+          <input id="txtAgent_Num" type="text" placeholder="Agent number" />
+        </div>
+        <div class="field">
+          <label for="txtName">Buy Name</label>
+          <input id="txtName" type="text" placeholder="Buy name" />
+        </div>
+      </div>
+      <div class="button-grid">
+        <button id="btnBuy" class="btn-primary"><span class="mnemonic">B</span>uy</button>
+        <button id="btnAdv" class="btn-warning"><span class="mnemonic">A</span>dv</button>
+        <button id="btnLimit" class="btn-secondary"><span class="mnemonic">L</span>imit</button>
+        <button id="btnLucky" class="btn-alert">Lu<span class="mnemonic">c</span>ky</button>
+      </div>
+      <div class="button-grid" style="margin-top:12px;">
+        <button id="btnHot" class="btn-soft"><span class="mnemonic">H</span>ot</button>
+        <button id="btnNotSale" class="btn-soft">Not<span class="mnemonic">S</span>ale</button>
+        <button id="btnCheckNum" class="btn-secondary">Checking Num?</button>
+        <button id="btnExit" class="btn-secondary">Exit (F4)</button>
+      </div>
+      <div class="summary-grid" style="margin-top:16px;">
+        <div class="summary-card">
+          <strong>Auto Refresh</strong>
+          <span>Enabled</span>
+        </div>
+        <div class="summary-card">
+          <strong>Checking Agent</strong>
+          <span>Ready</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="panel">
+      <div class="panel-title">Main Sale and Number Entry</div>
+      <div class="wide-inputs">
+        <div class="field">
+          <label for="txtSrNo">Num#</label>
+          <input id="txtSrNo" type="text" placeholder="Serial number" />
+        </div>
+        <div class="field">
+          <label for="txtAmount">Amount</label>
+          <input id="txtAmount" type="text" placeholder="Amount" />
+        </div>
+      </div>
+      <div class="wide-inputs">
+        <div class="field">
+          <label for="txtNum">Number Entry</label>
+          <input id="txtNum" type="text" placeholder="Enter number" />
+        </div>
+        <div class="field">
+          <label for="Checking_txtNum">Checking Number</label>
+          <input id="Checking_txtNum" type="text" placeholder="Checking number" />
+        </div>
+      </div>
+      <div class="main-grid">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Num</th>
+              <th>Value</th>
+              <th>Status</th>
+              <th>Count</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td>12, 34, 56</td><td>0</td><td>Pending</td><td>2</td></tr>
+            <tr><td>2</td><td>03, 18, 22</td><td>0</td><td>Pending</td><td>1</td></tr>
+            <tr><td>3</td><td>07, 09</td><td>0</td><td>Pending</td><td>3</td></tr>
+            <tr><td>4</td><td>14, 21</td><td>0</td><td>Pending</td><td>1</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-columns three" style="margin-top:16px;">
+        <div class="field">
+          <label for="txtRate">Rate</label>
+          <input id="txtRate" type="text" placeholder="Rate" />
+        </div>
+        <div class="field">
+          <label for="txtCom">Commission</label>
+          <input id="txtCom" type="text" placeholder="Commission" />
+        </div>
+        <div class="field">
+          <label for="Text4">Check Field</label>
+          <input id="Text4" type="text" placeholder="Check field" />
+        </div>
+      </div>
+      <div class="panel-columns two" style="margin-top:16px;">
+        <div class="field">
+          <label for="Checking_txtAmount1">Checking Amount</label>
+          <input id="Checking_txtAmount1" type="text" placeholder="Checking amount" />
+        </div>
+        <div class="field">
+          <label for="txtAgentName">Sort Name</label>
+          <input id="cboSort1" type="text" placeholder="Sort value" />
+        </div>
+      </div>
+    </main>
+
+    <aside class="panel">
+      <div class="panel-title">Right Summary / Stats</div>
+      <div class="summary-grid">
+        <div class="summary-card">
+          <strong>Balance</strong>
+          <input id="txtBalance" type="text" value="0" readonly />
+        </div>
+        <div class="summary-card">
+          <strong>Formula</strong>
+          <input id="txtFormula1" type="text" value="0" readonly />
+        </div>
+      </div>
+      <div class="summary-grid" style="margin-top:12px;">
+        <div class="summary-card">
+          <strong>Max Paid</strong>
+          <input id="Text2" type="text" value="0" readonly />
+        </div>
+        <div class="summary-card">
+          <strong>Total</strong>
+          <input id="Text3" type="text" value="0" readonly />
+        </div>
+      </div>
+      <div class="field" style="margin-top:16px;">
+        <label for="Text1">Sort Preview Total</label>
+        <input id="Text1" type="text" value="0" readonly />
+      </div>
+      <div class="right-grid" style="margin-top:16px;">
+        <table>
+          <tbody>
+            <tr><td>Sort</td><td>Amount</td></tr>
+            <tr><td>01</td><td>0</td></tr>
+            <tr><td>02</td><td>0</td></tr>
+            <tr><td>03</td><td>0</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </aside>
+
+    <aside class="panel">
+      <div class="panel-title">Component Functions & Key Bindings</div>
+      <table class="detail-table">
+        <thead>
+          <tr>
+            <th>Control</th>
+            <th>Function</th>
+            <th>Key Binding</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>cmdSave</td>
+            <td>Save current sale/input and commit transaction.</td>
+            <td>F1</td>
+          </tr>
+          <tr>
+            <td>cmdSearch</td>
+            <td>Open search workflow for past numbers/records.</td>
+            <td>F8</td>
+          </tr>
+          <tr>
+            <td>cmdExit</td>
+            <td>Close form and return to main menu.</td>
+            <td>F4</td>
+          </tr>
+          <tr>
+            <td>cmdCheck</td>
+            <td>Start number checking workflow in fraChecking.</td>
+            <td>F12</td>
+          </tr>
+          <tr>
+            <td>cmdBuy / Command1</td>
+            <td>Mark current entry for buy or submit purchase.</td>
+            <td>Alt+B</td>
+          </tr>
+          <tr>
+            <td>cmdAdv</td>
+            <td>Open advanced number handling or filter mode.</td>
+            <td>Alt+A</td>
+          </tr>
+          <tr>
+            <td>cmdLimit</td>
+            <td>Open limit validation / limit logic panel.</td>
+            <td>Alt+L</td>
+          </tr>
+          <tr>
+            <td>cmdLucky</td>
+            <td>Apply lucky-number logic and update status.</td>
+            <td>Alt+C</td>
+          </tr>
+          <tr>
+            <td>cmdHot</td>
+            <td>Flag current number as hot.</td>
+            <td>Alt+H</td>
+          </tr>
+          <tr>
+            <td>cmdNotBuy</td>
+            <td>Mark current number as not sold.</td>
+            <td>Alt+S</td>
+          </tr>
+          <tr>
+            <td>txtNum</td>
+            <td>Enter main sale number expression; parses and updates amount.</td>
+            <td>Enter / numeric input</td>
+          </tr>
+          <tr>
+            <td>txtRate</td>
+            <td>Enter rate value; triggers validation and recalculation.</td>
+            <td>Numeric keys</td>
+          </tr>
+          <tr>
+            <td>txtCom</td>
+            <td>Enter commission; updates derived sale values.</td>
+            <td>Numeric keys</td>
+          </tr>
+          <tr>
+            <td>cmdBuy / Command1</td>
+            <td>Mark current entry for buy or submit purchase.</td>
+            <td>Click</td>
+          </tr>
+          <tr>
+            <td>cmdNotBuy</td>
+            <td>Mark current number as not sold.</td>
+            <td>Click</td>
+          </tr>
+          <tr>
+            <td>cmdHot</td>
+            <td>Flag current number as hot.</td>
+            <td>Click</td>
+          </tr>
+          <tr>
+            <td>cmdLucky</td>
+            <td>Apply lucky-number logic and update status.</td>
+            <td>Click</td>
+          </tr>
+          <tr>
+            <td>cmdLimit</td>
+            <td>Open limit validation / limit logic panel.</td>
+            <td>Click</td>
+          </tr>
+          <tr>
+            <td>cmdAdv</td>
+            <td>Open advanced numeric handling or filter mode.</td>
+            <td>Click</td>
+          </tr>
+          <tr>
+            <td>cmdRoundFormat</td>
+            <td>Switch to round-format buy workflow.</td>
+            <td>Click</td>
+          </tr>
+          <tr>
+            <td>cmdCheck_Agent</td>
+            <td>Open agent validation workflow in fraCheck_Agent.</td>
+            <td>Click</td>
+          </tr>
+          <tr>
+            <td>txtAgentName</td>
+            <td>Input or select current agent; updates agent state.</td>
+            <td>Typing</td>
+          </tr>
+          <tr>
+            <td>txtAgent_Num</td>
+            <td>Check specific agent number during validation workflow.</td>
+            <td>Typing</td>
+          </tr>
+        </tbody>
+      </table>
+    </aside>
+
+    <footer class="footer">
+      Text boxes included: txtAgentName, txtAgent_Num, txtName, txtSrNo, txtAmount, txtNum,
+      Checking_txtNum, Checking_txtAmount1, txtRate, txtCom, Text4, txtBalance, txtFormula1, Text2, Text3, Text1.
+      Keyboard: F1 Save, F4 Exit, F8 Search, F12 Check, Alt+B/A/L/C/H/S.
+    </footer>
+  </div>
+  <script src="./frmLGEnt_logic.js"></script>
+  <script src="./frmLGEnt_ui_sample.js"></script>
+</body>
+</html>

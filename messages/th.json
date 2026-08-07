@@ -1,0 +1,108 @@
+{
+  "common": {
+    "save": "บันทึก",
+    "cancel": "ยกเลิก",
+    "delete": "ลบ",
+    "add": "เพิ่ม",
+    "clear": "ล้าง",
+    "total": "รวม",
+    "loading": "กำลังโหลด...",
+    "confirm": "ยืนยัน",
+    "edit": "แก้ไข",
+    "close": "ปิด",
+    "noData": "ไม่มีข้อมูล"
+  },
+  "nav": {
+    "dashboard": "หน้าหลัก",
+    "session": "รอบการเล่น",
+    "agents": "ตัวแทน",
+    "ledger": "บัญชีแทง",
+    "results": "ผลการออก",
+    "balance": "ยอดคงค้าง",
+    "users": "ผู้ใช้งาน",
+    "settings": "ตั้งค่า",
+    "signOut": "ออกจากระบบ",
+    "switchApp": "← เปลี่ยนแอป"
+  },
+  "session": {
+    "title": "ตั้งค่ารอบการเล่น",
+    "roundNumber": "หมายเลขรอบ",
+    "am": "เช้า (AM)",
+    "pm": "บ่าย (PM)",
+    "full": "ทั้งวัน",
+    "setSession": "ตั้งรอบ",
+    "currentSession": "รอบปัจจุบัน",
+    "noSession": "ยังไม่มีรอบที่ใช้งานอยู่",
+    "date": "วันที่",
+    "machine": "เครื่อง"
+  },
+  "agents": {
+    "title": "จัดการตัวแทน",
+    "agentName": "ชื่อตัวแทน",
+    "commission": "ค่าคอมมิชชั่น %",
+    "addAgent": "เพิ่มตัวแทน",
+    "noAgents": "ยังไม่มีตัวแทน",
+    "editAgent": "แก้ไขตัวแทน",
+    "deleteAgent": "ลบตัวแทน"
+  },
+  "ledger": {
+    "title": "บันทึกการแทง",
+    "enterNumbers": "ใส่หมายเลข",
+    "selectAgent": "เลือกตัวแทน",
+    "totalAmount": "ยอดรวม",
+    "saveSlip": "บันทึกสลิป",
+    "noSession": "ยังไม่มีรอบ กรุณาตั้งรอบก่อน",
+    "notBuy": "ไม่รับแทง",
+    "hot": "เลขร้อน",
+    "normal": "ปกติ",
+    "amount": "จำนวนเงิน",
+    "number": "หมายเลข",
+    "entries": "รายการ",
+    "grid": "ตารางหมายเลข"
+  },
+  "results": {
+    "title": "ผลการออก",
+    "luckyNumber": "เลขที่ออก",
+    "setLuckyNumber": "บันทึกเลขที่ออก",
+    "calculate": "คำนวณ",
+    "totalBet": "ยอดแทงรวม",
+    "totalPayout": "ยอดจ่ายรวม",
+    "profit": "กำไร",
+    "winner": "เลขถูกรางวัล",
+    "perAgent": "แยกตามตัวแทน",
+    "betAmount": "ยอดแทง",
+    "payoutAmount": "ยอดจ่าย",
+    "profitAmount": "กำไร"
+  },
+  "balance": {
+    "title": "ยอดคงค้าง & การชำระเงิน",
+    "balanceDue": "ยอดที่ต้องชำระ",
+    "received": "รับแล้ว",
+    "netBalance": "ยอดสุทธิ",
+    "recordPayment": "บันทึกการชำระเงิน",
+    "selectAgent": "เลือกตัวแทน",
+    "amount": "จำนวนเงิน",
+    "note": "หมายเหตุ",
+    "date": "วันที่",
+    "owes": "ค้างชำระ",
+    "settled": "ชำระแล้ว"
+  },
+  "settings": {
+    "title": "ตั้งค่า",
+    "payoutRate": "อัตราจ่าย",
+    "betLimit": "วงเงินแทง (0 = ไม่จำกัด)",
+    "hotNumbers": "เลขร้อน",
+    "blockedNumbers": "เลขที่ไม่รับแทง",
+    "saveRates": "บันทึกอัตรา",
+    "addNumber": "เพิ่มหมายเลข",
+    "removeNumber": "ลบ",
+    "perBaht": "ต่อบาท"
+  },
+  "auth": {
+    "login": "เข้าสู่ระบบ",
+    "email": "อีเมล",
+    "password": "รหัสผ่าน",
+    "signIn": "เข้าสู่ระบบ",
+    "invalidCredentials": "อีเมลหรือรหัสผ่านไม่ถูกต้อง"
+  }
+}

@@ -1,0 +1,222 @@
+'use client';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import LanguageSwitcher from '@/components/LanguageSwitcher.js';
+import SyncStatusBadge from '@/components/SyncStatusBadge';
+import { useI18n } from '@/lib/i18n/index.js';
+
+const STORAGE_KEY = 'sidebar_collapsed';
+
+const ICONS = {
+  dashboard: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </>
+  ),
+  session: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7 12 12 15 15" />
+    </>
+  ),
+  agents: (
+    <>
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </>
+  ),
+  ledger: (
+    <>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+    </>
+  ),
+  results: (
+    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+  ),
+  balance: (
+    <>
+      <line x1="12" y1="1" x2="12" y2="23" />
+      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </>
+  ),
+  users: (
+    <>
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </>
+  ),
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </>
+  ),
+  switchApp: (
+    <>
+      <polyline points="15 3 21 3 21 9" />
+      <polyline points="9 21 3 21 3 15" />
+      <line x1="21" y1="3" x2="14" y2="10" />
+      <line x1="3" y1="21" x2="10" y2="14" />
+    </>
+  ),
+  logout: (
+    <>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </>
+  ),
+};
+
+function Icon({ name, className = 'w-[18px] h-[18px]' }) {
+  return (
+    <svg className={`${className} shrink-0`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      {ICONS[name]}
+    </svg>
+  );
+}
+
+const NAV_SEGMENTS = [
+  { key: 'dashboard', segment: 'dashboard' },
+  { key: 'session',   segment: 'session' },
+  { key: 'agents',    segment: 'agents' },
+  { key: 'ledger',    segment: 'ledger' },
+  { key: 'results',   segment: 'results' },
+];
+
+const ADMIN_SEGMENTS = [
+  { key: 'balance',  segment: 'balance' },
+  { key: 'users',    segment: 'users' },
+  { key: 'settings', segment: 'settings' },
+];
+
+export default function Sidebar2D({ orgId, orgName, userName, role }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { t } = useI18n();
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem(STORAGE_KEY) === 'true');
+    } catch {
+      // localStorage unavailable
+    }
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(STORAGE_KEY, String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }
+
+  const base = `/org/${orgId}/2d`;
+  const canManage = role === 'org_admin' || role === 'super_admin';
+  const segments = canManage ? [...NAV_SEGMENTS, ...ADMIN_SEGMENTS] : NAV_SEGMENTS;
+
+  async function logout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.push('/login');
+  }
+
+  return (
+    <aside className={`${collapsed ? 'w-14' : 'w-60'} shrink-0 h-screen sticky top-0 flex flex-col bg-white border-r border-gray-200 transition-[width] duration-200 overflow-hidden`}>
+      <div className="px-3 py-4 border-b border-gray-100 flex items-center gap-2.5">
+        <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center shrink-0">
+          <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </div>
+        {!collapsed && (
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-900 truncate">{orgName}</p>
+            <p className="text-xs text-gray-400">2D</p>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          title={collapsed ? t('nav.expand') : t('nav.collapse')}
+          className="ml-auto shrink-0 p-1 rounded-md text-gray-400 hover:bg-gray-50 hover:text-gray-600"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            {collapsed ? <polyline points="9 18 15 12 9 6" /> : <polyline points="15 18 9 12 15 6" />}
+          </svg>
+        </button>
+      </div>
+
+      <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-0.5">
+        {segments.map(({ key, segment }) => {
+          const href = `${base}/${segment}`;
+          const active = pathname === href || pathname?.startsWith(href + '/');
+          return (
+            <Link
+              key={segment}
+              href={href}
+              title={collapsed ? t(`nav.${key}`) : undefined}
+              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition ${
+                collapsed ? 'justify-center' : ''
+              } ${active ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              <Icon name={key} />
+              {!collapsed && <span>{t(`nav.${key}`)}</span>}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div className="px-2 py-4 border-t border-gray-100 space-y-2">
+        {!collapsed && (
+          <div className="px-1 pb-1">
+            <LanguageSwitcher />
+          </div>
+        )}
+        <Link
+          href={`/org/${orgId}/select-app`}
+          title={collapsed ? t('nav.switchApp') : undefined}
+          className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 ${
+            collapsed ? 'justify-center' : ''
+          }`}
+        >
+          <Icon name="switchApp" />
+          {!collapsed && <span>{t('nav.switchApp')}</span>}
+        </Link>
+        {!collapsed && (
+          <div className="px-3">
+            <p className="text-sm font-medium text-gray-900 truncate">{userName}</p>
+            <p className="text-xs text-gray-400">{role === 'super_admin' ? 'Project Owner' : 'Org Admin'}</p>
+            <div className="mt-1.5">
+              <SyncStatusBadge />
+            </div>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={logout}
+          title={collapsed ? t('nav.signOut') : undefined}
+          className={`w-full flex items-center gap-2.5 text-sm py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition ${
+            collapsed ? 'justify-center px-0' : 'px-3'
+          }`}
+        >
+          <Icon name="logout" />
+          {!collapsed && <span>{t('nav.signOut')}</span>}
+        </button>
+      </div>
+    </aside>
+  );
+}

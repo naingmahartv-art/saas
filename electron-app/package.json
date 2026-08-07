@@ -1,0 +1,48 @@
+{
+  "name": "saas-platform-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Electron desktop shell for saas-platform — runs the existing Next.js app locally and opens it in a native window. Fully isolated from the web app's own package.json and node_modules.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "prepare-bundle": "node scripts/prepare-bundle.js",
+    "rebuild-native": "node scripts/rebuild-native.js",
+    "pack:mac": "node scripts/prepare-bundle.js && node scripts/rebuild-native.js --platform=darwin --arch=arm64 && electron-builder --mac --dir",
+    "dist:mac": "node scripts/prepare-bundle.js && node scripts/rebuild-native.js --platform=darwin --arch=arm64 && electron-builder --mac",
+    "pack:win": "node scripts/prepare-bundle.js && node scripts/rebuild-native.js --platform=win32 --arch=x64 && electron-builder --win --dir",
+    "dist:win": "node scripts/prepare-bundle.js && node scripts/rebuild-native.js --platform=win32 --arch=x64 && electron-builder --win"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.saasplatform.desktop",
+    "productName": "SaaS Platform",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "app-bundle",
+        "to": "app-bundle"
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}
