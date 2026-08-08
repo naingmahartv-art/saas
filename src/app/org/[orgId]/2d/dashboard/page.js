@@ -4,12 +4,16 @@ import { getDb } from '@/lib/db/index';
 import { organizations, users, subscriptions } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import DashboardView from './DashboardView';
+import { canAccessOrgApp } from '@/lib/auth/permissions.js';
 
 export default async function OrgDashboard({ params }) {
   const session = await getSession();
   const { orgId } = await params;
 
-  if (!session || (session.role !== 'super_admin' && (session.role !== 'org_admin' || session.orgId !== orgId))) {
+  if (!session || (session.role !== 'super_admin' && session.orgId !== orgId)) {
+    redirect('/login');
+  }
+  if (!canAccessOrgApp(session.role)) {
     redirect('/login');
   }
 
@@ -21,5 +25,5 @@ export default async function OrgDashboard({ params }) {
   ]);
   if (!org) redirect('/login');
 
-  return <DashboardView orgId={orgId} org={org} orgUsers={orgUsers} sub={sub} />;
+  return <DashboardView orgId={orgId} org={org} orgUsers={orgUsers} sub={sub} role={session.role} />;
 }

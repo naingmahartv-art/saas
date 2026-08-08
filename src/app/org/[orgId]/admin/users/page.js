@@ -5,6 +5,8 @@ import { organizations, users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import UserManager from './UserManager';
 
+export const dynamic = 'force-dynamic';
+
 export default async function OrgUsersPage({ params }) {
   const session = await getSession();
   const { orgId } = await params;
@@ -22,7 +24,7 @@ export default async function OrgUsersPage({ params }) {
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8">
-      <UserManager orgId={orgId} orgName={org.name} initialUsers={orgUsers} />
+      <UserManager orgId={orgId} orgName={org.name} initialUsers={orgUsers} currentUserRole={session.role} />
     </div>
   );
 }

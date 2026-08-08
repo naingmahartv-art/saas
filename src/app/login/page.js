@@ -21,8 +21,8 @@ export default function LoginPage() {
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Login failed'); return; }
       if (data.role === 'super_admin') router.push('/admin');
-      else if (data.role === 'org_admin') router.push(`/org/${data.orgId}/select-app`);
-      else router.push('/dashboard');
+      else if (data.role === 'org_admin') router.push(`/org/${data.orgId}/admin/dashboard`);
+      else router.push(`/org/${data.orgId}/2d/dashboard`);
     } catch {
       setError('Something went wrong');
     } finally {

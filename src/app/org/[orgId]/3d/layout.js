@@ -3,10 +3,9 @@ import { getSession } from '@/lib/auth';
 import { getDb } from '@/lib/db/index';
 import { organizations } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import AppPicker from './AppPicker.js';
 import { canAccessOrgApp } from '@/lib/auth/permissions.js';
 
-export default async function SelectAppPage({ params }) {
+export default async function ThreeDLayout({ children, params }) {
   const { orgId } = await params;
   const session = await getSession();
 
@@ -21,5 +20,5 @@ export default async function SelectAppPage({ params }) {
   const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
   if (!org) redirect('/login');
 
-  return <AppPicker orgId={orgId} orgName={org.name} userName={session.name} role={session.role} />;
+  return <div className="min-h-screen bg-gray-50">{children}</div>;
 }

@@ -5,6 +5,8 @@ import { eq, and, count, like, desc } from 'drizzle-orm';
 import { getSession } from '@/lib/auth';
 import { parseNumberExpression } from '@/lib/lottery/numberParser.js';
 import { randomUUID } from 'crypto';
+import { assertCashierWriteAllowed, getClientIp } from '@/lib/auth/permissions.js';
+import { logActivity } from '@/lib/db/log-activity.js';
 
 // GET /api/org/[orgId]/ledger — search saved ledger slips (defaults to the
 // active session if no onCount/ampm/onDate given), each with its raw voucher
@@ -115,6 +117,9 @@ export async function POST(request, { params }) {
 
   const db = getDb();
 
+  const lockError = await assertCashierWriteAllowed(session, orgId, db);
+  if (lockError) return NextResponse.json({ error: lockError.error }, { status: lockError.status });
+
   const [activeSession] = await db
     .select()
     .from(lotterySessions)
@@ -193,6 +198,18 @@ export async function POST(request, { params }) {
       createdAt: now,
     }))
   );
+
+  await logActivity(db, {
+    orgId,
+    userId: session.id,
+    userName: session.name,
+    userRole: session.role,
+    action: 'create',
+    entity: 'voucher',
+    entityId: srNo != null ? String(srNo) : null,
+    details: { srNo, onCount, ampm, agentName: agent.agentName, amount, tokens },
+    ipAddress: getClientIp(request),
+  });
 
   return NextResponse.json({ success: true, srNo });
 }

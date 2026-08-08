@@ -36,3 +36,4 @@ export const sm = active.sm;
 export const serieM = active.serieM;
 export const serieS = active.serieS;
 export const keyConfig = active.keyConfig;
+export const activityLogs = active.activityLogs;

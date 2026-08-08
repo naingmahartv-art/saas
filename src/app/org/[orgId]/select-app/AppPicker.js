@@ -1,6 +1,13 @@
 'use client';
 import { useRouter } from 'next/navigation';
 
+const ROLE_LABEL = {
+  super_admin: 'Project Owner',
+  org_admin: 'Org Admin',
+  supervisor: 'Supervisor',
+  cashier: 'Cashier',
+};
+
 const APPS = [
   {
     key: '2d',
@@ -22,7 +29,8 @@ const APPS = [
     label: '3D',
     subtitle: '3D ထီ',
     icon: '🎲',
-    available: false,
+    href: 'dashboard',
+    available: true,
   },
 ];
 
@@ -48,7 +56,7 @@ export default function AppPicker({ orgId, orgName, userName, role }) {
         <div className="flex items-center gap-4">
           <div className="text-right">
             <p className="text-sm font-medium text-gray-900">{userName}</p>
-            <p className="text-xs text-gray-400">{role === 'super_admin' ? 'Project Owner' : 'Org Admin'}</p>
+            <p className="text-xs text-gray-400">{ROLE_LABEL[role] || role}</p>
           </div>
           <button type="button" onClick={logout} className="btn-secondary text-sm py-1.5">
             Sign out

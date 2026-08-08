@@ -5,6 +5,8 @@ import { eq, and, desc } from 'drizzle-orm';
 import { getSession } from '@/lib/auth/session.js';
 import { randomUUID } from 'crypto';
 import { isValidSlotKey } from '@/lib/lottery/sessionSlots.js';
+import { getClientIp } from '@/lib/auth/permissions.js';
+import { logActivity } from '@/lib/db/log-activity.js';
 
 // GET /api/org/[orgId]/lucky — get lucky number(s) for a session
 export async function GET(request, { params }) {
@@ -79,6 +81,18 @@ export async function POST(request, { params }) {
   });
 
   const [inserted] = await db.select().from(luckyNo).where(eq(luckyNo.id, id));
+
+  await logActivity(db, {
+    orgId,
+    userId: session.id,
+    userName: session.name,
+    userRole: session.role,
+    action: 'create',
+    entity: 'lucky_no',
+    entityId: id,
+    details: { lNo, onDate, ampm },
+    ipAddress: getClientIp(request),
+  });
 
   return NextResponse.json({ success: true, luckyNo: inserted });
 }

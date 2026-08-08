@@ -3,18 +3,18 @@ import { getSession } from '@/lib/auth';
 import { getDb } from '@/lib/db/index';
 import { organizations, users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import Sidebar2D from '@/components/Sidebar2D';
-import { canAccessOrgApp } from '@/lib/auth/permissions.js';
+import { canAccessAdminPanel } from '@/lib/auth/permissions.js';
+import SidebarOrgAdmin from '@/components/SidebarOrgAdmin';
 
-export default async function TwoDLayout({ children, params }) {
+export default async function OrgAdminLayout({ children, params }) {
   const { orgId } = await params;
   const session = await getSession();
 
   if (!session || (session.role !== 'super_admin' && session.orgId !== orgId)) {
     redirect('/login');
   }
-  if (!canAccessOrgApp(session.role)) {
-    redirect('/login');
+  if (!canAccessAdminPanel(session.role)) {
+    redirect(`/org/${orgId}/2d/dashboard`);
   }
 
   const db = getDb();
@@ -29,7 +29,7 @@ export default async function TwoDLayout({ children, params }) {
 
   return (
     <div className="min-h-screen flex bg-gray-50">
-      <Sidebar2D orgId={orgId} orgName={org.name} userName={session.name} role={session.role} />
+      <SidebarOrgAdmin orgId={orgId} orgName={org.name} userName={session.name} role={session.role} />
       <main className="flex-1 min-w-0">{children}</main>
     </div>
   );

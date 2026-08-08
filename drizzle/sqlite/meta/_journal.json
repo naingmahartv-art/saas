@@ -36,6 +36,13 @@
       "when": 1785775067281,
       "tag": "0004_lg_voucher_token_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1786163532909,
+      "tag": "0005_cashier_roles_activity_logs",
+      "breakpoints": true
     }
   ]
 }

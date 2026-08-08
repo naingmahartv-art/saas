@@ -77,6 +77,10 @@ export default async function LedgerPage({ params }) {
     ]);
   }
 
+  // Cashiers can only create/edit vouchers while a session is active; every
+  // other role is unrestricted.
+  const canWrite = session.role !== 'cashier' || !!activeSession;
+
   return (
     <LedgerWorkspace
       orgId={orgId}
@@ -88,6 +92,7 @@ export default async function LedgerPage({ params }) {
       hotNumbers={hotList.map(n => n.num)}
       luckyNumber={luckyRow?.lNo ?? null}
       machines={machines}
+      canWrite={canWrite}
     />
   );
 }

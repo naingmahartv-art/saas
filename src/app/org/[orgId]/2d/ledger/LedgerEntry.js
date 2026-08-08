@@ -88,6 +88,7 @@ export default function LedgerEntry({
   onOpenHistory,
   onOpenSessionPicker,
   onOpenReports,
+  canWrite = true,
 }) {
   const { t } = useI18n();
   const [agentId, setAgentId] = useState('');
@@ -512,6 +513,10 @@ export default function LedgerEntry({
 
   async function handleSave(tokensToSave) {
     setError('');
+    if (!canWrite) {
+      setError(t('ledger.readOnlyNoSession'));
+      return;
+    }
     if (!activeSession) {
       setError(t('ledger.noActiveSession'));
       return;
@@ -1132,10 +1137,16 @@ export default function LedgerEntry({
               value={inputValue}
               onChange={handleChange}
               onKeyDown={handleKeyDown}
-              disabled={!activeSession || !agentId}
+              disabled={!activeSession || !agentId || !canWrite}
               placeholder={agentId ? `${t('ledger.enterNumbers')} (F3 / Alt+N)` : t('ledger.selectAgentFirst')}
               className="w-full px-3 py-2.5 text-base font-mono tracking-wide border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
             />
+
+            {!canWrite && (
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
+                {t('ledger.readOnlyNoSession')}
+              </p>
+            )}
 
             {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mt-3">{error}</p>}
             {!error && warnings.length > 0 && (
@@ -1148,7 +1159,7 @@ export default function LedgerEntry({
               <button
                 type="button"
                 onClick={() => handleSave(pendingTokens)}
-                disabled={saving || !activeSession || pendingTokens.length === 0}
+                disabled={saving || !activeSession || pendingTokens.length === 0 || !canWrite}
                 className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium py-2.5 rounded-lg transition"
               >
                 {saving ? t('common.saving') : editingId ? t('common.update') : `${t('common.save')} (F1)`}

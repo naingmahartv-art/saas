@@ -18,6 +18,7 @@ export default function LedgerWorkspace({
   hotNumbers,
   luckyNumber,
   machines,
+  canWrite,
 }) {
   const [totals, setTotals] = useState({});
   const [editingVoucher, setEditingVoucher] = useState(null);
@@ -72,6 +73,7 @@ export default function LedgerWorkspace({
         luckyNumber={luckyNumber}
         totals={totals}
         editingVoucher={editingVoucher}
+        canWrite={canWrite}
         onSaved={() => {
           setEditingVoucher(null);
           refreshTotals();
@@ -114,6 +116,7 @@ export default function LedgerWorkspace({
               <LedgerHistory
                 orgId={orgId}
                 activeSession={activeSession}
+                canWrite={canWrite}
                 onEdit={slip => {
                   setEditingVoucher(slip);
                   setIsHistoryOpen(false);

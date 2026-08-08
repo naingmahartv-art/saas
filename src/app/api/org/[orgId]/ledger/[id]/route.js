@@ -5,6 +5,8 @@ import { eq, and } from 'drizzle-orm';
 import { getSession } from '@/lib/auth';
 import { parseNumberExpression } from '@/lib/lottery/numberParser.js';
 import { randomUUID } from 'crypto';
+import { assertCashierWriteAllowed, getClientIp } from '@/lib/auth/permissions.js';
+import { logActivity } from '@/lib/db/log-activity.js';
 
 async function loadSlip(db, orgId, id) {
   const [slip] = await db
@@ -45,6 +47,10 @@ export async function PUT(request, { params }) {
   }
 
   const db = getDb();
+
+  const lockError = await assertCashierWriteAllowed(session, orgId, db);
+  if (lockError) return NextResponse.json({ error: lockError.error }, { status: lockError.status });
+
   const slip = await loadSlip(db, orgId, id);
   if (!slip) {
     return NextResponse.json({ error: 'Ledger entry not found' }, { status: 404 });
@@ -108,6 +114,18 @@ export async function PUT(request, { params }) {
 
   await db.update(lg).set({ amount }).where(and(eq(lg.orgId, orgId), eq(lg.id, id)));
 
+  await logActivity(db, {
+    orgId,
+    userId: session.id,
+    userName: session.name,
+    userRole: session.role,
+    action: 'edit',
+    entity: 'voucher',
+    entityId: String(slip.srNo),
+    details: { srNo: slip.srNo, onCount: slip.onCount, ampm: slip.ampm, amount, tokens },
+    ipAddress: getClientIp(request),
+  });
+
   return NextResponse.json({ success: true });
 }
 
@@ -122,6 +140,10 @@ export async function DELETE(request, { params }) {
   }
 
   const db = getDb();
+
+  const lockError = await assertCashierWriteAllowed(session, orgId, db);
+  if (lockError) return NextResponse.json({ error: lockError.error }, { status: lockError.status });
+
   const slip = await loadSlip(db, orgId, id);
   if (!slip) {
     return NextResponse.json({ error: 'Ledger entry not found' }, { status: 404 });
@@ -142,6 +164,18 @@ export async function DELETE(request, { params }) {
   ));
 
   await db.delete(lg).where(and(eq(lg.orgId, orgId), eq(lg.id, id)));
+
+  await logActivity(db, {
+    orgId,
+    userId: session.id,
+    userName: session.name,
+    userRole: session.role,
+    action: 'delete',
+    entity: 'voucher',
+    entityId: String(slip.srNo),
+    details: { srNo: slip.srNo, onCount: slip.onCount, ampm: slip.ampm, agentName: slip.agentName, amount: slip.amount },
+    ipAddress: getClientIp(request),
+  });
 
   return NextResponse.json({ success: true });
 }

@@ -122,7 +122,7 @@ export default function OrgManager({ initialOrgs, plans }) {
                   <span className={org.status === 'active' ? 'badge-active' : 'badge-suspended'}>
                     {org.status}
                   </span>
-                  <a href={`/org/${org.id}/2d/users`} className="btn-secondary text-xs py-1 px-3">Users</a>
+                  <a href={`/org/${org.id}/admin/users`} className="btn-secondary text-xs py-1 px-3">Users</a>
                   <button onClick={() => deleteOrg(org.id)} className="btn-danger text-xs py-1 px-3">Delete</button>
                 </div>
               </div>

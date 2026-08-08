@@ -85,18 +85,24 @@ function Icon({ name, className = 'w-[18px] h-[18px]' }) {
   );
 }
 
+// Full app-level nav — every role (org_admin, supervisor, cashier,
+// super_admin) gets all of these; org/user management lives in the separate
+// admin panel now, not here.
+const ROLE_LABEL = {
+  super_admin: 'Project Owner',
+  org_admin: 'Org Admin',
+  supervisor: 'Supervisor',
+  cashier: 'Cashier',
+};
+
 const NAV_SEGMENTS = [
   { key: 'dashboard', segment: 'dashboard' },
   { key: 'session',   segment: 'session' },
   { key: 'agents',    segment: 'agents' },
   { key: 'ledger',    segment: 'ledger' },
   { key: 'results',   segment: 'results' },
-];
-
-const ADMIN_SEGMENTS = [
-  { key: 'balance',  segment: 'balance' },
-  { key: 'users',    segment: 'users' },
-  { key: 'settings', segment: 'settings' },
+  { key: 'balance',   segment: 'balance' },
+  { key: 'settings',  segment: 'settings' },
 ];
 
 export default function Sidebar2D({ orgId, orgName, userName, role }) {
@@ -126,8 +132,9 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
   }
 
   const base = `/org/${orgId}/2d`;
-  const canManage = role === 'org_admin' || role === 'super_admin';
-  const segments = canManage ? [...NAV_SEGMENTS, ...ADMIN_SEGMENTS] : NAV_SEGMENTS;
+  const canAccessAdmin = role === 'org_admin' || role === 'super_admin';
+  // Electron builds are the app-only kiosk experience — no admin panel link.
+  const showAdminLink = canAccessAdmin && process.env.NEXT_PUBLIC_APP_MODE !== 'electron';
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -161,7 +168,7 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-0.5">
-        {segments.map(({ key, segment }) => {
+        {NAV_SEGMENTS.map(({ key, segment }) => {
           const href = `${base}/${segment}`;
           const active = pathname === href || pathname?.startsWith(href + '/');
           return (
@@ -186,6 +193,18 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
             <LanguageSwitcher />
           </div>
         )}
+        {showAdminLink && (
+          <Link
+            href={`/org/${orgId}/admin/dashboard`}
+            title={collapsed ? t('nav.adminPanel') : undefined}
+            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 ${
+              collapsed ? 'justify-center' : ''
+            }`}
+          >
+            <Icon name="users" />
+            {!collapsed && <span>{t('nav.adminPanel')}</span>}
+          </Link>
+        )}
         <Link
           href={`/org/${orgId}/select-app`}
           title={collapsed ? t('nav.switchApp') : undefined}
@@ -199,7 +218,7 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
         {!collapsed && (
           <div className="px-3">
             <p className="text-sm font-medium text-gray-900 truncate">{userName}</p>
-            <p className="text-xs text-gray-400">{role === 'super_admin' ? 'Project Owner' : 'Org Admin'}</p>
+            <p className="text-xs text-gray-400">{ROLE_LABEL[role] || role}</p>
             <div className="mt-1.5">
               <SyncStatusBadge />
             </div>

@@ -13,7 +13,8 @@ export default function NavBar({ title, userName, role, orgId }) {
   const roleLabel = {
     super_admin: 'Project Owner',
     org_admin: 'Org Admin',
-    user: 'Member',
+    supervisor: 'Supervisor',
+    cashier: 'Cashier',
   }[role] || role;
 
   return (

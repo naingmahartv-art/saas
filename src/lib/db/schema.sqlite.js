@@ -22,8 +22,10 @@ export const users = sqliteTable('users', {
   name: text('name').notNull(),
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
-  // roles: 'super_admin' | 'org_admin' | 'user'
-  role: text('role').notNull().default('user'),
+  // roles: 'super_admin' | 'org_admin' | 'supervisor' | 'cashier'
+  role: text('role').notNull().default('cashier'),
+  // 'active' | 'suspended'
+  status: text('status').notNull().default('active'),
   orgId: text('org_id').references(() => organizations.id, { onDelete: 'cascade' }),
   createdAt: integer('created_at', { mode: 'number' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'number' }).notNull().default(nowMs),
@@ -327,4 +329,22 @@ export const keyConfig = sqliteTable('key_config', {
   orgId: text('org_id').notNull(),
   keyValue: text('key_value').notNull(),
   updatedAt: integer('updated_at', { mode: 'number' }).notNull().default(nowMs),
+});
+
+// ─── Audit log ────────────────────────────────────────────────────────────────
+
+/** Append-only activity/audit trail — no updatedAt (rows are never edited), so
+ *  intentionally excluded from the two-way sync bump/trigger machinery. */
+export const activityLogs = sqliteTable('activity_logs', {
+  id: text('id').primaryKey(),
+  orgId: text('org_id').notNull(),
+  userId: text('user_id').notNull(),
+  userName: text('user_name').notNull(),
+  userRole: text('user_role').notNull(),
+  action: text('action').notNull(),
+  entity: text('entity').notNull(),
+  entityId: text('entity_id'),
+  details: text('details'),
+  ipAddress: text('ip_address'),
+  createdAt: integer('created_at', { mode: 'number' }).notNull(),
 });

@@ -9,8 +9,10 @@ import { getTableName } from 'drizzle-orm';
 import fs from 'fs';
 import * as pgSchema from '../src/lib/db/schema.pg.js';
 
+// Only tables with an updatedAt column get sync/bump triggers — append-only
+// audit tables (activity_logs) have no updatedAt and are excluded (see sync.js).
 const tableNames = Object.values(pgSchema)
-  .filter((v) => v && typeof v === 'object' && v[Symbol.for('drizzle:IsDrizzleTable')] === true)
+  .filter((v) => v && typeof v === 'object' && v[Symbol.for('drizzle:IsDrizzleTable')] === true && v.updatedAt)
   .map((t) => getTableName(t));
 
 function sqliteSql() {

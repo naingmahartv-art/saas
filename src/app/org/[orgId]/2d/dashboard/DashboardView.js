@@ -2,9 +2,10 @@
 import Link from 'next/link';
 import { useI18n } from '@/lib/i18n/index.js';
 
-export default function DashboardView({ orgId, org, orgUsers, sub }) {
+export default function DashboardView({ orgId, org, orgUsers, sub, role }) {
   const { t } = useI18n();
   const isAdvance = org.plan === 'advance';
+  const canManageUsers = role === 'org_admin' || role === 'super_admin';
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8">
@@ -54,13 +55,14 @@ export default function DashboardView({ orgId, org, orgUsers, sub }) {
         </div>
 
         {/* Quick actions */}
-        <div className="card">
-          <h2 className="font-semibold text-gray-900 mb-4">{t('dashboard.manage')}</h2>
-          <div className="flex gap-3">
-            <Link href={`/org/${orgId}/2d/users`} className="btn-primary">{t('dashboard.manageUsers')}</Link>
-            <Link href={`/org/${orgId}/2d/users?create=1`} className="btn-secondary">{t('dashboard.addUser')}</Link>
+        {canManageUsers && (
+          <div className="card">
+            <h2 className="font-semibold text-gray-900 mb-4">{t('dashboard.manage')}</h2>
+            <div className="flex gap-3">
+              <Link href={`/org/${orgId}/admin/users`} className="btn-primary">{t('dashboard.manageUsers')}</Link>
+            </div>
           </div>
-        </div>
+        )}
     </div>
   );
 }

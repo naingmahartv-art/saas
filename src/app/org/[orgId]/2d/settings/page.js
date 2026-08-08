@@ -4,6 +4,7 @@ import { eq, and, desc } from 'drizzle-orm';
 import { getSession } from '@/lib/auth/session.js';
 import { redirect } from 'next/navigation';
 import SettingsPanel from './SettingsPanel.js';
+import { canAccessOrgApp } from '@/lib/auth/permissions.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,10 +12,10 @@ export default async function SettingsPage({ params }) {
   const { orgId } = await params;
   const session = await getSession();
 
-  if (!session || (session.role !== 'super_admin' && (session.role !== 'org_admin' || session.orgId !== orgId))) {
-    if (session && session.role === 'user') {
-      redirect(`/org/${orgId}`);
-    }
+  if (!session || (session.role !== 'super_admin' && session.orgId !== orgId)) {
+    redirect('/login');
+  }
+  if (!canAccessOrgApp(session.role)) {
     redirect('/login');
   }
 

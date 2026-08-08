@@ -22,8 +22,10 @@ export const users = pgTable('users', {
   name: text('name').notNull(),
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
-  // roles: 'super_admin' | 'org_admin' | 'user'
-  role: text('role').notNull().default('user'),
+  // roles: 'super_admin' | 'org_admin' | 'supervisor' | 'cashier'
+  role: text('role').notNull().default('cashier'),
+  // 'active' | 'suspended'
+  status: text('status').notNull().default('active'),
   orgId: text('org_id').references(() => organizations.id, { onDelete: 'cascade' }),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull().default(nowMs),
@@ -327,4 +329,22 @@ export const keyConfig = pgTable('key_config', {
   orgId: text('org_id').notNull(),
   keyValue: text('key_value').notNull(),
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull().default(nowMs),
+});
+
+// ─── Audit log ────────────────────────────────────────────────────────────────
+
+/** Append-only activity/audit trail — no updatedAt (rows are never edited), so
+ *  intentionally excluded from the two-way sync bump/trigger machinery. */
+export const activityLogs = pgTable('activity_logs', {
+  id: text('id').primaryKey(),
+  orgId: text('org_id').notNull(),
+  userId: text('user_id').notNull(),
+  userName: text('user_name').notNull(),
+  userRole: text('user_role').notNull(),
+  action: text('action').notNull(),      // 'create' | 'edit' | 'delete' | 'login' | 'logout' | 'view' | 'suspend'
+  entity: text('entity').notNull(),      // 'voucher' | 'session' | 'agent' | 'user' | 'lucky_no' | etc.
+  entityId: text('entity_id'),
+  details: text('details'),              // JSON string with before/after values
+  ipAddress: text('ip_address'),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
 });

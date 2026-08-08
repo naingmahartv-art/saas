@@ -13,6 +13,7 @@ export default function SessionSetup({ orgId, current, machines }) {
   const [machineId, setMachineId] = useState(current?.machineId ?? machines[0]?.machineId ?? 1);
   const [active, setActive] = useState(current);
   const [saving, setSaving] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [msg, setMsg] = useState('');
   const [msgIsError, setMsgIsError] = useState(false);
 
@@ -36,6 +37,26 @@ export default function SessionSetup({ orgId, current, machines }) {
     }
   }
 
+  async function handleClose() {
+    if (!confirm(t('session.closeConfirm'))) return;
+    setClosing(true);
+    setMsg('');
+    try {
+      const res = await fetch(`/api/org/${orgId}/session`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'close' }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setMsg(data.error || t('session.saveFailed')); setMsgIsError(true); return; }
+      setActive(null);
+      setMsg(t('session.closedSuccess'));
+      setMsgIsError(false);
+    } finally {
+      setClosing(false);
+    }
+  }
+
   const selectedMachine = machines.find(m => m.machineId == machineId) || machines[0];
 
   return (
@@ -48,19 +69,31 @@ export default function SessionSetup({ orgId, current, machines }) {
       {/* Current session banner */}
       {active && (
         <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 mb-6">
-          <p className="text-xs text-indigo-500 font-medium uppercase tracking-wide mb-1">{t('session.currentSession')}</p>
-          <div className="flex flex-wrap gap-4 text-sm font-medium text-indigo-900">
-            <span>{t(`session.${SLOT_LABEL_KEY[active.ampm] || 'slot0900'}`)}</span>
-            <span>•</span>
-            <span>{active.onDate}</span>
-            <span>•</span>
-            <span>{t('session.machineLabel', { id: active.machineId })}</span>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs text-indigo-500 font-medium uppercase tracking-wide mb-1">{t('session.currentSession')}</p>
+              <div className="flex flex-wrap gap-4 text-sm font-medium text-indigo-900">
+                <span>{t(`session.${SLOT_LABEL_KEY[active.ampm] || 'slot0900'}`)}</span>
+                <span>•</span>
+                <span>{active.onDate}</span>
+                <span>•</span>
+                <span>{t('session.machineLabel', { id: active.machineId })}</span>
+              </div>
+              {selectedMachine && (
+                <p className="text-xs text-indigo-400 mt-1">
+                  {t('session.serialRange', { min: selectedMachine.minSerial, max: selectedMachine.maxSerial })}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleClose}
+              disabled={closing}
+              className="shrink-0 px-3 py-1.5 text-xs font-medium border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition disabled:opacity-50"
+            >
+              {closing ? t('common.saving') : t('session.closeSession')}
+            </button>
           </div>
-          {selectedMachine && (
-            <p className="text-xs text-indigo-400 mt-1">
-              {t('session.serialRange', { min: selectedMachine.minSerial, max: selectedMachine.maxSerial })}
-            </p>
-          )}
         </div>
       )}
 

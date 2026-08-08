@@ -31,7 +31,7 @@ function buildMessageText(slips, activeSession, t) {
   return lines.join('\n');
 }
 
-export default function LedgerHistory({ orgId, activeSession, onEdit, onDeleted, refreshSignal, onClose }) {
+export default function LedgerHistory({ orgId, activeSession, onEdit, onDeleted, refreshSignal, onClose, canWrite = true }) {
   const { t } = useI18n();
   const [slips, setSlips] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -268,19 +268,23 @@ export default function LedgerHistory({ orgId, activeSession, onEdit, onDeleted,
                     >
                       {expanded === slip.id ? t('common.close') : t('ledger.historyDetails')}
                     </button>
-                    <button
-                      onClick={() => onEdit && onEdit(slip)}
-                      className="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-1 rounded hover:bg-indigo-50 transition mr-1"
-                    >
-                      {t('ledger.historyEditAction')}
-                    </button>
-                    <button
-                      onClick={() => handleDelete(slip)}
-                      disabled={deletingId === slip.id}
-                      className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded hover:bg-red-50 transition disabled:opacity-50"
-                    >
-                      {t('common.delete')}
-                    </button>
+                    {canWrite && (
+                      <>
+                        <button
+                          onClick={() => onEdit && onEdit(slip)}
+                          className="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-1 rounded hover:bg-indigo-50 transition mr-1"
+                        >
+                          {t('ledger.historyEditAction')}
+                        </button>
+                        <button
+                          onClick={() => handleDelete(slip)}
+                          disabled={deletingId === slip.id}
+                          className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded hover:bg-red-50 transition disabled:opacity-50"
+                        >
+                          {t('common.delete')}
+                        </button>
+                      </>
+                    )}
                   </td>
                 </tr>
                 {expanded === slip.id && (

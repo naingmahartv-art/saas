@@ -22,7 +22,10 @@ const pgOutbox = pgTable('_sync_outbox', {
 function buildTableMap(schemaModule) {
   const map = {};
   for (const v of Object.values(schemaModule)) {
-    if (v && typeof v === 'object' && v[Symbol.for('drizzle:IsDrizzleTable')] === true) {
+    // Only tables with an updatedAt column participate in two-way sync — the
+    // push/pull conflict resolution below compares on it. Append-only audit
+    // tables (activityLogs) are intentionally excluded.
+    if (v && typeof v === 'object' && v[Symbol.for('drizzle:IsDrizzleTable')] === true && v.updatedAt) {
       map[getTableName(v)] = v;
     }
   }
