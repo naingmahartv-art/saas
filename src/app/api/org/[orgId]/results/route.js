@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db/index.js';
-import { luckyNo, lgDetail, lg, rates } from '@/lib/db/schema.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { orgSessionDoc, orgSessionVouchersCol, orgRatesDoc, sessionId as buildSessionId } from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth/session.js';
+import { isBeforeCutover, getLegacyResults } from '@/lib/db/legacy-reports.js';
 
 const pad2 = (n) => String(n).padStart(2, '0');
 const ALL_NUMBERS = Array.from({ length: 100 }, (_, i) => pad2(i));
 
-// GET /api/org/[orgId]/results — calculate payout results for a session
+// GET /api/org/[orgId]/results — calculate payout results for a session.
+// The session doc already maintains a `totals` aggregate (kept up to date by
+// every voucher write), but per-agent breakdowns aren't a maintained
+// aggregate — this reads the session's vouchers once and aggregates in JS,
+// same shape as the original Postgres route's app-side aggregation.
 export async function GET(request, { params }) {
   const { orgId } = await params;
   const session = await getSession();
@@ -29,38 +32,28 @@ export async function GET(request, { params }) {
     return NextResponse.json({ error: 'onCount must be a number' }, { status: 400 });
   }
 
-  const db = getDb();
+  if (isBeforeCutover(onDate)) {
+    const results = await getLegacyResults(orgId, { onCount, ampm, onDate });
+    return NextResponse.json(results);
+  }
 
-  const [luckyRow] = await db
-    .select()
-    .from(luckyNo)
-    .where(and(eq(luckyNo.orgId, orgId), eq(luckyNo.onDate, onDate), eq(luckyNo.ampm, ampm)))
-    .orderBy(desc(luckyNo.createdAt))
-    .limit(1);
+  const sid = buildSessionId(onDate, ampm, onCount);
 
-  const lNo = luckyRow?.lNo ?? null;
+  const [sessionSnap, vouchersSnap, rateSnap] = await Promise.all([
+    orgSessionDoc(orgId, sid).get(),
+    orgSessionVouchersCol(orgId, sid).get(),
+    orgRatesDoc(orgId).get(),
+  ]);
 
-  const details = await db
-    .select()
-    .from(lgDetail)
-    .where(and(eq(lgDetail.orgId, orgId), eq(lgDetail.onCount, onCount), eq(lgDetail.ampm, ampm)));
+  const lNo = sessionSnap.exists ? (sessionSnap.data().luckyNumber ?? null) : null;
+  const num1Rate = rateSnap.exists ? (rateSnap.data().num1Rate ?? 0) : 0;
 
-  const [rateRow] = await db
-    .select()
-    .from(rates)
-    .where(eq(rates.orgId, orgId))
-    .limit(1);
+  const vouchers = vouchersSnap.docs.map(d => d.data());
+  const agentNames = [...new Set(vouchers.map(v => v.agentName))].sort();
 
-  const num1Rate = rateRow?.num1Rate ?? 0;
+  // Flatten every voucher's detail lines for per-number/per-agent aggregation.
+  const details = vouchers.flatMap(v => (v.details || []).map(d => ({ ...d, agentName: v.agentName })));
 
-  const headers = await db
-    .select()
-    .from(lg)
-    .where(and(eq(lg.orgId, orgId), eq(lg.onCount, onCount), eq(lg.ampm, ampm)));
-
-  const agentNames = [...new Set(headers.map(h => h.agentName))].sort();
-
-  // Per-number totals
   const numberTotals = new Map();
   for (const d of details) {
     numberTotals.set(d.num1, (numberTotals.get(d.num1) || 0) + d.value);

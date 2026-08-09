@@ -1,6 +1,5 @@
 'use client';
 import { useRouter } from 'next/navigation';
-import SyncStatusBadge from '@/components/SyncStatusBadge';
 
 export default function NavBar({ title, userName, role, orgId }) {
   const router = useRouter();
@@ -28,7 +27,6 @@ export default function NavBar({ title, userName, role, orgId }) {
         <span className="font-semibold text-gray-900">{title}</span>
       </div>
       <div className="flex items-center gap-4">
-        <SyncStatusBadge />
         <div className="text-right">
           <p className="text-sm font-medium text-gray-900">{userName}</p>
           <p className="text-xs text-gray-400">{roleLabel}</p>

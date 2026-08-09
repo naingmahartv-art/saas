@@ -1,14 +1,18 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db/index.js';
-import { lgDetail, lotterySessions } from '@/lib/db/schema.js';
-import { eq, and, sql } from 'drizzle-orm';
+import { orgSessionDoc, orgSessionVouchersCol, sessionId as buildSessionId } from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth';
+import { getActiveSession } from '@/lib/auth/permissions.js';
 
 // GET /api/org/[orgId]/ledger/totals?onCount=&ampm=
-//   -> { totals: { [num]: total } } for every number with activity this session
+//   -> { totals: { [num]: total } } — a single read of the session doc's
+//      maintained `totals` map (kept up to date transactionally by every
+//      voucher save/edit/delete — never recomputed by scanning vouchers).
 // GET .../totals?onCount=&ampm=&num=62
-//   -> { byAgent: [{ agentName, total }] } — per-agent breakdown for one number
-//      (feeds the "Checking Agent" overlay)
+//   -> { byAgent: [{ agentName, total }] } — per-agent breakdown for one
+//      number (feeds the "Checking Agent" overlay); this one *does* need to
+//      scan the session's vouchers, since per-agent breakdown isn't a
+//      maintained aggregate — it's a rare, manually-triggered lookup, not
+//      the hot path.
 // Defaults to the active session when onCount/ampm aren't given.
 export async function GET(request, { params }) {
   const { orgId } = await params;
@@ -18,53 +22,37 @@ export async function GET(request, { params }) {
   }
 
   const { searchParams } = new URL(request.url);
-  let onCount = searchParams.get('onCount');
-  let ampm = searchParams.get('ampm');
+  const onCount = searchParams.get('onCount');
+  const ampm = searchParams.get('ampm');
+  const onDate = searchParams.get('onDate');
   const num = searchParams.get('num');
 
-  const db = getDb();
-
-  if (!onCount || !ampm) {
-    const [activeSession] = await db
-      .select()
-      .from(lotterySessions)
-      .where(and(eq(lotterySessions.orgId, orgId), eq(lotterySessions.isActive, 1)))
-      .limit(1);
-    if (!activeSession) {
-      return NextResponse.json(num ? { byAgent: [] } : { totals: {} });
-    }
-    onCount = activeSession.onCount;
-    ampm = activeSession.ampm;
+  // Callers today only ever ask for the currently active session and don't
+  // pass onDate (matching the original Postgres route's behavior, which
+  // didn't disambiguate by date either) — resolve via onDate+ampm+onCount
+  // only when all three are explicitly given, otherwise use the active session.
+  let sid;
+  if (onCount && ampm && onDate) {
+    sid = buildSessionId(onDate, ampm, onCount);
   } else {
-    onCount = parseInt(onCount);
+    const active = await getActiveSession(orgId);
+    if (!active) return NextResponse.json(num ? { byAgent: [] } : { totals: {} });
+    sid = active.id;
   }
 
   if (num) {
-    const rows = await db
-      .select({ agentName: lgDetail.agentName, total: sql`sum(${lgDetail.value})`.mapWith(Number) })
-      .from(lgDetail)
-      .where(and(
-        eq(lgDetail.orgId, orgId),
-        eq(lgDetail.onCount, onCount),
-        eq(lgDetail.ampm, ampm),
-        eq(lgDetail.num1, num),
-      ))
-      .groupBy(lgDetail.agentName);
-    return NextResponse.json({ byAgent: rows });
+    const snap = await orgSessionVouchersCol(orgId, sid).get();
+    const byAgentMap = {};
+    for (const doc of snap.docs) {
+      const v = doc.data();
+      const matchTotal = (v.details || []).filter(d => d.num1 === num).reduce((s, d) => s + d.value, 0);
+      if (matchTotal > 0) byAgentMap[v.agentName] = (byAgentMap[v.agentName] || 0) + matchTotal;
+    }
+    const byAgent = Object.entries(byAgentMap).map(([agentName, total]) => ({ agentName, total }));
+    return NextResponse.json({ byAgent });
   }
 
-  const rows = await db
-    .select({ num1: lgDetail.num1, total: sql`sum(${lgDetail.value})`.mapWith(Number) })
-    .from(lgDetail)
-    .where(and(
-      eq(lgDetail.orgId, orgId),
-      eq(lgDetail.onCount, onCount),
-      eq(lgDetail.ampm, ampm),
-    ))
-    .groupBy(lgDetail.num1);
-
-  const totals = {};
-  for (const row of rows) totals[row.num1] = row.total;
-
+  const sessionSnap = await orgSessionDoc(orgId, sid).get();
+  const totals = sessionSnap.exists ? (sessionSnap.data().totals || {}) : {};
   return NextResponse.json({ totals });
 }

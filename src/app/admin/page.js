@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
-import { getDb } from '@/lib/db/index';
-import { organizations, users } from '@/lib/db/schema';
+import { orgsCol, usersCol } from '@/lib/db/firestore.js';
 import NavBar from '@/components/NavBar';
 import Link from 'next/link';
 
@@ -9,9 +8,9 @@ export default async function AdminDashboard() {
   const session = await getSession();
   if (!session || session.role !== 'super_admin') redirect('/login');
 
-  const db = getDb();
-  const orgs = await db.select().from(organizations);
-  const allUsers = await db.select().from(users);
+  const [orgsSnap, usersSnap] = await Promise.all([orgsCol().get(), usersCol().get()]);
+  const orgs = orgsSnap.docs.map(d => d.data());
+  const allUsers = usersSnap.docs.map(d => d.data());
 
   const stats = {
     totalOrgs: orgs.length,

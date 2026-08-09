@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db/index.js';
-import { balance, receive } from '@/lib/db/schema.js';
-import { eq, and, desc } from 'drizzle-orm';
-import { getSession } from '@/lib/auth/session.js';
 import { randomUUID } from 'crypto';
+import { orgBalanceCol, orgReceiveCol } from '@/lib/db/firestore.js';
+import { getSession } from '@/lib/auth/session.js';
+
+const byDateDesc = (a, b) => (a.onDate < b.onDate ? 1 : a.onDate > b.onDate ? -1 : 0);
 
 // GET /api/org/[orgId]/balance — agent balance summary
 export async function GET(request, { params }) {
@@ -16,27 +16,13 @@ export async function GET(request, { params }) {
   const { searchParams } = new URL(request.url);
   const agentName = searchParams.get('agentName');
 
-  const db = getDb();
+  const [balanceSnap, receiveSnap] = await Promise.all([
+    agentName ? orgBalanceCol(orgId).where('agentName', '==', agentName).get() : orgBalanceCol(orgId).get(),
+    agentName ? orgReceiveCol(orgId).where('agentName', '==', agentName).get() : orgReceiveCol(orgId).get(),
+  ]);
 
-  const balances = await db
-    .select()
-    .from(balance)
-    .where(
-      agentName
-        ? and(eq(balance.orgId, orgId), eq(balance.agentName, agentName))
-        : eq(balance.orgId, orgId)
-    )
-    .orderBy(desc(balance.onDate));
-
-  const receives = await db
-    .select()
-    .from(receive)
-    .where(
-      agentName
-        ? and(eq(receive.orgId, orgId), eq(receive.agentName, agentName))
-        : eq(receive.orgId, orgId)
-    )
-    .orderBy(desc(receive.onDate));
+  const balances = balanceSnap.docs.map(d => d.data()).sort(byDateDesc);
+  const receives = receiveSnap.docs.map(d => d.data()).sort(byDateDesc);
 
   return NextResponse.json({ balances, receives });
 }
@@ -61,19 +47,11 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: 'Date is required' }, { status: 400 });
   }
 
-  const db = getDb();
   const id = randomUUID();
   const now = Date.now();
+  const balanceRow = { id, orgId, agentName: agentName.trim(), amount: parseFloat(amount), onDate, createdAt: now };
 
-  await db.insert(balance).values({
-    id,
-    orgId,
-    agentName: agentName.trim(),
-    amount: parseFloat(amount),
-    onDate,
-    createdAt: now,
-  });
+  await orgBalanceCol(orgId).doc(id).set(balanceRow);
 
-  const [balanceRow] = await db.select().from(balance).where(eq(balance.id, id));
   return NextResponse.json({ success: true, balance: balanceRow });
 }

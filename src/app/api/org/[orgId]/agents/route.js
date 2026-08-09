@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db/index.js';
-import { agents } from '@/lib/db/schema.js';
-import { eq, and, asc, sql } from 'drizzle-orm';
-import { getSession } from '@/lib/auth/session.js';
 import { randomUUID } from 'crypto';
+import { orgAgentsCol } from '@/lib/db/firestore.js';
+import { getSession } from '@/lib/auth/session.js';
 
 // GET /api/org/[orgId]/agents — list all agents for the org
 export async function GET(request, { params }) {
@@ -13,12 +11,8 @@ export async function GET(request, { params }) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const db = getDb();
-  const agentsList = await db
-    .select()
-    .from(agents)
-    .where(eq(agents.orgId, orgId))
-    .orderBy(asc(agents.agentName));
+  const snap = await orgAgentsCol(orgId).orderBy('agentName', 'asc').get();
+  const agentsList = snap.docs.map(d => d.data());
 
   return NextResponse.json({ agents: agentsList });
 }
@@ -37,25 +31,17 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: 'Agent name is required' }, { status: 400 });
   }
 
-  const db = getDb();
-
-  // Case-insensitive uniqueness check per org
-  const [existing] = await db
-    .select({ id: agents.id })
-    .from(agents)
-    .where(
-      sql`${agents.orgId} = ${orgId} AND LOWER(${agents.agentName}) = LOWER(${agentName.trim()})`
-    )
-    .limit(1);
-
-  if (existing) {
+  // Case-insensitive uniqueness check per org — no server-side LOWER() index in
+  // Firestore, so compare against the (small, per-org) agent list in JS.
+  const existingSnap = await orgAgentsCol(orgId).get();
+  const nameLower = agentName.trim().toLowerCase();
+  if (existingSnap.docs.some(d => d.data().agentName?.toLowerCase() === nameLower)) {
     return NextResponse.json({ error: 'AgentName Already Exist' }, { status: 409 });
   }
 
   const id = randomUUID();
   const now = Date.now();
-
-  await db.insert(agents).values({
+  const agent = {
     id,
     orgId,
     agentName: agentName.trim(),
@@ -64,8 +50,9 @@ export async function POST(request, { params }) {
     commission: parseFloat(commission) || 0,
     rate: parseFloat(rate) || 0,
     createdAt: now,
-  });
+  };
 
-  const [agent] = await db.select().from(agents).where(eq(agents.id, id));
+  await orgAgentsCol(orgId).doc(id).set(agent);
+
   return NextResponse.json({ agent }, { status: 201 });
 }

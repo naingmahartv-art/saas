@@ -6,6 +6,7 @@ import { useI18n } from '@/lib/i18n/index.js';
 const NAV = [
   { key: 'dashboard', segment: 'dashboard', label: 'nav.dashboard' },
   { key: 'users', segment: 'users', label: 'nav.users' },
+  { key: 'password-requests', segment: 'password-requests', label: 'nav.passwordRequests' },
   { key: 'logs', segment: 'logs', label: 'nav.logs' },
 ];
 

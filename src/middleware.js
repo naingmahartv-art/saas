@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from './lib/auth.js';
 
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/suspended'];
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/auth/forgot-password', '/suspended'];
 
 const ADMIN_ROLES = ['super_admin', 'org_admin'];
 const ALL_ROLES = ['super_admin', 'org_admin', 'supervisor', 'cashier'];

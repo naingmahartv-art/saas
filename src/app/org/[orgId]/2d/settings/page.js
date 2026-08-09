@@ -1,6 +1,5 @@
-import { getDb } from '@/lib/db/index.js';
-import { organizations, lotterySessions, rates, limits, hotNumbers, notBuyNumbers } from '@/lib/db/schema.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { orgDoc, orgRatesDoc, orgRestrictionDoc } from '@/lib/db/firestore.js';
+import { getActiveSession } from '@/lib/auth/permissions.js';
 import { getSession } from '@/lib/auth/session.js';
 import { redirect } from 'next/navigation';
 import SettingsPanel from './SettingsPanel.js';
@@ -19,37 +18,28 @@ export default async function SettingsPage({ params }) {
     redirect('/login');
   }
 
-  const db = getDb();
-
-  const [[org], [activeSession], [ratesRow], [limitsRow]] = await Promise.all([
-    db.select().from(organizations).where(eq(organizations.id, orgId)).limit(1),
-    db
-      .select()
-      .from(lotterySessions)
-      .where(and(eq(lotterySessions.orgId, orgId), eq(lotterySessions.isActive, 1)))
-      .orderBy(desc(lotterySessions.createdAt))
-      .limit(1),
-    db.select().from(rates).where(eq(rates.orgId, orgId)).limit(1),
-    db.select().from(limits).where(eq(limits.orgId, orgId)).limit(1),
+  const [orgSnap, activeSession, ratesSnap, limitsSnap] = await Promise.all([
+    orgDoc(orgId).get(),
+    getActiveSession(orgId),
+    orgRatesDoc(orgId).get(),
+    orgRestrictionDoc(orgId, 'limits').get(),
   ]);
-  if (!org) redirect('/login');
+  if (!orgSnap.exists) redirect('/login');
 
   const onCount = activeSession?.onCount ?? null;
-
-  const [hotNumbersList, notBuyNumbersList] = onCount !== null
-    ? await Promise.all([
-        db.select().from(hotNumbers).where(and(eq(hotNumbers.orgId, orgId), eq(hotNumbers.onCount, onCount))),
-        db.select().from(notBuyNumbers).where(and(eq(notBuyNumbers.orgId, orgId), eq(notBuyNumbers.onCount, onCount))),
-      ])
-    : [[], []];
+  // Hot/not-buy numbers live as array fields on the active session's own
+  // document (folded in per the Firestore data model) — already available
+  // from getActiveSession, no extra query needed.
+  const hotNumbersList = (activeSession?.hotNumbers || []).map(num => ({ id: num, num, onCount, orgId }));
+  const notBuyNumbersList = (activeSession?.notBuyNumbers || []).map(num => ({ id: num, num, onCount, orgId }));
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
       <SettingsPanel
         orgId={orgId}
         onCount={onCount}
-        initialRates={ratesRow ?? null}
-        initialLimits={limitsRow ?? null}
+        initialRates={ratesSnap.exists ? ratesSnap.data() : null}
+        initialLimits={limitsSnap.exists ? limitsSnap.data() : null}
         initialHotNumbers={hotNumbersList}
         initialNotBuyNumbers={notBuyNumbersList}
       />

@@ -3,7 +3,6 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import LanguageSwitcher from '@/components/LanguageSwitcher.js';
-import SyncStatusBadge from '@/components/SyncStatusBadge';
 import { useI18n } from '@/lib/i18n/index.js';
 
 const STORAGE_KEY = 'sidebar_collapsed';
@@ -54,6 +53,13 @@ const ICONS = {
       <circle cx="12" cy="7" r="4" />
     </>
   ),
+  account: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="10" r="3" />
+      <path d="M6.5 19a6 6 0 0 1 11 0" />
+    </>
+  ),
   settings: (
     <>
       <circle cx="12" cy="12" r="3" />
@@ -97,12 +103,11 @@ const ROLE_LABEL = {
 
 const NAV_SEGMENTS = [
   { key: 'dashboard', segment: 'dashboard' },
-  { key: 'session',   segment: 'session' },
   { key: 'agents',    segment: 'agents' },
   { key: 'ledger',    segment: 'ledger' },
-  { key: 'results',   segment: 'results' },
   { key: 'balance',   segment: 'balance' },
   { key: 'settings',  segment: 'settings' },
+  { key: 'account',   segment: 'user-settings' },
 ];
 
 export default function Sidebar2D({ orgId, orgName, userName, role }) {
@@ -219,9 +224,6 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
           <div className="px-3">
             <p className="text-sm font-medium text-gray-900 truncate">{userName}</p>
             <p className="text-xs text-gray-400">{ROLE_LABEL[role] || role}</p>
-            <div className="mt-1.5">
-              <SyncStatusBadge />
-            </div>
           </div>
         )}
         <button

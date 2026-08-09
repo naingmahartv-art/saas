@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db/index.js';
-import { agents } from '@/lib/db/schema.js';
-import { eq, and, sql } from 'drizzle-orm';
+import { orgAgentsCol, orgAgentDoc } from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth/session.js';
 
 // PUT /api/org/[orgId]/agents/[agentId] — update an agent
@@ -18,38 +16,29 @@ export async function PUT(request, { params }) {
     return NextResponse.json({ error: 'Agent name is required' }, { status: 400 });
   }
 
-  const db = getDb();
-
-  // Case-insensitive uniqueness check — exclude self
-  const [existing] = await db
-    .select({ id: agents.id })
-    .from(agents)
-    .where(
-      sql`${agents.orgId} = ${orgId} AND LOWER(${agents.agentName}) = LOWER(${agentName.trim()}) AND ${agents.id} != ${agentId}`
-    )
-    .limit(1);
-
-  if (existing) {
+  // Case-insensitive uniqueness check — exclude self.
+  const existingSnap = await orgAgentsCol(orgId).get();
+  const nameLower = agentName.trim().toLowerCase();
+  if (existingSnap.docs.some(d => d.id !== agentId && d.data().agentName?.toLowerCase() === nameLower)) {
     return NextResponse.json({ error: 'AgentName Already Exist' }, { status: 409 });
   }
 
-  await db
-    .update(agents)
-    .set({
-      agentName: agentName.trim(),
-      address: address?.trim() || null,
-      phone: phone?.trim() || null,
-      commission: parseFloat(commission) || 0,
-      rate: parseFloat(rate) || 0,
-    })
-    .where(and(eq(agents.id, agentId), eq(agents.orgId, orgId)));
-
-  const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
-  if (!agent) {
+  const ref = orgAgentDoc(orgId, agentId);
+  const snap = await ref.get();
+  if (!snap.exists) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
-  return NextResponse.json({ agent });
+  const patch = {
+    agentName: agentName.trim(),
+    address: address?.trim() || null,
+    phone: phone?.trim() || null,
+    commission: parseFloat(commission) || 0,
+    rate: parseFloat(rate) || 0,
+  };
+  await ref.update(patch);
+
+  return NextResponse.json({ agent: { ...snap.data(), ...patch } });
 }
 
 // DELETE /api/org/[orgId]/agents/[agentId]
@@ -60,7 +49,6 @@ export async function DELETE(request, { params }) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const db = getDb();
-  await db.delete(agents).where(and(eq(agents.id, agentId), eq(agents.orgId, orgId)));
+  await orgAgentDoc(orgId, agentId).delete();
   return NextResponse.json({ ok: true });
 }

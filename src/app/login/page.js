@@ -7,6 +7,29 @@ export default function LoginPage() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotMsg, setForgotMsg] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+
+  async function handleForgotSubmit(e) {
+    e.preventDefault();
+    setForgotLoading(true);
+    setForgotMsg('');
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail }),
+      });
+      const data = await res.json();
+      setForgotMsg(data.message || 'If that account exists, your organization admin has been notified.');
+    } catch {
+      setForgotMsg('Something went wrong');
+    } finally {
+      setForgotLoading(false);
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -75,6 +98,44 @@ export default function LoginPage() {
             <button type="submit" disabled={loading} className="btn-primary w-full">
               {loading ? 'Signing in…' : 'Sign in'}
             </button>
+
+            <button
+              type="button"
+              onClick={() => { setForgotOpen(o => !o); setForgotMsg(''); }}
+              className="w-full text-center text-sm text-brand-600 hover:text-brand-700"
+            >
+              Forgot password?
+            </button>
+
+            {forgotOpen && (
+              <div className="border-t border-gray-100 pt-4 space-y-2">
+                <p className="text-xs text-gray-500">
+                  Enter your account email. Your organization admin will be notified and can issue you a new temporary password.
+                </p>
+                {forgotMsg ? (
+                  <p className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-lg px-4 py-3">{forgotMsg}</p>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      type="email"
+                      required
+                      className="input"
+                      placeholder="you@example.com"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleForgotSubmit}
+                      disabled={forgotLoading || !forgotEmail}
+                      className="btn-secondary shrink-0 disabled:opacity-50"
+                    >
+                      {forgotLoading ? 'Sending…' : 'Send request'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </form>
         </div>
 

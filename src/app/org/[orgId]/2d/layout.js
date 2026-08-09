@@ -1,8 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
-import { getDb } from '@/lib/db/index';
-import { organizations, users } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { orgDoc, userDoc } from '@/lib/db/firestore.js';
 import Sidebar2D from '@/components/Sidebar2D';
 import { canAccessOrgApp } from '@/lib/auth/permissions.js';
 
@@ -17,15 +15,12 @@ export default async function TwoDLayout({ children, params }) {
     redirect('/login');
   }
 
-  const db = getDb();
-  const [[org], [me]] = await Promise.all([
-    db.select().from(organizations).where(eq(organizations.id, orgId)).limit(1),
-    db.select({ status: users.status }).from(users).where(eq(users.id, session.id)).limit(1),
-  ]);
+  const [orgSnap, meSnap] = await Promise.all([orgDoc(orgId).get(), userDoc(session.id).get()]);
+  const org = orgSnap.exists ? orgSnap.data() : null;
   if (!org) redirect('/login');
   // Authoritative, always-fresh suspension check — the JWT-carried status
   // middleware checks can be stale for up to 7 days.
-  if (me?.status === 'suspended') redirect('/suspended');
+  if (meSnap.data()?.status === 'suspended') redirect('/suspended');
 
   return (
     <div className="min-h-screen flex bg-gray-50">

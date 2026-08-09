@@ -19,6 +19,19 @@ export function computeOnCount(onDate, slotKey) {
   return parseInt(digits, 10) * 10 + slot.index;
 }
 
+const SLOT_BY_INDEX = new Map(SLOTS.map(s => [s.index, s]));
+
+// Inverse of computeOnCount: 'YYYYMMDD * 10 + slotIndex' -> { onDate, ampm }.
+export function onCountToSessionParts(onCount) {
+  const n = typeof onCount === 'string' ? parseInt(onCount, 10) : onCount;
+  const slotIndex = n % 10;
+  const yyyymmdd = String(Math.floor(n / 10)).padStart(8, '0');
+  const onDate = `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`;
+  const slot = SLOT_BY_INDEX.get(slotIndex);
+  if (!slot) throw new Error(`Invalid onCount: ${onCount}`);
+  return { onDate, ampm: slot.key };
+}
+
 export function getCurrentSlotKey(date = new Date()) {
   const hour = date.getHours();
   const slot = SLOTS.find(s => hour >= s.startHour && hour < s.endHour);

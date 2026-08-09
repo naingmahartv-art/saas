@@ -1,6 +1,4 @@
-import { getDb } from '@/lib/db/index.js';
-import { agents } from '@/lib/db/schema.js';
-import { eq, asc } from 'drizzle-orm';
+import { orgAgentsCol } from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth/session.js';
 import { redirect } from 'next/navigation';
 import AgentManager from './AgentManager.js';
@@ -14,12 +12,8 @@ export default async function AgentsPage({ params }) {
     redirect('/login');
   }
 
-  const db = getDb();
-  const agentsList = await db
-    .select()
-    .from(agents)
-    .where(eq(agents.orgId, orgId))
-    .orderBy(asc(agents.agentName));
+  const snap = await orgAgentsCol(orgId).orderBy('agentName', 'asc').get();
+  const agentsList = snap.docs.map(d => d.data());
 
   return (
     <div className="p-6">

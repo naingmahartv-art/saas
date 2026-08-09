@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db/index.js';
-import { notBuyNumbers } from '@/lib/db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import { FieldValue } from 'firebase-admin/firestore';
+import { orgSessionDoc, sessionId as buildSessionId } from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth/session.js';
-import { randomUUID } from 'crypto';
+import { onCountToSessionParts } from '@/lib/lottery/sessionSlots.js';
+
+function sessionRefForOnCount(orgId, onCount) {
+  const { onDate, ampm } = onCountToSessionParts(onCount);
+  return orgSessionDoc(orgId, buildSessionId(onDate, ampm, onCount));
+}
 
 // GET /api/org/[orgId]/settings/not-buy?onCount=... — list not-buy numbers for a session
 export async function GET(request, { params }) {
@@ -15,17 +19,14 @@ export async function GET(request, { params }) {
 
   const { searchParams } = new URL(request.url);
   const onCount = searchParams.get('onCount');
-
   if (!onCount) {
     return NextResponse.json({ error: 'onCount is required' }, { status: 400 });
   }
 
-  const db = getDb();
-
-  const list = await db
-    .select()
-    .from(notBuyNumbers)
-    .where(and(eq(notBuyNumbers.orgId, orgId), eq(notBuyNumbers.onCount, parseInt(onCount))));
+  const onCountInt = parseInt(onCount);
+  const snap = await sessionRefForOnCount(orgId, onCountInt).get();
+  const nums = snap.exists ? (snap.data().notBuyNumbers || []) : [];
+  const list = nums.map(num => ({ id: num, num, onCount: onCountInt, orgId }));
 
   return NextResponse.json({ notBuyNumbers: list });
 }
@@ -47,26 +48,14 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: 'onCount is required' }, { status: 400 });
   }
 
-  const db = getDb();
   const onCountInt = parseInt(onCount);
-
-  const [existing] = await db
-    .select()
-    .from(notBuyNumbers)
-    .where(and(eq(notBuyNumbers.orgId, orgId), eq(notBuyNumbers.onCount, onCountInt), eq(notBuyNumbers.num, num)))
-    .limit(1);
-
-  if (existing) {
+  const ref = sessionRefForOnCount(orgId, onCountInt);
+  const snap = await ref.get();
+  if (snap.exists && (snap.data().notBuyNumbers || []).includes(num)) {
     return NextResponse.json({ error: 'Number already in not-buy list' }, { status: 409 });
   }
 
-  await db.insert(notBuyNumbers).values({
-    id: randomUUID(),
-    orgId,
-    onCount: onCountInt,
-    num,
-    createdAt: Date.now(),
-  });
+  await ref.set({ notBuyNumbers: FieldValue.arrayUnion(num) }, { merge: true });
 
   return NextResponse.json({ success: true });
 }
@@ -79,15 +68,18 @@ export async function DELETE(request, { params }) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { id } = await request.json();
-
+  const { id, onCount } = await request.json();
   if (!id) {
     return NextResponse.json({ error: 'id is required' }, { status: 400 });
   }
+  if (!onCount) {
+    return NextResponse.json({ error: 'onCount is required' }, { status: 400 });
+  }
 
-  const db = getDb();
-
-  await db.delete(notBuyNumbers).where(and(eq(notBuyNumbers.id, id), eq(notBuyNumbers.orgId, orgId)));
+  await sessionRefForOnCount(orgId, parseInt(onCount)).set(
+    { notBuyNumbers: FieldValue.arrayRemove(id) },
+    { merge: true }
+  );
 
   return NextResponse.json({ success: true });
 }

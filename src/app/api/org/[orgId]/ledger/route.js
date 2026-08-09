@@ -1,16 +1,20 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db/index.js';
-import { lg, lgDetail, lgVoucherToken, lotterySessions, agents } from '@/lib/db/schema.js';
-import { eq, and, count, like, desc } from 'drizzle-orm';
+import { FieldValue } from 'firebase-admin/firestore';
+import {
+  getDb,
+  orgSessionDoc,
+  orgSessionVouchersCol,
+  orgAgentDoc,
+  sessionId as buildSessionId,
+} from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth';
 import { parseNumberExpression } from '@/lib/lottery/numberParser.js';
-import { randomUUID } from 'crypto';
-import { assertCashierWriteAllowed, getClientIp } from '@/lib/auth/permissions.js';
+import { assertCashierWriteAllowed, getClientIp, getActiveSession } from '@/lib/auth/permissions.js';
 import { logActivity } from '@/lib/db/log-activity.js';
+import { isBeforeCutover, getLegacyLedgerSlips } from '@/lib/db/legacy-reports.js';
 
-// GET /api/org/[orgId]/ledger — search saved ledger slips (defaults to the
-// active session if no onCount/ampm/onDate given), each with its raw voucher
-// tokens (source of truth) and expanded detail lines (derived, for display)
+// GET /api/org/[orgId]/ledger — list saved ledger slips for a session
+// (defaults to the active session if no onCount/ampm/onDate given).
 export async function GET(request, { params }) {
   const { orgId } = await params;
   const session = await getSession();
@@ -19,69 +23,40 @@ export async function GET(request, { params }) {
   }
 
   const { searchParams } = new URL(request.url);
-  const onCount = searchParams.get('onCount');
-  const ampm = searchParams.get('ampm');
+  let onCount = searchParams.get('onCount');
+  let ampm = searchParams.get('ampm');
   const onDate = searchParams.get('onDate');
   const agentName = searchParams.get('agentName');
 
-  const db = getDb();
-  const conditions = [eq(lg.orgId, orgId)];
-
-  if (onCount) conditions.push(eq(lg.onCount, parseInt(onCount)));
-  if (ampm) conditions.push(eq(lg.ampm, ampm));
-  if (onDate) conditions.push(eq(lg.onDate, onDate));
-  if (agentName) conditions.push(like(lg.agentName, `%${agentName}%`));
-
-  if (!onCount && !ampm && !onDate) {
-    const [activeSession] = await db
-      .select()
-      .from(lotterySessions)
-      .where(and(eq(lotterySessions.orgId, orgId), eq(lotterySessions.isActive, 1)))
-      .limit(1);
-    if (activeSession) {
-      conditions.push(eq(lg.onCount, activeSession.onCount));
-      conditions.push(eq(lg.ampm, activeSession.ampm));
-    }
+  // Pre-cutover sessions only ever existed in Postgres — Firestore started
+  // empty, so a date before the cutover is never found there.
+  if (onDate && isBeforeCutover(onDate)) {
+    const slips = await getLegacyLedgerSlips(orgId, { onCount, ampm, onDate, agentName });
+    return NextResponse.json({ slips });
   }
 
-  const slips = await db
-    .select()
-    .from(lg)
-    .where(and(...conditions))
-    .orderBy(desc(lg.srNo));
+  let sid;
+  if (onCount && ampm && onDate) {
+    sid = buildSessionId(onDate, ampm, onCount);
+  } else {
+    const active = await getActiveSession(orgId);
+    if (!active) return NextResponse.json({ slips: [] });
+    sid = active.id;
+  }
 
-  const withDetails = await Promise.all(
-    slips.map(async (slip) => {
-      const [details, tokens] = await Promise.all([
-        db
-          .select()
-          .from(lgDetail)
-          .where(and(
-            eq(lgDetail.orgId, orgId),
-            eq(lgDetail.srNo, slip.srNo),
-            eq(lgDetail.onCount, slip.onCount),
-            eq(lgDetail.ampm, slip.ampm),
-          )),
-        db
-          .select()
-          .from(lgVoucherToken)
-          .where(and(
-            eq(lgVoucherToken.orgId, orgId),
-            eq(lgVoucherToken.srNo, slip.srNo),
-            eq(lgVoucherToken.onCount, slip.onCount),
-            eq(lgVoucherToken.ampm, slip.ampm),
-          )),
-      ]);
-      return { ...slip, details, tokens: tokens.map(t => t.tokenText) };
-    })
-  );
+  const snap = await orgSessionVouchersCol(orgId, sid).orderBy('srNo', 'desc').get();
 
-  return NextResponse.json({ slips: withDetails });
+  let slips = snap.docs.map(d => d.data());
+  if (agentName) {
+    const needle = agentName.toLowerCase();
+    slips = slips.filter(s => s.agentName?.toLowerCase().includes(needle));
+  }
+
+  return NextResponse.json({ slips });
 }
 
 // Re-runs the (untouched) number-expression parser server-side so expanded
-// amounts are always derived from the raw tokens, never trusted from the
-// client. Throws with the offending token on a parse error.
+// amounts are always derived from the raw tokens, never trusted from the client.
 function expandTokens(tokens) {
   const expanded = [];
   for (const tokenText of tokens) {
@@ -96,9 +71,10 @@ function expandTokens(tokens) {
   return expanded;
 }
 
-// POST /api/org/[orgId]/ledger — save a voucher: the raw typed tokens are the
-// source of truth; expanded numbers are derived here and stored alongside
-// for the grid/aggregate views.
+// POST /api/org/[orgId]/ledger — save a voucher. Voucher number (srNo) and
+// the session's running per-number totals are both updated atomically inside
+// a single Firestore transaction, so concurrent saves from different cashiers
+// can never collide on srNo or produce an inconsistent totals map.
 export async function POST(request, { params }) {
   const { orgId } = await params;
   const session = await getSession();
@@ -106,7 +82,7 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { agentId, onCount, ampm, onDate, machineId, tokens } = await request.json();
+  const { agentId, onCount, ampm, onDate, machineId, tokens, clientId } = await request.json();
 
   if (!agentId || !onCount || !ampm || !onDate) {
     return NextResponse.json({ error: 'agentId, onCount, ampm, and onDate are required' }, { status: 400 });
@@ -115,30 +91,21 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: 'tokens must be a non-empty array' }, { status: 400 });
   }
 
-  const db = getDb();
-
-  const lockError = await assertCashierWriteAllowed(session, orgId, db);
+  const lockError = await assertCashierWriteAllowed(session, orgId);
   if (lockError) return NextResponse.json({ error: lockError.error }, { status: lockError.status });
 
-  const [activeSession] = await db
-    .select()
-    .from(lotterySessions)
-    .where(and(eq(lotterySessions.orgId, orgId), eq(lotterySessions.isActive, 1)))
-    .limit(1);
-
-  if (!activeSession) {
+  const sid = buildSessionId(onDate, ampm, onCount);
+  const sessionRef = orgSessionDoc(orgId, sid);
+  const sessionSnap = await sessionRef.get();
+  if (!sessionSnap.exists || !sessionSnap.data().isActive) {
     return NextResponse.json({ error: 'No active session' }, { status: 400 });
   }
 
-  const [agent] = await db
-    .select()
-    .from(agents)
-    .where(and(eq(agents.orgId, orgId), eq(agents.id, agentId)))
-    .limit(1);
-
-  if (!agent) {
+  const agentSnap = await orgAgentDoc(orgId, agentId).get();
+  if (!agentSnap.exists) {
     return NextResponse.json({ error: 'Agent not found for this organization' }, { status: 400 });
   }
+  const agent = agentSnap.data();
 
   let entries;
   try {
@@ -150,66 +117,73 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: 'Tokens did not expand to any numbers' }, { status: 400 });
   }
 
-  const [{ value: existingCount }] = await db
-    .select({ value: count() })
-    .from(lg)
-    .where(and(eq(lg.orgId, orgId), eq(lg.onCount, onCount), eq(lg.ampm, ampm)));
-
-  const srNo = existingCount + 1;
+  // Sum multiple entries for the same number before building the totals
+  // increment map — a plain object would otherwise silently drop all but
+  // the last increment for a repeated number within one voucher.
+  const perNumber = {};
+  for (const e of entries) {
+    const amt = parseFloat(e.amount) || 0;
+    perNumber[e.num] = (perNumber[e.num] || 0) + amt;
+  }
+  const details = entries.map(e => ({ num1: e.num, value: parseFloat(e.amount) || 0 }));
+  const amount = details.reduce((sum, d) => sum + d.value, 0);
   const now = Date.now();
-  const amount = entries.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
 
-  await db.insert(lg).values({
-    id: randomUUID(),
-    orgId,
-    srNo,
-    onCount,
-    ampm,
-    onDate,
-    machineId: parseInt(machineId) || 1,
-    agentName: agent.agentName,
-    amount,
-    createdAt: now,
-  });
+  const db = getDb();
+  // A client-supplied id (from the localStorage save queue) becomes the
+  // Firestore doc id, so a retried request — same clientId, e.g. the ack was
+  // lost after the write actually landed — is a safe no-op below rather than
+  // a duplicate voucher or a double-counted total.
+  const voucherRef = clientId ? orgSessionVouchersCol(orgId, sid).doc(clientId) : orgSessionVouchersCol(orgId, sid).doc();
 
-  await db.insert(lgVoucherToken).values(
-    tokens.map(tokenText => ({
-      id: randomUUID(),
+  const { srNo, created } = await db.runTransaction(async (tx) => {
+    const [sSnap, existingVoucherSnap] = await Promise.all([tx.get(sessionRef), tx.get(voucherRef)]);
+    if (!sSnap.exists) throw new Error('SESSION_NOT_FOUND');
+    if (existingVoucherSnap.exists) {
+      // Idempotent retry — the write already landed, just never got acked.
+      return { srNo: existingVoucherSnap.data().srNo, created: false };
+    }
+    const nextSrNo = (sSnap.data().voucherCount || 0) + 1;
+
+    const totalsUpdate = { voucherCount: nextSrNo };
+    for (const [num, amt] of Object.entries(perNumber)) {
+      totalsUpdate[`totals.${num}`] = FieldValue.increment(amt);
+    }
+
+    tx.set(voucherRef, {
+      id: voucherRef.id,
       orgId,
-      srNo,
-      onCount,
+      sessionId: sid,
+      srNo: nextSrNo,
+      onCount: parseInt(onCount),
       ampm,
-      tokenText,
-      createdAt: now,
-    }))
-  );
-
-  await db.insert(lgDetail).values(
-    entries.map(e => ({
-      id: randomUUID(),
-      orgId,
-      srNo,
-      onCount,
-      ampm,
+      onDate,
+      machineId: parseInt(machineId) || 1,
+      agentId,
       agentName: agent.agentName,
-      num1: e.num,
-      value: parseFloat(e.amount) || 0,
-      post: 0,
+      amount,
+      tokens,
+      details,
       createdAt: now,
-    }))
-  );
-
-  await logActivity(db, {
-    orgId,
-    userId: session.id,
-    userName: session.name,
-    userRole: session.role,
-    action: 'create',
-    entity: 'voucher',
-    entityId: srNo != null ? String(srNo) : null,
-    details: { srNo, onCount, ampm, agentName: agent.agentName, amount, tokens },
-    ipAddress: getClientIp(request),
+      createdBy: session.id,
+    });
+    tx.update(sessionRef, totalsUpdate);
+    return { srNo: nextSrNo, created: true };
   });
+
+  if (created) {
+    await logActivity({
+      orgId,
+      userId: session.id,
+      userName: session.name,
+      userRole: session.role,
+      action: 'create',
+      entity: 'voucher',
+      entityId: srNo != null ? String(srNo) : null,
+      details: { srNo, onCount, ampm, agentName: agent.agentName, amount, tokens },
+      ipAddress: getClientIp(request),
+    });
+  }
 
   return NextResponse.json({ success: true, srNo });
 }

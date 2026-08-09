@@ -1,14 +1,13 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db/index.js';
-import { luckyNo } from '@/lib/db/schema.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { orgSessionDoc, sessionId as buildSessionId } from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth/session.js';
-import { randomUUID } from 'crypto';
-import { isValidSlotKey } from '@/lib/lottery/sessionSlots.js';
+import { computeOnCount, isValidSlotKey } from '@/lib/lottery/sessionSlots.js';
 import { getClientIp } from '@/lib/auth/permissions.js';
 import { logActivity } from '@/lib/db/log-activity.js';
 
-// GET /api/org/[orgId]/lucky — get lucky number(s) for a session
+// GET /api/org/[orgId]/lucky?onDate=&ampm= — the winning number for one session.
+// Lucky number lives as a field on that session's own document (folded in per
+// the Firestore data model), not a separate collection — one doc read, no query.
 export async function GET(request, { params }) {
   const { orgId } = await params;
   const session = await getSession();
@@ -19,23 +18,24 @@ export async function GET(request, { params }) {
   const { searchParams } = new URL(request.url);
   const onDate = searchParams.get('onDate');
   const ampm = searchParams.get('ampm');
+  if (!onDate || !ampm) {
+    return NextResponse.json({ luckyNos: [] });
+  }
 
-  const db = getDb();
+  const onCount = computeOnCount(onDate, ampm);
+  const sid = buildSessionId(onDate, ampm, onCount);
+  const snap = await orgSessionDoc(orgId, sid).get();
+  const data = snap.exists ? snap.data() : null;
 
-  const conditions = [eq(luckyNo.orgId, orgId)];
-  if (onDate) conditions.push(eq(luckyNo.onDate, onDate));
-  if (ampm) conditions.push(eq(luckyNo.ampm, ampm));
-
-  const luckyNos = await db
-    .select()
-    .from(luckyNo)
-    .where(and(...conditions))
-    .orderBy(desc(luckyNo.createdAt));
+  const luckyNos = data?.luckyNumber
+    ? [{ id: sid, orgId, onDate, ampm, lNo: data.luckyNumber, createdAt: data.luckyNumberSetAt }]
+    : [];
 
   return NextResponse.json({ luckyNos });
 }
 
-// POST /api/org/[orgId]/lucky — save lucky number for current session
+// POST /api/org/[orgId]/lucky — save the winning number for a session,
+// replacing any previous value for the same org+onDate+ampm.
 export async function POST(request, { params }) {
   const { orgId } = await params;
   const session = await getSession();
@@ -55,44 +55,26 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: 'ampm must be a valid time slot' }, { status: 400 });
   }
 
-  const db = getDb();
-
-  // Replace any existing lucky number for this org+onDate+ampm
-  await db
-    .delete(luckyNo)
-    .where(
-      and(
-        eq(luckyNo.orgId, orgId),
-        eq(luckyNo.onDate, onDate),
-        eq(luckyNo.ampm, ampm),
-      )
-    );
-
-  const id = randomUUID();
+  const onCount = computeOnCount(onDate, ampm);
+  const sid = buildSessionId(onDate, ampm, onCount);
   const now = Date.now();
 
-  await db.insert(luckyNo).values({
-    id,
-    orgId,
-    onDate,
-    ampm,
-    lNo,
-    createdAt: now,
-  });
+  await orgSessionDoc(orgId, sid).set(
+    { luckyNumber: lNo, luckyNumberSetAt: now },
+    { merge: true }
+  );
 
-  const [inserted] = await db.select().from(luckyNo).where(eq(luckyNo.id, id));
-
-  await logActivity(db, {
+  await logActivity({
     orgId,
     userId: session.id,
     userName: session.name,
     userRole: session.role,
     action: 'create',
     entity: 'lucky_no',
-    entityId: id,
+    entityId: sid,
     details: { lNo, onDate, ampm },
     ipAddress: getClientIp(request),
   });
 
-  return NextResponse.json({ success: true, luckyNo: inserted });
+  return NextResponse.json({ success: true, luckyNo: { lNo, onDate, ampm } });
 }

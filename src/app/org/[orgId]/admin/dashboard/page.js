@@ -1,18 +1,21 @@
-import { getDb } from '@/lib/db/index';
-import { users, activityLogs } from '@/lib/db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { usersCol, orgActivityLogsCol } from '@/lib/db/firestore.js';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
 
 export default async function OrgAdminDashboard({ params }) {
   const { orgId } = await params;
-  const db = getDb();
 
-  const [orgUsers, recentLogs] = await Promise.all([
-    db.select().from(users).where(eq(users.orgId, orgId)),
-    db.select().from(activityLogs).where(eq(activityLogs.orgId, orgId)).orderBy(desc(activityLogs.createdAt)).limit(8),
+  const [usersSnap, logsSnap] = await Promise.all([
+    usersCol().where('orgId', '==', orgId).get(),
+    orgActivityLogsCol(orgId).get(),
   ]);
+
+  const orgUsers = usersSnap.docs.map(d => d.data());
+  const recentLogs = logsSnap.docs
+    .map(d => d.data())
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 8);
 
   const stats = {
     total: orgUsers.length,

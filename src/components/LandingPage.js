@@ -11,8 +11,8 @@ const FEATURES = [
     body: 'Configure payout rates, per-number bet limits, hot numbers, and restriction lists (brade, power, series) centrally.',
   },
   {
-    title: 'Works online or fully offline',
-    body: 'Use it in the browser, or install the desktop app and keep working with no internet at all — data syncs automatically once you’re back online.',
+    title: 'Cloud-hosted & always in sync',
+    body: 'Use it in the browser — every session, sale, and ledger entry is saved centrally in real time, with an internet connection required.',
   },
   {
     title: 'Multi-organization support',
@@ -45,11 +45,11 @@ export default function LandingPage() {
       <main className="max-w-5xl mx-auto px-6">
         <section className="py-16 text-center">
           <h1 className="text-4xl font-bold text-gray-900 tracking-tight">
-            Agent & ledger management, online or fully offline
+            Agent & ledger management, cloud-hosted
           </h1>
           <p className="mt-4 text-lg text-gray-500 max-w-2xl mx-auto">
-            Run your shop from the browser, or install the desktop app and keep working with
-            no internet connection — everything syncs automatically once you&rsquo;re back online.
+            Run your shop from the browser — every session, sale, and ledger entry is saved
+            centrally in real time. An internet connection is required.
           </p>
           <div className="mt-8 flex items-center justify-center gap-3">
             <a href="/login" className="btn-primary">Sign in to your account</a>
@@ -69,7 +69,7 @@ export default function LandingPage() {
           <div className="card text-center">
             <h2 className="text-xl font-semibold text-gray-900">Download the desktop app</h2>
             <p className="mt-1.5 text-sm text-gray-500">
-              A native app that works fully offline and syncs to the cloud automatically.
+              A native app window for the same cloud-hosted platform — an internet connection is required.
             </p>
             <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
               {macAvailable ? (

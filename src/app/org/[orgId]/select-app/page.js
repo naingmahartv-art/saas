@@ -1,8 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
-import { getDb } from '@/lib/db/index';
-import { organizations } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { orgDoc } from '@/lib/db/firestore.js';
 import AppPicker from './AppPicker.js';
 import { canAccessOrgApp } from '@/lib/auth/permissions.js';
 
@@ -17,9 +15,8 @@ export default async function SelectAppPage({ params }) {
     redirect('/login');
   }
 
-  const db = getDb();
-  const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
-  if (!org) redirect('/login');
+  const orgSnap = await orgDoc(orgId).get();
+  if (!orgSnap.exists) redirect('/login');
 
-  return <AppPicker orgId={orgId} orgName={org.name} userName={session.name} role={session.role} />;
+  return <AppPicker orgId={orgId} orgName={orgSnap.data().name} userName={session.name} role={session.role} />;
 }

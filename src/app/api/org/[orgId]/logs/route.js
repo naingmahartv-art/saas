@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db/index.js';
-import { activityLogs } from '@/lib/db/schema.js';
-import { eq, and, desc, gte, lte, count } from 'drizzle-orm';
+import { orgActivityLogsCol } from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth/session.js';
 import { canAccessAdminPanel } from '@/lib/auth/permissions.js';
 
 const PAGE_SIZE = 50;
 
 // GET /api/org/[orgId]/logs — paginated, filterable activity log for the org.
-// Admin-panel only (org_admin / super_admin).
+// Admin-panel only (org_admin / super_admin). Filtering/sorting/pagination
+// happen in JS rather than as a Firestore query — activity logs for one org
+// are a bounded, modest volume (and a natural candidate for periodic
+// archival), so this avoids needing a composite index per filter combination.
 export async function GET(request, { params }) {
   const { orgId } = await params;
   const session = await getSession();
@@ -27,29 +28,25 @@ export async function GET(request, { params }) {
   const to = searchParams.get('to');
   const page = Math.max(1, parseInt(searchParams.get('page')) || 1);
 
-  const db = getDb();
-  const conditions = [eq(activityLogs.orgId, orgId)];
-  if (userId) conditions.push(eq(activityLogs.userId, userId));
-  if (action) conditions.push(eq(activityLogs.action, action));
-  if (entity) conditions.push(eq(activityLogs.entity, entity));
-  if (from) conditions.push(gte(activityLogs.createdAt, new Date(`${from}T00:00:00`).getTime()));
-  if (to) conditions.push(lte(activityLogs.createdAt, new Date(`${to}T23:59:59.999`).getTime()));
+  const fromMs = from ? new Date(`${from}T00:00:00`).getTime() : null;
+  const toMs = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
 
-  const where = and(...conditions);
+  const snap = await orgActivityLogsCol(orgId).get();
+  let rows = snap.docs.map(d => d.data());
 
-  const [[{ value: total }], rows] = await Promise.all([
-    db.select({ value: count() }).from(activityLogs).where(where),
-    db
-      .select()
-      .from(activityLogs)
-      .where(where)
-      .orderBy(desc(activityLogs.createdAt))
-      .limit(PAGE_SIZE)
-      .offset((page - 1) * PAGE_SIZE),
-  ]);
+  if (userId) rows = rows.filter(r => r.userId === userId);
+  if (action) rows = rows.filter(r => r.action === action);
+  if (entity) rows = rows.filter(r => r.entity === entity);
+  if (fromMs != null) rows = rows.filter(r => r.createdAt >= fromMs);
+  if (toMs != null) rows = rows.filter(r => r.createdAt <= toMs);
+
+  rows.sort((a, b) => b.createdAt - a.createdAt);
+
+  const total = rows.length;
+  const paged = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return NextResponse.json({
-    logs: rows,
+    logs: paged,
     page,
     pageSize: PAGE_SIZE,
     total,

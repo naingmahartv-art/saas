@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
-import { getDb, PLAN_PRICES } from '@/lib/db/index';
-import { organizations, subscriptions } from '@/lib/db/schema';
+import { orgsCol, PLAN_PRICES } from '@/lib/db/firestore.js';
 import NavBar from '@/components/NavBar';
 import OrgManager from './OrgManager';
 
@@ -9,8 +8,8 @@ export default async function OrganizationsPage() {
   const session = await getSession();
   if (!session || session.role !== 'super_admin') redirect('/login');
 
-  const db = getDb();
-  const orgs = await db.select().from(organizations).orderBy(organizations.createdAt);
+  const snap = await orgsCol().orderBy('createdAt', 'asc').get();
+  const orgs = snap.docs.map(d => d.data());
 
   return (
     <div className="min-h-screen bg-gray-50">

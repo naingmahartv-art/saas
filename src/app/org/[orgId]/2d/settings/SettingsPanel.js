@@ -110,7 +110,7 @@ export default function SettingsPanel({
     await fetch(`/api/org/${orgId}/settings/hot-numbers`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ id, onCount }),
     });
     setHotNumbers(prev => prev.filter(n => n.id !== id));
   }
@@ -145,7 +145,7 @@ export default function SettingsPanel({
     await fetch(`/api/org/${orgId}/settings/not-buy`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ id, onCount }),
     });
     setNotBuyNumbers(prev => prev.filter(n => n.id !== id));
   }

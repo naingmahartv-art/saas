@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db/index.js';
-import { receive } from '@/lib/db/schema.js';
-import { eq, and, desc } from 'drizzle-orm';
-import { getSession } from '@/lib/auth/session.js';
 import { randomUUID } from 'crypto';
+import { orgReceiveCol } from '@/lib/db/firestore.js';
+import { getSession } from '@/lib/auth/session.js';
+
+const byDateDesc = (a, b) => (a.onDate < b.onDate ? 1 : a.onDate > b.onDate ? -1 : 0);
 
 // GET /api/org/[orgId]/receive — list cash receipts
 export async function GET(request, { params }) {
@@ -17,16 +17,12 @@ export async function GET(request, { params }) {
   const agentName = searchParams.get('agentName');
   const onDate = searchParams.get('onDate');
 
-  const conditions = [eq(receive.orgId, orgId)];
-  if (agentName) conditions.push(eq(receive.agentName, agentName));
-  if (onDate) conditions.push(eq(receive.onDate, onDate));
+  let query = orgReceiveCol(orgId);
+  if (agentName) query = query.where('agentName', '==', agentName);
+  if (onDate) query = query.where('onDate', '==', onDate);
 
-  const db = getDb();
-  const receives = await db
-    .select()
-    .from(receive)
-    .where(and(...conditions))
-    .orderBy(desc(receive.onDate));
+  const snap = await query.get();
+  const receives = snap.docs.map(d => d.data()).sort(byDateDesc);
 
   return NextResponse.json({ receives });
 }
@@ -51,11 +47,9 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: 'Date is required' }, { status: 400 });
   }
 
-  const db = getDb();
   const id = randomUUID();
   const now = Date.now();
-
-  await db.insert(receive).values({
+  const receiveRow = {
     id,
     orgId,
     agentName: agentName.trim(),
@@ -64,8 +58,9 @@ export async function POST(request, { params }) {
     onCount: onCount != null && onCount !== '' ? parseInt(onCount, 10) : null,
     ampm: ampm || null,
     createdAt: now,
-  });
+  };
 
-  const [receiveRow] = await db.select().from(receive).where(eq(receive.id, id));
+  await orgReceiveCol(orgId).doc(id).set(receiveRow);
+
   return NextResponse.json({ success: true, receive: receiveRow });
 }

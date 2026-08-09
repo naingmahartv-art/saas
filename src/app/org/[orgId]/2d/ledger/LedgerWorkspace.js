@@ -4,6 +4,9 @@ import LedgerEntry from './LedgerEntry.js';
 import LedgerHistory from './LedgerHistory.js';
 import SessionPicker from './SessionPicker.js';
 import ReportsModal from './ReportsModal.js';
+import useLedgerShortcuts from '@/lib/ledger/useLedgerShortcuts.js';
+import useLiveSession from '@/lib/ledger/useLiveSession.js';
+import { matchesCombo } from '@/lib/ledger/shortcuts.js';
 
 // Coordinates shared state between the entry panel and the saved-voucher
 // history panel: session-wide per-number totals (drives the grid/stats in
@@ -14,13 +17,16 @@ export default function LedgerWorkspace({
   agents,
   rate,
   limit,
-  notBuyNumbers,
-  hotNumbers,
-  luckyNumber,
+  notBuyNumbers: initialNotBuyNumbers,
+  hotNumbers: initialHotNumbers,
+  luckyNumber: initialLuckyNumber,
   machines,
   canWrite,
 }) {
   const [totals, setTotals] = useState({});
+  const [luckyNumber, setLuckyNumber] = useState(initialLuckyNumber);
+  const [hotNumbers, setHotNumbers] = useState(initialHotNumbers);
+  const [notBuyNumbers, setNotBuyNumbers] = useState(initialNotBuyNumbers);
   const [editingVoucher, setEditingVoucher] = useState(null);
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -29,6 +35,7 @@ export default function LedgerWorkspace({
   // date+slot session they're working in — so this starts open, not just
   // when no session exists yet.
   const [isSessionPickerOpen, setIsSessionPickerOpen] = useState(true);
+  const { shortcuts, replaceSlash, replaceAsterisk } = useLedgerShortcuts();
 
   const refreshTotals = useCallback(async () => {
     if (!activeSession) return;
@@ -47,9 +54,39 @@ export default function LedgerWorkspace({
     refreshTotals();
   }, [refreshTotals]);
 
+  // Server-held Firestore listener, relayed over SSE — picks up saves from
+  // *any* cashier in this session, not just this browser's own (that part is
+  // covered by the optimistic bump below). See session-stream/route.js and
+  // useLiveSession.js. Falls back gracefully to the fetch-based paths above
+  // if the stream hasn't connected yet or drops.
+  const live = useLiveSession(orgId, activeSession?.id);
+  useEffect(() => {
+    if (!live) return;
+    setTotals(live.totals || {});
+    setLuckyNumber(live.luckyNumber ?? null);
+    setHotNumbers(live.hotNumbers || []);
+    setNotBuyNumbers(live.notBuyNumbers || []);
+  }, [live]);
+
+  // Bumps the totals grid the instant a voucher is queued (see
+  // LedgerEntry.js's handleSave) — pure client-side math using the same
+  // parser the server uses, so the exceed-limit/hot-number grid reflects the
+  // cashier's own entries with zero latency instead of waiting on the
+  // network round trip that queuing was built to avoid.
+  const applyOptimisticTotals = useCallback((entries) => {
+    setTotals(prev => {
+      const next = { ...prev };
+      for (const e of entries) {
+        const amt = parseFloat(e.amount) || 0;
+        next[e.num] = (next[e.num] || 0) + amt;
+      }
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     function handleKeyDown(e) {
-      if (e.key === 'F8') {
+      if (shortcuts && matchesCombo(e, shortcuts.history)) {
         e.preventDefault();
         setIsHistoryOpen(open => !open);
       } else if (e.key === 'Escape' && isHistoryOpen) {
@@ -58,7 +95,7 @@ export default function LedgerWorkspace({
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isHistoryOpen]);
+  }, [isHistoryOpen, shortcuts]);
 
   return (
     <div className="px-3 py-3">
@@ -74,6 +111,10 @@ export default function LedgerWorkspace({
         totals={totals}
         editingVoucher={editingVoucher}
         canWrite={canWrite}
+        shortcuts={shortcuts}
+        replaceSlash={replaceSlash}
+        replaceAsterisk={replaceAsterisk}
+        onOptimisticSave={applyOptimisticTotals}
         onSaved={() => {
           setEditingVoucher(null);
           refreshTotals();

@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { clearSession, getSession } from '@/lib/auth';
-import { getDb } from '@/lib/db/index';
 import { logActivity } from '@/lib/db/log-activity.js';
 
 export async function POST(request) {
@@ -9,8 +8,7 @@ export async function POST(request) {
   await clearSession(res);
 
   if (session) {
-    const db = getDb();
-    await logActivity(db, {
+    await logActivity({
       orgId: session.orgId || 'platform',
       userId: session.id,
       userName: session.name,

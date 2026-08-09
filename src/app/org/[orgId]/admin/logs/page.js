@@ -1,8 +1,6 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
-import { getDb } from '@/lib/db/index';
-import { users } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { usersCol } from '@/lib/db/firestore.js';
 import LogsViewer from './LogsViewer';
 
 export const dynamic = 'force-dynamic';
@@ -15,11 +13,8 @@ export default async function ActivityLogsPage({ params }) {
     redirect('/login');
   }
 
-  const db = getDb();
-  const orgUsers = await db
-    .select({ id: users.id, name: users.name })
-    .from(users)
-    .where(eq(users.orgId, orgId));
+  const snap = await usersCol().where('orgId', '==', orgId).get();
+  const orgUsers = snap.docs.map(d => ({ id: d.data().id, name: d.data().name }));
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">

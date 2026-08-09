@@ -1,14 +1,11 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db/index.js';
-import { lotterySessions } from '@/lib/db/schema.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { getDb, orgSessionsCol, orgSessionDoc, sessionId as buildSessionId } from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth/session.js';
-import { randomUUID } from 'crypto';
 import { computeOnCount, isValidSlotKey } from '@/lib/lottery/sessionSlots.js';
-import { getClientIp } from '@/lib/auth/permissions.js';
+import { getClientIp, getActiveSession } from '@/lib/auth/permissions.js';
 import { logActivity } from '@/lib/db/log-activity.js';
 
-// GET /api/org/[orgId]/session — get the current active session
+// GET /api/org/[orgId]/session — get the current active session + recent history
 export async function GET(request, { params }) {
   const { orgId } = await params;
   const session = await getSession();
@@ -16,31 +13,23 @@ export async function GET(request, { params }) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const db = getDb();
+  const [current, historySnap] = await Promise.all([
+    getActiveSession(orgId),
+    orgSessionsCol(orgId).orderBy('onCount', 'desc').limit(50).get(),
+  ]);
 
-  const [current] = await db
-    .select()
-    .from(lotterySessions)
-    .where(and(eq(lotterySessions.orgId, orgId), eq(lotterySessions.isActive, 1)))
-    .orderBy(desc(lotterySessions.createdAt))
-    .limit(1);
+  const history = historySnap.docs.map(d => {
+    const { onCount, onDate, ampm } = d.data();
+    return { onCount, onDate, ampm };
+  });
 
-  // Return list of distinct recent sessions for the dropdown
-  const history = await db
-    .selectDistinct({
-      onCount: lotterySessions.onCount,
-      onDate: lotterySessions.onDate,
-      ampm: lotterySessions.ampm,
-    })
-    .from(lotterySessions)
-    .where(eq(lotterySessions.orgId, orgId))
-    .orderBy(desc(lotterySessions.onCount))
-    .limit(50);
-
-  return NextResponse.json({ current: current ?? null, history });
+  return NextResponse.json({ current, history });
 }
 
-// POST /api/org/[orgId]/session — set or create active session
+// POST /api/org/[orgId]/session — set or create the active session. Reopening
+// a previously-closed session keeps its existing voucherCount/totals; only
+// one session per org is ever active, so the previously-active one (if any
+// and if different) is deactivated in the same transaction.
 export async function POST(request, { params }) {
   const { orgId } = await params;
   const session = await getSession();
@@ -53,88 +42,68 @@ export async function POST(request, { params }) {
   if (!ampm || !onDate) {
     return NextResponse.json({ error: 'ampm and onDate are required' }, { status: 400 });
   }
-
   if (!isValidSlotKey(ampm)) {
     return NextResponse.json({ error: 'ampm must be one of the fixed daily slots' }, { status: 400 });
   }
 
   const onCount = computeOnCount(onDate, ampm);
-  const db = getDb();
-
-  // Deactivate all existing sessions for this org
-  await db
-    .update(lotterySessions)
-    .set({ isActive: 0 })
-    .where(eq(lotterySessions.orgId, orgId));
-
-  // onCount is now a deterministic function of (onDate, ampm), so it alone identifies the session
-  const [existing] = await db
-    .select()
-    .from(lotterySessions)
-    .where(
-      and(
-        eq(lotterySessions.orgId, orgId),
-        eq(lotterySessions.onCount, onCount),
-      )
-    )
-    .limit(1);
-
-  if (existing) {
-    await db
-      .update(lotterySessions)
-      .set({ isActive: 1, machineId: parseInt(machineId) || existing.machineId })
-      .where(eq(lotterySessions.id, existing.id));
-
-    await logActivity(db, {
-      orgId,
-      userId: session.id,
-      userName: session.name,
-      userRole: session.role,
-      action: 'edit',
-      entity: 'session',
-      entityId: existing.id,
-      details: { onCount, ampm, onDate, reopened: true },
-      ipAddress: getClientIp(request),
-    });
-
-    return NextResponse.json({ session: { ...existing, isActive: 1, machineId: parseInt(machineId) || existing.machineId } });
-  }
-
-  const id = randomUUID();
+  const sid = buildSessionId(onDate, ampm, onCount);
+  const targetRef = orgSessionDoc(orgId, sid);
   const now = Date.now();
+  const resolvedMachineId = parseInt(machineId) || 1;
 
-  await db.insert(lotterySessions).values({
-    id,
-    orgId,
-    onCount,
-    ampm,
-    onDate,
-    machineId: parseInt(machineId) || 1,
-    isActive: 1,
-    createdAt: now,
+  const db = getDb();
+  const result = await db.runTransaction(async (tx) => {
+    const [targetSnap, activeSnap] = await Promise.all([
+      tx.get(targetRef),
+      orgSessionsCol(orgId).where('isActive', '==', true).limit(1).get(),
+    ]);
+
+    const currentlyActive = activeSnap.empty ? null : { ref: activeSnap.docs[0].ref, id: activeSnap.docs[0].id };
+    if (currentlyActive && currentlyActive.id !== sid) {
+      tx.update(currentlyActive.ref, { isActive: false });
+    }
+
+    if (targetSnap.exists) {
+      const existing = targetSnap.data();
+      const patched = { isActive: true, machineId: resolvedMachineId };
+      tx.update(targetRef, patched);
+      return { reopened: true, data: { ...existing, ...patched } };
+    }
+
+    const created = {
+      id: sid,
+      orgId,
+      onCount,
+      ampm,
+      onDate,
+      machineId: resolvedMachineId,
+      isActive: true,
+      voucherCount: 0,
+      totals: {},
+      luckyNumber: null,
+      createdAt: now,
+    };
+    tx.set(targetRef, created);
+    return { reopened: false, data: created };
   });
 
-  const [created] = await db
-    .select()
-    .from(lotterySessions)
-    .where(eq(lotterySessions.id, id));
-
-  await logActivity(db, {
+  await logActivity({
     orgId,
     userId: session.id,
     userName: session.name,
     userRole: session.role,
-    action: 'create',
+    action: result.reopened ? 'edit' : 'create',
     entity: 'session',
-    entityId: id,
-    details: { onCount, ampm, onDate },
+    entityId: sid,
+    details: { onCount, ampm, onDate, reopened: result.reopened || undefined },
     ipAddress: getClientIp(request),
   });
 
-  return NextResponse.json({ session: created }, { status: 201 });
+  return NextResponse.json({ session: result.data }, { status: result.reopened ? 200 : 201 });
 }
 
-// PATCH /api/org/[orgId]/session — close the active session (isActive -> 0).
+// PATCH /api/org/[orgId]/session — close the active session (isActive -> false).
 // While no session is active, cashiers are locked to read-only (see
 // assertCashierWriteAllowed) — this is how a shift gets locked down.
 export async function PATCH(request, { params }) {
@@ -149,21 +118,14 @@ export async function PATCH(request, { params }) {
     return NextResponse.json({ error: "action must be 'close'" }, { status: 400 });
   }
 
-  const db = getDb();
-
-  const [active] = await db
-    .select()
-    .from(lotterySessions)
-    .where(and(eq(lotterySessions.orgId, orgId), eq(lotterySessions.isActive, 1)))
-    .limit(1);
-
+  const active = await getActiveSession(orgId);
   if (!active) {
     return NextResponse.json({ error: 'No active session to close' }, { status: 400 });
   }
 
-  await db.update(lotterySessions).set({ isActive: 0 }).where(eq(lotterySessions.id, active.id));
+  await orgSessionDoc(orgId, active.id).update({ isActive: false });
 
-  await logActivity(db, {
+  await logActivity({
     orgId,
     userId: session.id,
     userName: session.name,

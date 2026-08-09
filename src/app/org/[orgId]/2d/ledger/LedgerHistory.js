@@ -94,7 +94,8 @@ export default function LedgerHistory({ orgId, activeSession, onEdit, onDeleted,
     if (!confirm(t('ledger.historyDeleteConfirm', { n: slip.srNo }))) return;
     setDeletingId(slip.id);
     try {
-      const res = await fetch(`/api/org/${orgId}/ledger/${slip.id}`, { method: 'DELETE' });
+      const qs = new URLSearchParams({ onCount: slip.onCount, ampm: slip.ampm, onDate: slip.onDate }).toString();
+      const res = await fetch(`/api/org/${orgId}/ledger/${slip.id}?${qs}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json();
         setError(data.error || t('common.failedToSave'));

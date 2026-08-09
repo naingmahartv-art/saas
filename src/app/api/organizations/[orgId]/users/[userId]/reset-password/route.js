@@ -1,17 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { getDb } from '@/lib/db/index';
-import { users } from '@/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
-import bcrypt from 'bcryptjs';
-import { randomBytes } from 'crypto';
+import { userDoc } from '@/lib/db/firestore.js';
 import { getClientIp } from '@/lib/auth/permissions.js';
-import { logActivity } from '@/lib/db/log-activity.js';
-
-function generateTempPassword() {
-  // 12 URL-safe chars, no confusable padding — shown once to the admin.
-  return randomBytes(9).toString('base64url');
-}
+import { applyPasswordReset } from '@/lib/auth/reset-password.js';
 
 // POST — reset a user's password to a freshly generated one, returned once.
 export async function POST(request, { params }) {
@@ -22,27 +13,20 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const db = getDb();
-  const [target] = await db.select().from(users).where(and(eq(users.id, userId), eq(users.orgId, orgId))).limit(1);
-  if (!target) {
+  const snap = await userDoc(userId).get();
+  const target = snap.exists ? snap.data() : null;
+  if (!target || target.orgId !== orgId) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
   if (session.role !== 'super_admin' && ['org_admin', 'super_admin'].includes(target.role)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const tempPassword = generateTempPassword();
-  await db.update(users).set({ passwordHash: bcrypt.hashSync(tempPassword, 10) }).where(eq(users.id, userId));
-
-  await logActivity(db, {
+  const tempPassword = await applyPasswordReset({
     orgId,
-    userId: session.id,
-    userName: session.name,
-    userRole: session.role,
-    action: 'edit',
-    entity: 'user',
-    entityId: userId,
-    details: { name: target.name, resetPassword: true },
+    userId,
+    targetName: target.name,
+    actingSession: session,
     ipAddress: getClientIp(request),
   });
 

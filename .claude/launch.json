@@ -4,14 +4,9 @@
     {
       "name": "saas-platform-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "-p", "3101"],
-      "port": 3101
-    },
-    {
-      "name": "saas-platform-verify",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["scripts/dev-verify.mjs"],
-      "port": 3412
+      "runtimeArgs": ["run", "dev"],
+      "port": 3101,
+      "autoPort": true
     }
   ]
 }

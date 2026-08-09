@@ -1,40 +1,34 @@
 // Run: node scripts/seed.js
-// Creates the super admin account
+// Creates the super admin account in Firestore.
 
 import { config } from 'dotenv';
 config({ path: '.env.local' });
 
-import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
 
-const { db } = await import('../src/lib/db/index.js');
-const { users } = await import('../src/lib/db/schema.js');
+const { usersCol } = await import('../src/lib/db/firestore.js');
 
 const email = process.env.SEED_ADMIN_EMAIL || 'admin@saasplatform.com';
 const password = process.env.SEED_ADMIN_PASSWORD || 'Admin@12345';
 const name = process.env.SEED_ADMIN_NAME || 'Super Admin';
 
 async function seed() {
-  const existing = await db
-    .select()
-    .from(users)
-    .where(eq(users.role, 'super_admin'))
-    .limit(1);
+  const existing = await usersCol().where('role', '==', 'super_admin').limit(1).get();
 
-  if (existing.length > 0) {
-    console.log(`✓ Super admin already exists: ${existing[0].email}`);
+  if (!existing.empty) {
+    console.log(`✓ Super admin already exists: ${existing.docs[0].data().email}`);
     return;
   }
 
-  const hash = bcrypt.hashSync(password, 10);
-
-  await db.insert(users).values({
-    id: randomUUID(),
+  const id = randomUUID();
+  await usersCol().doc(id).set({
+    id,
     name,
-    email,
-    passwordHash: hash,
+    email: email.toLowerCase(),
+    passwordHash: bcrypt.hashSync(password, 10),
     role: 'super_admin',
+    status: 'active',
     orgId: null,
     createdAt: Date.now(),
   });

@@ -348,3 +348,28 @@ export const activityLogs = pgTable('activity_logs', {
   ipAddress: text('ip_address'),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
 });
+
+// ─── Per-user preferences & account requests ───────────────────────────────────
+
+/** Per-user preferences — currently just customizable Ledger keyboard shortcuts. */
+export const userPreferences = pgTable('user_preferences', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }),
+  shortcuts: text('shortcuts'),          // JSON string: { luckyNumber: 'alt+u', ... } — overrides over DEFAULT_SHORTCUTS
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull().default(nowMs),
+});
+
+/** A locked-out user's "forgot password" request, queued for org-admin approval. */
+export const passwordResetRequests = pgTable('password_reset_requests', {
+  id: text('id').primaryKey(),
+  orgId: text('org_id').notNull(),
+  userId: text('user_id').notNull(),
+  userEmail: text('user_email').notNull(),
+  userName: text('user_name').notNull(),
+  status: text('status').notNull().default('pending'), // 'pending' | 'approved' | 'denied'
+  requestedAt: bigint('requested_at', { mode: 'number' }).notNull(),
+  resolvedAt: bigint('resolved_at', { mode: 'number' }),
+  resolvedBy: text('resolved_by'),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull().default(nowMs),
+});

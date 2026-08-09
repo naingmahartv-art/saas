@@ -1,11 +1,11 @@
-import { getDb } from '@/lib/db/index.js';
-import { agents, balance, receive } from '@/lib/db/schema.js';
-import { eq, asc, desc } from 'drizzle-orm';
+import { orgAgentsCol, orgBalanceCol, orgReceiveCol } from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth/session.js';
 import { redirect } from 'next/navigation';
 import BalanceManager from './BalanceManager.js';
 
 export const dynamic = 'force-dynamic';
+
+const byDateDesc = (a, b) => (a.onDate < b.onDate ? 1 : a.onDate > b.onDate ? -1 : 0);
 
 export default async function BalancePage({ params }) {
   const { orgId } = await params;
@@ -14,13 +14,15 @@ export default async function BalancePage({ params }) {
     redirect('/login');
   }
 
-  const db = getDb();
-
-  const [agentsList, balances, receives] = await Promise.all([
-    db.select().from(agents).where(eq(agents.orgId, orgId)).orderBy(asc(agents.agentName)),
-    db.select().from(balance).where(eq(balance.orgId, orgId)).orderBy(desc(balance.onDate)),
-    db.select().from(receive).where(eq(receive.orgId, orgId)).orderBy(desc(receive.onDate)),
+  const [agentsSnap, balanceSnap, receiveSnap] = await Promise.all([
+    orgAgentsCol(orgId).orderBy('agentName', 'asc').get(),
+    orgBalanceCol(orgId).get(),
+    orgReceiveCol(orgId).get(),
   ]);
+
+  const agentsList = agentsSnap.docs.map(d => d.data());
+  const balances = balanceSnap.docs.map(d => d.data()).sort(byDateDesc);
+  const receives = receiveSnap.docs.map(d => d.data()).sort(byDateDesc);
 
   const netByAgent = {};
   for (const row of balances) {

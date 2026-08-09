@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { getDb } from '@/lib/db/index';
-import { users } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { usersCol } from '@/lib/db/firestore.js';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { canManageOrgUsers, getClientIp } from '@/lib/auth/permissions.js';
@@ -17,11 +15,11 @@ export async function GET(request, { params }) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const db = getDb();
-  const orgUsers = await db
-    .select({ id: users.id, name: users.name, email: users.email, role: users.role, status: users.status, createdAt: users.createdAt })
-    .from(users)
-    .where(eq(users.orgId, orgId));
+  const snap = await usersCol().where('orgId', '==', orgId).get();
+  const orgUsers = snap.docs.map(d => {
+    const { id, name, email, role, status, createdAt } = d.data();
+    return { id, name, email, role, status, createdAt };
+  });
 
   return NextResponse.json(orgUsers);
 }
@@ -49,38 +47,35 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: `Role must be one of: ${allowedRoles.join(', ')}` }, { status: 400 });
   }
 
-  const db = getDb();
-
-  try {
-    const newUser = {
-      id: uuidv4(),
-      name,
-      email: email.toLowerCase(),
-      passwordHash: bcrypt.hashSync(password, 10),
-      role,
-      status: 'active',
-      orgId,
-      createdAt: Date.now(),
-    };
-    await db.insert(users).values(newUser);
-
-    await logActivity(db, {
-      orgId,
-      userId: session.id,
-      userName: session.name,
-      userRole: session.role,
-      action: 'create',
-      entity: 'user',
-      entityId: newUser.id,
-      details: { name: newUser.name, email: newUser.email, role: newUser.role },
-      ipAddress: getClientIp(request),
-    });
-
-    return NextResponse.json({ id: newUser.id, name: newUser.name, email: newUser.email, role: newUser.role, status: newUser.status, createdAt: newUser.createdAt }, { status: 201 });
-  } catch (err) {
-    if (err.code === '23505' || err.message?.includes('unique')) {
-      return NextResponse.json({ error: 'Email already exists' }, { status: 409 });
-    }
-    throw err;
+  const emailLower = email.toLowerCase();
+  const existing = await usersCol().where('email', '==', emailLower).limit(1).get();
+  if (!existing.empty) {
+    return NextResponse.json({ error: 'Email already exists' }, { status: 409 });
   }
+
+  const newUser = {
+    id: uuidv4(),
+    name,
+    email: emailLower,
+    passwordHash: bcrypt.hashSync(password, 10),
+    role,
+    status: 'active',
+    orgId,
+    createdAt: Date.now(),
+  };
+  await usersCol().doc(newUser.id).set(newUser);
+
+  await logActivity({
+    orgId,
+    userId: session.id,
+    userName: session.name,
+    userRole: session.role,
+    action: 'create',
+    entity: 'user',
+    entityId: newUser.id,
+    details: { name: newUser.name, email: newUser.email, role: newUser.role },
+    ipAddress: getClientIp(request),
+  });
+
+  return NextResponse.json({ id: newUser.id, name: newUser.name, email: newUser.email, role: newUser.role, status: newUser.status, createdAt: newUser.createdAt }, { status: 201 });
 }

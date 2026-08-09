@@ -1,16 +1,17 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { getDb } from '@/lib/db/index';
-import { users } from '@/lib/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { usersCol, userDoc } from '@/lib/db/firestore.js';
 import { getClientIp } from '@/lib/auth/permissions.js';
 import { logActivity } from '@/lib/db/log-activity.js';
 
 // org_admin may only touch supervisor/cashier accounts (never other
 // org_admins or super_admin) — super_admin can touch anyone in the org.
-async function loadManageableTarget(db, session, orgId, userId) {
-  const [target] = await db.select().from(users).where(and(eq(users.id, userId), eq(users.orgId, orgId))).limit(1);
-  if (!target) return { error: NextResponse.json({ error: 'User not found' }, { status: 404 }) };
+async function loadManageableTarget(session, orgId, userId) {
+  const snap = await userDoc(userId).get();
+  const target = snap.exists ? snap.data() : null;
+  if (!target || target.orgId !== orgId) {
+    return { error: NextResponse.json({ error: 'User not found' }, { status: 404 }) };
+  }
   if (session.role !== 'super_admin' && ['org_admin', 'super_admin'].includes(target.role)) {
     return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
   }
@@ -25,13 +26,12 @@ export async function DELETE(request, { params }) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const db = getDb();
-  const { target, error } = await loadManageableTarget(db, session, orgId, userId);
+  const { target, error } = await loadManageableTarget(session, orgId, userId);
   if (error) return error;
 
-  await db.delete(users).where(eq(users.id, userId));
+  await usersCol().doc(userId).delete();
 
-  await logActivity(db, {
+  await logActivity({
     orgId,
     userId: session.id,
     userName: session.name,
@@ -60,13 +60,12 @@ export async function PATCH(request, { params }) {
     return NextResponse.json({ error: "status must be 'active' or 'suspended'" }, { status: 400 });
   }
 
-  const db = getDb();
-  const { target, error } = await loadManageableTarget(db, session, orgId, userId);
+  const { target, error } = await loadManageableTarget(session, orgId, userId);
   if (error) return error;
 
-  await db.update(users).set({ status }).where(eq(users.id, userId));
+  await usersCol().doc(userId).update({ status });
 
-  await logActivity(db, {
+  await logActivity({
     orgId,
     userId: session.id,
     userName: session.name,
