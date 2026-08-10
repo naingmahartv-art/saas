@@ -1,19 +1,9 @@
 import { NextResponse } from 'next/server';
 import { orgSessionDoc, orgSessionVouchersCol, sessionId as buildSessionId } from '@/lib/db/firestore.js';
+import { rtdbSessionRef } from '@/lib/db/rtdb.js';
 import { getSession } from '@/lib/auth';
 import { getActiveSession } from '@/lib/auth/permissions.js';
 
-// GET /api/org/[orgId]/ledger/totals?onCount=&ampm=
-//   -> { totals: { [num]: total } } — a single read of the session doc's
-//      maintained `totals` map (kept up to date transactionally by every
-//      voucher save/edit/delete — never recomputed by scanning vouchers).
-// GET .../totals?onCount=&ampm=&num=62
-//   -> { byAgent: [{ agentName, total }] } — per-agent breakdown for one
-//      number (feeds the "Checking Agent" overlay); this one *does* need to
-//      scan the session's vouchers, since per-agent breakdown isn't a
-//      maintained aggregate — it's a rare, manually-triggered lookup, not
-//      the hot path.
-// Defaults to the active session when onCount/ampm aren't given.
 export async function GET(request, { params }) {
   const { orgId } = await params;
   const session = await getSession();
@@ -27,10 +17,6 @@ export async function GET(request, { params }) {
   const onDate = searchParams.get('onDate');
   const num = searchParams.get('num');
 
-  // Callers today only ever ask for the currently active session and don't
-  // pass onDate (matching the original Postgres route's behavior, which
-  // didn't disambiguate by date either) — resolve via onDate+ampm+onCount
-  // only when all three are explicitly given, otherwise use the active session.
   let sid;
   if (onCount && ampm && onDate) {
     sid = buildSessionId(onDate, ampm, onCount);
@@ -40,6 +26,31 @@ export async function GET(request, { params }) {
     sid = active.id;
   }
 
+  // 1. Try reading from Realtime DB first
+  try {
+    const rtdbSnap = await rtdbSessionRef(orgId, sid).once('value');
+    if (rtdbSnap.exists()) {
+      const val = rtdbSnap.val() || {};
+      if (num) {
+        const agentTotals = val.agentTotals || {};
+        const byAgent = [];
+        for (const [agentId, aTotals] of Object.entries(agentTotals)) {
+          if (aTotals && aTotals[num] > 0) {
+            byAgent.push({ agentName: agentId, total: aTotals[num] });
+          }
+        }
+        if (byAgent.length > 0) {
+          return NextResponse.json({ byAgent });
+        }
+      } else if (val.totals) {
+        return NextResponse.json({ totals: val.totals || {} });
+      }
+    }
+  } catch (err) {
+    console.error('RTDB totals read error fallback to Firestore:', err);
+  }
+
+  // 2. Fallback to Firestore session doc / vouchers
   if (num) {
     const snap = await orgSessionVouchersCol(orgId, sid).get();
     const byAgentMap = {};

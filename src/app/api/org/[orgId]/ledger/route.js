@@ -7,6 +7,7 @@ import {
   orgAgentDoc,
   sessionId as buildSessionId,
 } from '@/lib/db/firestore.js';
+import { applyRtdbDelta } from '@/lib/db/rtdb.js';
 import { getSession } from '@/lib/auth';
 import { parseNumberExpression } from '@/lib/lottery/numberParser.js';
 import { assertCashierWriteAllowed, getClientIp, getActiveSession } from '@/lib/auth/permissions.js';
@@ -14,7 +15,6 @@ import { logActivity } from '@/lib/db/log-activity.js';
 import { isBeforeCutover, getLegacyLedgerSlips } from '@/lib/db/legacy-reports.js';
 
 // GET /api/org/[orgId]/ledger — list saved ledger slips for a session
-// (defaults to the active session if no onCount/ampm/onDate given).
 export async function GET(request, { params }) {
   const { orgId } = await params;
   const session = await getSession();
@@ -28,8 +28,6 @@ export async function GET(request, { params }) {
   const onDate = searchParams.get('onDate');
   const agentName = searchParams.get('agentName');
 
-  // Pre-cutover sessions only ever existed in Postgres — Firestore started
-  // empty, so a date before the cutover is never found there.
   if (onDate && isBeforeCutover(onDate)) {
     const slips = await getLegacyLedgerSlips(orgId, { onCount, ampm, onDate, agentName });
     return NextResponse.json({ slips });
@@ -55,8 +53,6 @@ export async function GET(request, { params }) {
   return NextResponse.json({ slips });
 }
 
-// Re-runs the (untouched) number-expression parser server-side so expanded
-// amounts are always derived from the raw tokens, never trusted from the client.
 function expandTokens(tokens) {
   const expanded = [];
   for (const tokenText of tokens) {
@@ -71,10 +67,7 @@ function expandTokens(tokens) {
   return expanded;
 }
 
-// POST /api/org/[orgId]/ledger — save a voucher. Voucher number (srNo) and
-// the session's running per-number totals are both updated atomically inside
-// a single Firestore transaction, so concurrent saves from different cashiers
-// can never collide on srNo or produce an inconsistent totals map.
+// POST /api/org/[orgId]/ledger — save a voucher
 export async function POST(request, { params }) {
   const { orgId } = await params;
   const session = await getSession();
@@ -117,30 +110,21 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: 'Tokens did not expand to any numbers' }, { status: 400 });
   }
 
-  // Sum multiple entries for the same number before building the totals
-  // increment map — a plain object would otherwise silently drop all but
-  // the last increment for a repeated number within one voucher.
   const perNumber = {};
   for (const e of entries) {
     const amt = parseFloat(e.amount) || 0;
     perNumber[e.num] = (perNumber[e.num] || 0) + amt;
   }
-  const details = entries.map(e => ({ num1: e.num, value: parseFloat(e.amount) || 0 }));
-  const amount = details.reduce((sum, d) => sum + d.value, 0);
+  const amount = Object.values(perNumber).reduce((sum, amt) => sum + amt, 0);
   const now = Date.now();
 
   const db = getDb();
-  // A client-supplied id (from the localStorage save queue) becomes the
-  // Firestore doc id, so a retried request — same clientId, e.g. the ack was
-  // lost after the write actually landed — is a safe no-op below rather than
-  // a duplicate voucher or a double-counted total.
   const voucherRef = clientId ? orgSessionVouchersCol(orgId, sid).doc(clientId) : orgSessionVouchersCol(orgId, sid).doc();
 
   const { srNo, created } = await db.runTransaction(async (tx) => {
     const [sSnap, existingVoucherSnap] = await Promise.all([tx.get(sessionRef), tx.get(voucherRef)]);
     if (!sSnap.exists) throw new Error('SESSION_NOT_FOUND');
     if (existingVoucherSnap.exists) {
-      // Idempotent retry — the write already landed, just never got acked.
       return { srNo: existingVoucherSnap.data().srNo, created: false };
     }
     const nextSrNo = (sSnap.data().voucherCount || 0) + 1;
@@ -150,6 +134,7 @@ export async function POST(request, { params }) {
       totalsUpdate[`totals.${num}`] = FieldValue.increment(amt);
     }
 
+    // Save ultra-light voucher document to Firestore (tokens array only, omit details)
     tx.set(voucherRef, {
       id: voucherRef.id,
       orgId,
@@ -163,7 +148,6 @@ export async function POST(request, { params }) {
       agentName: agent.agentName,
       amount,
       tokens,
-      details,
       createdAt: now,
       createdBy: session.id,
     });
@@ -172,6 +156,9 @@ export async function POST(request, { params }) {
   });
 
   if (created) {
+    // Also apply live updates to Realtime DB
+    await applyRtdbDelta(orgId, sid, agentId, perNumber, 1);
+
     await logActivity({
       orgId,
       userId: session.id,
