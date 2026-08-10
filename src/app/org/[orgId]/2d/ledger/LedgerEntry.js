@@ -1396,31 +1396,32 @@ export default function LedgerEntry({
         {/* Left panel: input + voucher token list (5-cell column grid) */}
         <div className="flex flex-col h-full min-h-0 space-y-3">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 shrink-0">
-            <div className="flex items-center gap-2 mb-3">
-              <label className="text-xs font-medium text-gray-600">{t('ledger.agentLabel')} ({formatCombo(shortcuts.focusAgent)})</label>
-              <AgentCombobox
-                ref={agentSelectRef}
-                agents={agents}
-                value={agentId}
-                onChange={setAgentId}
-                placeholder={t('ledger.agentSearchPlaceholder')}
-                onEnter={() => {
-                  setTimeout(() => {
-                    inputRef.current?.focus();
-                  }, 50);
-                }}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="w-full">
+                <AgentCombobox
+                  ref={agentSelectRef}
+                  agents={agents}
+                  value={agentId}
+                  onChange={setAgentId}
+                  placeholder={`${t('ledger.agentLabel')} (${formatCombo(shortcuts.focusAgent)})`}
+                  onEnter={() => {
+                    setTimeout(() => {
+                      inputRef.current?.focus();
+                    }, 50);
+                  }}
+                />
+              </div>
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputValue}
+                onChange={handleChange}
+                onKeyDown={handleKeyDown}
+                disabled={!activeSession || !agentId || !canWrite}
+                placeholder={agentId ? `${t('ledger.enterNumbers')} (${formatCombo(shortcuts.focusNumber)})` : t('ledger.selectAgentFirst')}
+                className="w-full px-3 py-2 text-sm font-mono tracking-wide border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
               />
             </div>
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputValue}
-              onChange={handleChange}
-              onKeyDown={handleKeyDown}
-              disabled={!activeSession || !agentId || !canWrite}
-              placeholder={agentId ? `${t('ledger.enterNumbers')} (${formatCombo(shortcuts.focusNumber)})` : t('ledger.selectAgentFirst')}
-              className="w-full px-3 py-2.5 text-base font-mono tracking-wide border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
-            />
 
             {!canWrite && (
               <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
