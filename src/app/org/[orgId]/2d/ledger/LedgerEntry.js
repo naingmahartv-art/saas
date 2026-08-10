@@ -1611,11 +1611,11 @@ export default function LedgerEntry({
                           <td
                             onClick={() => handleCellClick(num)}
                             title={amount ? `${num}: ${amount}${isLucky ? ' — 🎯' : ''}` : isLucky ? `${num} — 🎯` : num}
-                            className={`px-1 py-1 font-mono font-semibold text-center cursor-pointer hover:opacity-90 transition border border-gray-200 ${cls}`}
+                            className={`px-0.5 py-0.5 text-xs font-mono font-semibold text-center cursor-pointer hover:opacity-90 transition border border-gray-200 ${cls}`}
                           >
                             {num}
                           </td>
-                          <td className={`px-1.5 py-1 text-right font-mono whitespace-nowrap border border-gray-200 ${amountCls}`}>
+                          <td className={`px-1 py-0.5 text-xs text-right font-mono whitespace-nowrap border border-gray-200 ${amountCls}`}>
                             {amount > 0 ? amount.toLocaleString() : ''}
                           </td>
                         </Fragment>

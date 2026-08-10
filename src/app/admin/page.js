@@ -4,6 +4,8 @@ import { orgsCol, usersCol } from '@/lib/db/firestore.js';
 import NavBar from '@/components/NavBar';
 import Link from 'next/link';
 
+export const dynamic = 'force-dynamic';
+
 export default async function AdminDashboard() {
   const session = await getSession();
   if (!session || session.role !== 'super_admin') redirect('/login');
