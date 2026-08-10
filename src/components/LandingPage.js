@@ -1,4 +1,6 @@
-import React from 'react';
+'use client';
+
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 
 const SETUP_DOWNLOAD_URL = "https://firebasestorage.googleapis.com/v0/b/shweywethla-49cb4.firebasestorage.app/o/share%2FSaaS%20Platform%20Setup%201.0.4.exe?alt=media&token=4ba05faa-bf39-4667-99fc-0d9df8a72958";
@@ -31,6 +33,25 @@ const FEATURES = [
 ];
 
 export default function LandingPage() {
+  const [downloadUrl, setDownloadUrl] = useState(SETUP_DOWNLOAD_URL);
+  const [versionStr, setVersionStr] = useState('1.0.4');
+  const [exeTitle, setExeTitle] = useState('SaaS Platform Setup.exe');
+
+  useEffect(() => {
+    fetch('/api/admin/resources')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.resources && data.resources.length > 0) {
+          const exeRes = data.resources.find((r) => r.type === 'exe');
+          if (exeRes?.url) {
+            setDownloadUrl(exeRes.url);
+            if (exeRes.version) setVersionStr(exeRes.version);
+            if (exeRes.title) setExeTitle(exeRes.title);
+          }
+        }
+      })
+      .catch((err) => console.error(err));
+  }, []);
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 font-sans selection:bg-indigo-500 selection:text-white">
       {/* Background Glow Effects */}
@@ -60,19 +81,19 @@ export default function LandingPage() {
             <Link href="/tutorial" className="hover:text-indigo-400 transition flex items-center gap-1.5">
               <span>📚</span> Tutorials
             </Link>
-            <a href={SETUP_DOWNLOAD_URL} className="hover:text-indigo-400 transition flex items-center gap-1">
-              <span>💻</span> Download v1.0.4
+            <a href={downloadUrl} className="hover:text-indigo-400 transition flex items-center gap-1">
+              <span>💻</span> Download v{versionStr}
             </a>
           </nav>
 
           <div className="flex items-center gap-3">
             <a
-              href={SETUP_DOWNLOAD_URL}
+              href={downloadUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="hidden sm:inline-flex items-center gap-2 text-xs px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold rounded-lg shadow-md shadow-emerald-500/20 transition active:scale-95"
             >
-              <span>📥</span> Setup 1.0.4.exe
+              <span>📥</span> Setup v{versionStr}.exe
             </a>
             <Link
               href="/login"
@@ -103,16 +124,16 @@ export default function LandingPage() {
 
           <div className="pt-4 flex flex-wrap items-center justify-center gap-4">
             <a
-              href={SETUP_DOWNLOAD_URL}
+              href={downloadUrl}
               className="px-6 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-sm rounded-xl shadow-lg shadow-emerald-500/20 transition transform hover:-translate-y-0.5 flex items-center gap-2"
             >
-              <span>📥</span> Download Windows App (Setup 1.0.4.exe)
+              <span>📥</span> Download Windows App (Setup v{versionStr}.exe)
             </a>
             <Link
               href="/tutorial"
-              className="px-6 py-3.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 font-semibold text-sm rounded-xl border border-indigo-500/30 transition flex items-center gap-2"
+              className="px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm rounded-xl border border-slate-700 transition flex items-center gap-2"
             >
-              <span>🎥</span> Watch Video Tutorials
+              <span>🎬</span> Watch Tutorials
             </Link>
             <Link
               href="/login"
@@ -239,10 +260,10 @@ export default function LandingPage() {
 
           <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
             <a
-              href={SETUP_DOWNLOAD_URL}
+              href={downloadUrl}
               className="w-full sm:w-auto px-8 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm rounded-xl shadow-lg shadow-emerald-500/20 transition transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
             >
-              <span>📥</span> Download SaaS Platform Setup 1.0.4.exe
+              <span>📥</span> Download Setup v{versionStr}.exe
             </a>
             <Link
               href="/tutorial"

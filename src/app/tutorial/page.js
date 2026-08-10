@@ -186,10 +186,10 @@ export default function TutorialPage() {
 
           <div className="pt-2 flex flex-wrap items-center justify-center gap-4">
             <a
-              href={DOWNLOAD_URL}
+              href={downloadUrl}
               className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-sm rounded-xl shadow-lg shadow-indigo-500/25 transition transform hover:-translate-y-0.5 flex items-center gap-2"
             >
-              <span>📥</span> Download Windows App (v1.0.4.exe)
+              <span>📥</span> Download Windows App (.exe)
             </a>
             <a
               href="#videos"
@@ -332,10 +332,10 @@ export default function TutorialPage() {
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
             <a
-              href={DOWNLOAD_URL}
+              href={downloadUrl}
               className="w-full sm:w-auto px-8 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm rounded-xl shadow-lg shadow-emerald-500/20 transition transform hover:-translate-y-0.5 flex items-center justify-center gap-2"
             >
-              <span>📥</span> Download SaaS Platform Setup 1.0.4.exe
+              <span>📥</span> Download Desktop Setup.exe
             </a>
             <Link
               href="/login"
