@@ -1,25 +1,29 @@
 import { getApps, initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 
-// Singleton init — avoids re-initializing on every hot-reload / lambda warm invocation.
-function initFirestore() {
-  if (getApps().length === 0) {
-    initializeApp({
-      credential: cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-      }),
-    });
-  }
-  return getFirestore();
-}
+let firestoreInstance = null;
 
-const db = initFirestore();
-
-/** Returns the shared Firestore instance. */
+/** Returns the shared Firestore instance, initializing lazily on first access. */
 export function getDb() {
-  return db;
+  if (!firestoreInstance) {
+    if (getApps().length === 0) {
+      const projectId = process.env.FIREBASE_PROJECT_ID;
+      const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+      const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
+      initializeApp({
+        credential: cert({
+          projectId: projectId || 'build-time-fallback-project-id',
+          clientEmail: clientEmail || 'build-time-fallback@example.com',
+          privateKey:
+            privateKey ||
+            '-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...\n-----END PRIVATE KEY-----\n',
+        }),
+      });
+    }
+    firestoreInstance = getFirestore();
+  }
+  return firestoreInstance;
 }
 
 export { Timestamp };
@@ -31,25 +35,21 @@ export const PLAN_PRICES = {
 
 // ─── Collection / doc path helpers ─────────────────────────────────────────
 // Two top-level collections (organizations, users) — everything else nests
-// under organizations/{orgId} as a subcollection, replacing `WHERE org_id = ...`.
+// under organizations/{orgId} as a subcollection.
 
-export const orgsCol = () => db.collection('organizations');
-export const orgDoc = (orgId) => db.collection('organizations').doc(orgId);
+export const orgsCol = () => getDb().collection('organizations');
+export const orgDoc = (orgId) => getDb().collection('organizations').doc(orgId);
 
-export const usersCol = () => db.collection('users');
-export const userDoc = (userId) => db.collection('users').doc(userId);
+export const usersCol = () => getDb().collection('users');
+export const userDoc = (userId) => getDb().collection('users').doc(userId);
 
 export const orgAgentsCol = (orgId) => orgDoc(orgId).collection('agents');
 export const orgAgentDoc = (orgId, agentId) => orgAgentsCol(orgId).doc(agentId);
 
 export const orgMachinesCol = (orgId) => orgDoc(orgId).collection('machines');
 
-// Single doc, not a collection — matches today's one-row-per-org `rates` table.
 export const orgRatesDoc = (orgId) => orgDoc(orgId).collection('rates').doc('current');
 
-// One doc per restriction/reference-list type, collapsing ~12 tiny Postgres
-// tables (hotNumbers, notBuyNumbers, limits, brade, power, aPoo, netKhat,
-// netKhatThai, part, small, sm, serieM, serieS) into one small subcollection.
 export const orgRestrictionDoc = (orgId, type) => orgDoc(orgId).collection('restrictions').doc(type);
 
 export const orgBalanceCol = (orgId) => orgDoc(orgId).collection('balance');
