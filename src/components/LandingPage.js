@@ -42,11 +42,14 @@ export default function LandingPage() {
       .then((res) => res.json())
       .then((data) => {
         if (data.resources && data.resources.length > 0) {
-          const exeRes = data.resources.find((r) => r.type === 'exe');
-          if (exeRes?.url) {
-            setDownloadUrl(exeRes.url);
-            if (exeRes.version) setVersionStr(exeRes.version);
-            if (exeRes.title) setExeTitle(exeRes.title);
+          const exeItems = data.resources
+            .filter((r) => r.type === 'exe')
+            .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+          const latestExe = exeItems[0];
+          if (latestExe?.url) {
+            setDownloadUrl(latestExe.url);
+            if (latestExe.version) setVersionStr(latestExe.version);
+            if (latestExe.title) setExeTitle(latestExe.title);
           }
         }
       })

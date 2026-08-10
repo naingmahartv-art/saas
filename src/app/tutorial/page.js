@@ -83,8 +83,13 @@ export default function TutorialPage() {
       .then((res) => res.json())
       .then((data) => {
         if (data.resources && data.resources.length > 0) {
-          const exeRes = data.resources.find((r) => r.type === 'exe');
-          if (exeRes?.url) setDownloadUrl(exeRes.url);
+          const exeItems = data.resources
+            .filter((r) => r.type === 'exe')
+            .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+          const latestExe = exeItems[0];
+          if (latestExe?.url) {
+            setDownloadUrl(latestExe.url);
+          }
 
           const tutorialRes = data.resources.filter((r) => r.type === 'tutorial');
           if (tutorialRes.length > 0) {
