@@ -1011,6 +1011,15 @@ export default function LedgerEntry({
 
   const numberTable = useMemo(() => buildNumberTable(sortedGridNumbers), [sortedGridNumbers]);
 
+  const entryTableRows = useMemo(() => {
+    const cols = 5;
+    const rows = [];
+    for (let i = 0; i < visibleTokens.length; i += cols) {
+      rows.push(visibleTokens.slice(i, i + cols));
+    }
+    return rows;
+  }, [visibleTokens]);
+
   useEffect(() => {
     // Combos come from the user's saved shortcuts (Settings → User Settings),
     // falling back to DEFAULT_SHORTCUTS — see src/lib/ledger/shortcuts.js.
@@ -1479,43 +1488,61 @@ export default function LedgerEntry({
               ) : visibleTokens.length === 0 ? (
                 <div className="px-4 py-6 text-center text-gray-400 text-sm">{t('ledger.noMatchEntries', { q: search })}</div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-1.5 font-mono text-xs">
-                  {visibleTokens.map((p) => (
-                    <div
-                      key={p.id}
-                      className="flex items-center justify-center bg-gray-50/90 border border-gray-200 rounded px-1.5 py-1 hover:bg-indigo-50 hover:border-indigo-300 transition"
-                    >
-                      {editingTokenId === p.id ? (
-                        <input
-                          type="text"
-                          value={editingTokenValue}
-                          onChange={e => setEditingTokenValue(normalizeInput(e.target.value, replaceSlash, replaceAsterisk))}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              commitTokenEdit(p.id);
-                            } else if (e.key === 'Escape') {
-                              e.preventDefault();
-                              cancelTokenEdit();
-                            }
-                          }}
-                          onBlur={() => commitTokenEdit(p.id)}
-                          autoFocus
-                          className="w-full px-1 py-0.5 font-mono text-xs border border-indigo-400 rounded text-center"
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => startTokenEdit(p)}
-                          className="font-mono font-bold text-gray-900 truncate hover:text-indigo-600 text-xs text-center w-full"
-                          title="Click to edit token"
-                        >
-                          {p.tokenText}
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <table className="w-full text-xs border border-collapse border-gray-300 table-fixed">
+                  <colgroup>
+                    <col className="w-[20%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[20%]" />
+                  </colgroup>
+                  <tbody>
+                    {entryTableRows.map((row, rIdx) => (
+                      <tr key={rIdx}>
+                        {Array.from({ length: 5 }, (_, cIdx) => {
+                          const p = row[cIdx];
+                          if (!p) return <td key={cIdx} className="border border-gray-200 bg-gray-50/20 px-1 py-1" />;
+
+                          return (
+                            <td
+                              key={p.id}
+                              className="border border-gray-300 px-1 py-1 text-center font-mono font-bold text-gray-900 hover:bg-indigo-50 transition"
+                            >
+                              {editingTokenId === p.id ? (
+                                <input
+                                  type="text"
+                                  value={editingTokenValue}
+                                  onChange={e => setEditingTokenValue(normalizeInput(e.target.value, replaceSlash, replaceAsterisk))}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      commitTokenEdit(p.id);
+                                    } else if (e.key === 'Escape') {
+                                      e.preventDefault();
+                                      cancelTokenEdit();
+                                    }
+                                  }}
+                                  onBlur={() => commitTokenEdit(p.id)}
+                                  autoFocus
+                                  className="w-full px-1 py-0.5 font-mono text-xs border border-indigo-400 rounded text-center"
+                                />
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => startTokenEdit(p)}
+                                  className="w-full truncate font-mono font-bold text-gray-900 hover:text-indigo-600 text-xs text-center"
+                                  title="Click to edit token"
+                                >
+                                  {p.tokenText}
+                                </button>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
           </div>
