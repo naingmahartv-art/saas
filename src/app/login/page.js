@@ -159,7 +159,14 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="text-center text-xs text-gray-400 mt-6">
+        <div className="text-center mt-6 flex items-center justify-center gap-3 text-xs text-gray-500">
+          <a href="/" className="hover:text-indigo-600 font-medium transition">Home</a>
+          <span>•</span>
+          <a href="/tutorial" className="hover:text-indigo-600 font-semibold text-indigo-600 transition flex items-center gap-1">
+            <span>📚</span> Video Tutorials (သင်ခန်းစာများ)
+          </a>
+        </div>
+        <p className="text-center text-[11px] text-gray-400 mt-2">
           Multi-tenant SaaS Platform — 3-tier access control
         </p>
       </div>

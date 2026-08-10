@@ -17,11 +17,13 @@ function homeFor(session) {
 export async function middleware(request) {
   const { pathname } = request.nextUrl;
 
-  // Allow static files, Next.js internals, public downloads, and auth endpoints
+  // Allow static files, Next.js internals, public downloads, public landing (/), tutorial (/tutorial), and auth endpoints
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
     pathname.startsWith('/downloads') ||
+    pathname === '/' ||
+    pathname.startsWith('/tutorial') ||
     pathname.startsWith('/api/auth/login') ||
     pathname.startsWith('/api/auth/forgot-password')
   ) {
@@ -31,16 +33,16 @@ export async function middleware(request) {
   const token = request.cookies.get('saas_session')?.value;
   const session = token ? await verifyToken(token) : null;
 
-  // If user has a valid active JWT token (token has life) and visits / or /login:
-  if (session && (pathname === '/' || pathname === '/login')) {
+  // If user has a valid active JWT token and visits /login:
+  if (session && pathname === '/login') {
     if (session.status === 'suspended') {
       return NextResponse.redirect(new URL('/suspended', request.url));
     }
     return NextResponse.redirect(new URL(homeFor(session), request.url));
   }
 
-  // Allow public login and suspended pages when unauthenticated
-  if (!session && (pathname === '/login' || pathname === '/suspended')) {
+  // Allow public login, suspended, tutorial, and landing page when unauthenticated
+  if (!session && (pathname === '/' || pathname.startsWith('/tutorial') || pathname === '/login' || pathname === '/suspended')) {
     return NextResponse.next();
   }
 

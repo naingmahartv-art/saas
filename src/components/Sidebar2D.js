@@ -249,6 +249,17 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
           </Link>
         )}
         <Link
+          href="/tutorial"
+          target="_blank"
+          title={collapsed ? "Tutorials & Website" : undefined}
+          className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-indigo-600 hover:bg-indigo-50 transition ${
+            collapsed ? 'justify-center' : ''
+          }`}
+        >
+          <span className="text-base">📚</span>
+          {!collapsed && <span>Tutorials / App Info</span>}
+        </Link>
+        <Link
           href={`/org/${orgId}/select-app`}
           title={collapsed ? t('nav.switchApp') : undefined}
           className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 ${
