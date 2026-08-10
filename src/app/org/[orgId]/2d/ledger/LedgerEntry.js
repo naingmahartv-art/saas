@@ -1562,11 +1562,13 @@ export default function LedgerEntry({
             <table className="w-full h-full text-sm border border-collapse border-gray-200 table-fixed">
               <colgroup>
                 <col className="w-[10%]" />
-                <col className="w-[23.33%]" />
+                <col className="w-[15%]" />
                 <col className="w-[10%]" />
-                <col className="w-[23.33%]" />
+                <col className="w-[15%]" />
                 <col className="w-[10%]" />
-                <col className="w-[23.34%]" />
+                <col className="w-[15%]" />
+                <col className="w-[10%]" />
+                <col className="w-[15%]" />
               </colgroup>
               <tbody className="h-full">
                 {numberTable.map((row, rowIdx) => (
