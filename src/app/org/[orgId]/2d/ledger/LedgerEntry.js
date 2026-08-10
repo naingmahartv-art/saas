@@ -1571,9 +1571,9 @@ export default function LedgerEntry({
               </button>
             </div>
           </div>
-          <div className="flex-1 min-h-0 overflow-y-auto">
-            <table className="w-full text-sm border border-collapse border-gray-200">
-              <tbody>
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            <table className="w-full h-full text-sm border border-collapse border-gray-200">
+              <tbody className="h-full">
                 {numberTable.map((row, rowIdx) => (
                   <tr key={rowIdx}>
                     {row.map((num, colIdx) => {
