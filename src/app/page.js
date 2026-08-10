@@ -1,6 +1,9 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
+import { systemResourcesCol } from '@/lib/db/firestore.js';
 import LandingPage from '@/components/LandingPage';
+
+export const dynamic = 'force-dynamic';
 
 export default async function Home() {
   const session = await getSession();
@@ -8,7 +11,18 @@ export default async function Home() {
 
   if (!session) {
     if (isElectron) redirect('/login');
-    return <LandingPage />;
+
+    let resources = [];
+    try {
+      const snap = await systemResourcesCol().get();
+      if (!snap.empty) {
+        resources = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      }
+    } catch (err) {
+      console.error('Server Firestore read error on landing page:', err);
+    }
+
+    return <LandingPage initialResources={resources} />;
   }
 
   if (isElectron && session.orgId) {

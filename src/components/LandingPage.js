@@ -32,10 +32,14 @@ const FEATURES = [
   },
 ];
 
-export default function LandingPage() {
-  const [downloadUrl, setDownloadUrl] = useState(SETUP_DOWNLOAD_URL);
-  const [versionStr, setVersionStr] = useState('1.0.4');
-  const [exeTitle, setExeTitle] = useState('SaaS Platform Setup.exe');
+export default function LandingPage({ initialResources = [] }) {
+  const initialExe = (initialResources || [])
+    .filter(r => r.type === 'exe')
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+
+  const [downloadUrl, setDownloadUrl] = useState(initialExe?.url || SETUP_DOWNLOAD_URL);
+  const [versionStr, setVersionStr] = useState(initialExe?.version || '1.0.4');
+  const [exeTitle, setExeTitle] = useState(initialExe?.title || 'SaaS Platform Setup.exe');
 
   useEffect(() => {
     fetch('/api/admin/resources', { cache: 'no-store' })
