@@ -76,6 +76,15 @@ const SHORTCUT_TABLE = [
 export default function TutorialPage() {
   const [activeTab, setActiveTab] = useState('all');
   const [downloadUrl, setDownloadUrl] = useState(DOWNLOAD_URL);
+  const [exeList, setExeList] = useState([
+    {
+      id: 'default_exe',
+      title: 'SaaS Platform Desktop Setup 1.0.4.exe',
+      version: '1.0.4',
+      url: DOWNLOAD_URL,
+      description: 'Windows Standalone Desktop App Installer v1.0.4 with offline support.',
+    },
+  ]);
   const [videos, setVideos] = useState(TUTORIAL_VIDEOS);
 
   useEffect(() => {
@@ -86,9 +95,9 @@ export default function TutorialPage() {
           const exeItems = data.resources
             .filter((r) => r.type === 'exe')
             .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-          const latestExe = exeItems[0];
-          if (latestExe?.url) {
-            setDownloadUrl(latestExe.url);
+          if (exeItems.length > 0) {
+            setExeList(exeItems);
+            setDownloadUrl(exeItems[0].url);
           }
 
           const tutorialRes = data.resources.filter((r) => r.type === 'tutorial');
@@ -321,6 +330,60 @@ export default function TutorialPage() {
                 <span className="text-xs text-slate-300 text-right font-medium">
                   {sc.desc}
                 </span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* All EXE Downloads List Section */}
+        <section id="downloads" className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+            <div>
+              <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                <span>📦</span> All Desktop App Downloads (EXE Installers)
+              </h2>
+              <p className="text-slate-400 text-xs sm:text-sm mt-1">
+                Official Windows Desktop setup installers. Click any button below to download direct setup files:
+              </p>
+            </div>
+            <span className="text-xs px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-semibold rounded-full self-start">
+              {exeList.length} Installers Available
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {exeList.map((exe) => (
+              <div
+                key={exe.id}
+                className="bg-slate-800/60 rounded-2xl border border-slate-700/80 p-6 space-y-4 hover:border-indigo-500/50 transition flex flex-col justify-between"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-xs font-bold px-2.5 py-1 bg-indigo-500/20 text-indigo-300 rounded-lg border border-indigo-500/30">
+                      Version {exe.version || '1.0.0'}
+                    </span>
+                    {exe.updatedAt && (
+                      <span className="text-[11px] text-slate-400">
+                        Updated {new Date(exe.updatedAt).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-base font-bold text-white">{exe.title}</h3>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    {exe.description || 'Windows Standalone Desktop App Setup file.'}
+                  </p>
+                </div>
+
+                <div className="pt-2">
+                  <a
+                    href={exe.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full px-5 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/20 transition flex items-center justify-center gap-2"
+                  >
+                    <span>📥</span> Download {exe.title || `Setup v${exe.version}.exe`}
+                  </a>
+                </div>
               </div>
             ))}
           </div>
