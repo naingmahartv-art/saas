@@ -1572,7 +1572,15 @@ export default function LedgerEntry({
             </div>
           </div>
           <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            <table className="w-full h-full text-sm border border-collapse border-gray-200">
+            <table className="w-full h-full text-sm border border-collapse border-gray-200 table-fixed">
+              <colgroup>
+                <col className="w-[10%]" />
+                <col className="w-[23.33%]" />
+                <col className="w-[10%]" />
+                <col className="w-[23.33%]" />
+                <col className="w-[10%]" />
+                <col className="w-[23.34%]" />
+              </colgroup>
               <tbody className="h-full">
                 {numberTable.map((row, rowIdx) => (
                   <tr key={rowIdx}>
