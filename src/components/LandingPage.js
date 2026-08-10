@@ -3,8 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 
-const SETUP_DOWNLOAD_URL = "https://firebasestorage.googleapis.com/v0/b/shweywethla-49cb4.firebasestorage.app/o/share%2FSaaS%20Platform%20Setup%201.0.4.exe?alt=media&token=4ba05faa-bf39-4667-99fc-0d9df8a72958";
-
 const FEATURES = [
   {
     icon: '📊',
@@ -37,8 +35,8 @@ export default function LandingPage({ initialResources = [] }) {
     .filter(r => r.type === 'exe')
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
 
-  const [downloadUrl, setDownloadUrl] = useState(initialExe?.url || SETUP_DOWNLOAD_URL);
-  const [versionStr, setVersionStr] = useState(initialExe?.version || '1.0.4');
+  const [downloadUrl, setDownloadUrl] = useState(initialExe?.url || '#');
+  const [versionStr, setVersionStr] = useState(initialExe?.version || '1.0.0');
   const [exeTitle, setExeTitle] = useState(initialExe?.title || 'SaaS Platform Setup.exe');
 
   useEffect(() => {
