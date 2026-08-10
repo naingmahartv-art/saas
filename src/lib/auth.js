@@ -32,14 +32,16 @@ export async function getSession() {
 
 export async function setSession(res, payload) {
   const token = await signToken(payload);
+  const isElectron = Boolean(process.env.ELECTRON_RUN_AS_NODE);
   res.cookies.set(COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.NODE_ENV === 'production' && !isElectron,
     sameSite: 'lax',
     maxAge: 60 * 60 * 24 * 7, // 7 days
     path: '/',
   });
 }
+
 
 export async function clearSession(res) {
   res.cookies.set(COOKIE_NAME, '', { maxAge: 0, path: '/' });

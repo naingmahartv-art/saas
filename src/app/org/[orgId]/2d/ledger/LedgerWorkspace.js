@@ -98,7 +98,7 @@ export default function LedgerWorkspace({
   }, [isHistoryOpen, shortcuts]);
 
   return (
-    <div className="px-3 py-3">
+    <div className="w-full px-3 py-3">
       <LedgerEntry
         orgId={orgId}
         activeSession={activeSession}

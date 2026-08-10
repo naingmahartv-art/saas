@@ -14,7 +14,7 @@ const APPS = [
     label: '2D',
     subtitle: '2D ထီ',
     icon: '🔢',
-    href: 'dashboard',
+    href: 'ledger',
     available: true,
   },
   {

@@ -8,5 +8,5 @@ export default async function DashboardRedirect() {
   if (!session) redirect('/login');
   if (session.role === 'super_admin') redirect('/admin');
   if (session.role === 'org_admin') redirect(`/org/${session.orgId}/admin/dashboard`);
-  redirect(`/org/${session.orgId}/2d/dashboard`);
+  redirect(`/org/${session.orgId}/2d/ledger`);
 }

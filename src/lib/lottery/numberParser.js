@@ -255,14 +255,25 @@ function parseToken(token, expand) {
   // come from the set inside the brackets (Cartesian product of the set with
   // itself), e.g. [23] -> 22,23,32,33. Duplicate digits collapse to a set,
   // so [00] is just [0] -> 00.
-  const bracketMatch = token.match(/^\[(\d+)\](\d*)$/);
+  // If 'A' (or 'a') is present inside the brackets (e.g. "[A123]100"), exclude
+  // pairs where the front digit equals the back digit (e.g. 11, 22, 33).
+  const bracketMatch = token.match(/^\[([A-Z0-9]+)\](\d*)$/i);
   if (bracketMatch) {
-    const digits = [...new Set(bracketMatch[1].split(''))];
+    const rawContent = bracketMatch[1].toUpperCase();
+    const excludeDoubles = rawContent.includes('A');
+    const digitChars = rawContent.replace(/[^0-9]/g, '');
+    const digits = [...new Set(digitChars.split(''))];
     const amount = parseFloat(bracketMatch[2]) || 0;
     const out = [];
-    for (const t of digits) for (const u of digits) out.push({ num: `${t}${u}`, amount });
+    for (const t of digits) {
+      for (const u of digits) {
+        if (excludeDoubles && t === u) continue;
+        out.push({ num: `${t}${u}`, amount });
+      }
+    }
     return out;
   }
+
 
   let i = 0;
   const results = [];
@@ -340,8 +351,8 @@ export function parseNumberExpression(expression, config = {}) {
     return { entries: [], error: null };
   }
 
-  // Replace '.' with '00' before splitting
-  const normalised = expression.trim().replace(/\./g, '00');
+  // Clean commas and '=' signs, and replace '.' with '00' before splitting
+  const normalised = expression.trim().replace(/,/g, '').replace(/=/g, ' ').replace(/\./g, '00');
 
   // Split by space — each group is committed independently
   const groups = normalised.split(/\s+/).filter(Boolean);

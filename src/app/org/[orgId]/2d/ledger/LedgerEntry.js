@@ -8,7 +8,7 @@ import { matchesCombo, formatCombo as rawFormatCombo } from '@/lib/ledger/shortc
 import { useIsMac } from '@/lib/ledger/useLedgerShortcuts.js';
 import { enqueue, onQueueEvent, startAutoDrain } from '@/lib/ledger/voucherQueue.js';
 
-const ALLOWED_CHARS = /[^0-9RASZDGPBWNFXT+\-*/.[\]]/gi;
+const ALLOWED_CHARS = /[^0-9RAGPBWNFXT+\-*/.[\]]/gi;
 
 // Strips disallowed characters, then converts the convenience shorthand `/`
 // to `P` (numpad-friendly alias for the Part modifier) and converts `*` to `R`.
@@ -134,11 +134,14 @@ export default function LedgerEntry({
   const [checkAgentInput, setCheckAgentInput] = useState('');
   const [checkAgentResults, setCheckAgentResults] = useState(null);
   const [checkAgentLoading, setCheckAgentLoading] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importJsonText, setImportJsonText] = useState('');
   const [exceedSortKey, setExceedSortKey] = useState('excess');
   const [exceedSortDir, setExceedSortDir] = useState('desc');
   const [gridSortKey, setGridSortKey] = useState('number');
   const [gridSortDir, setGridSortDir] = useState('asc');
   const inputRef = useRef(null);
+  const rateInputRef = useRef(null);
   const agentSelectRef = useRef(null);
   const middlePanelRef = useRef(null);
   const [middlePanelHeight, setMiddlePanelHeight] = useState(0);
@@ -293,8 +296,8 @@ export default function LedgerEntry({
       return;
     }
 
-    const headers = [t('ledger.numberCol'), t('ledger.amountCol'), t('ledger.exceedLabel')].join(',');
-    const rows = exceedList.map(e => `${e.num},${e.amount},${e.excess}`);
+    const headers = [t('ledger.numberCol'), t('ledger.exceedLabel')].join(',');
+    const rows = exceedList.map(e => `${e.num},${e.excess}`);
     const csvContent = [headers, ...rows].join('\n');
 
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -307,6 +310,160 @@ export default function LedgerEntry({
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  }
+
+  async function handleCopyExceedLimit() {
+    if (exceedList.length === 0) {
+      setError(t('ledger.nothingToExport') || 'Nothing to export');
+      return;
+    }
+
+    const lines = exceedList.map(e => `${e.num} - ${e.excess.toLocaleString()}`);
+    const text = `[Buy List / အဝယ်စာရင်း]\n${lines.join('\n')}`;
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setSuccessMsg(t('ledger.copiedToClipboard') || 'Copied to clipboard!');
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch {
+      setError(t('ledger.shareFailed') || 'Could not copy');
+    }
+  }
+
+  function handleDoImportJson(rawText) {
+    try {
+      if (!rawText || !rawText.trim()) {
+        setError('Please paste JSON/CSV text or select a file');
+        return;
+      }
+      const text = rawText.trim();
+      let itemsToImport = [];
+
+      // 1. Try parsing as JSON first
+      if (text.startsWith('{') || text.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(text);
+          if (Array.isArray(parsed)) {
+            itemsToImport = parsed;
+          } else if (parsed && Array.isArray(parsed.items)) {
+            itemsToImport = parsed.items;
+          } else if (parsed && typeof parsed === 'object') {
+            itemsToImport = Object.entries(parsed).map(([num, amount]) => ({ num, amount }));
+          }
+        } catch {
+          // If JSON parse fails, fall back to CSV parsing below
+        }
+      }
+
+      // 2. Fall back to CSV / plain text parsing if not JSON
+      if (itemsToImport.length === 0) {
+        const lines = text.split(/\r?\n/).filter(line => line.trim());
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (/^#|^\[|^total|^num|^number|^sr|^item|^code/i.test(trimmed)) continue;
+
+          const parts = trimmed.split(/[,;\t]+/).map(p => p.trim()).filter(Boolean);
+
+          if (parts.length >= 2) {
+            let numCandidate = parts[0];
+            let amtCandidate = parts[1];
+
+            if (parts.length >= 3 && !isNaN(parseFloat(parts[2].replace(/,/g, '')))) {
+              numCandidate = parts[1];
+              amtCandidate = parts[2];
+            }
+
+            itemsToImport.push({ num: numCandidate, amount: amtCandidate });
+          } else if (parts.length === 1) {
+            const subParts = parts[0].split(/[=\s\-\/]+/).filter(Boolean);
+            if (subParts.length >= 2) {
+              itemsToImport.push({ num: subParts[0], amount: subParts[1] });
+            }
+          }
+        }
+      }
+
+      if (!itemsToImport.length) {
+        setError('No valid JSON or CSV items found in data');
+        return;
+      }
+
+      const newTokens = [];
+      for (const item of itemsToImport) {
+        if (typeof item === 'string') {
+          const { token } = tokenFromText(item, t);
+          if (token) newTokens.push(token);
+          continue;
+        }
+
+        const rawNum = item.num ?? item.number ?? item.n ?? item.key;
+        const rawAmt = item.amount ?? item.excess ?? item.amt ?? item.a ?? item.value;
+
+        if (rawNum !== undefined && rawAmt !== undefined) {
+          let numStr = String(rawNum).trim().replace(/[^0-9]/g, '');
+          if (numStr.length === 1) numStr = '0' + numStr;
+          if (numStr.length > 2) numStr = numStr.slice(-2);
+
+          const amtVal = parseFloat(String(rawAmt).replace(/,/g, '')) || 0;
+
+          if (numStr.length === 2 && amtVal > 0) {
+            newTokens.push({
+              id: nextTokenId(),
+              tokenText: `${numStr}${amtVal}`,
+              entries: [{ num: numStr, amount: amtVal }],
+            });
+          }
+        }
+      }
+
+      if (newTokens.length === 0) {
+        setError('No valid 2-digit number & amount entries found in JSON/CSV data');
+        return;
+      }
+
+      setPendingTokens(prev => [...prev, ...newTokens]);
+      setImportModalOpen(false);
+      setImportJsonText('');
+      setError('');
+      setSuccessMsg(`Successfully imported ${newTokens.length} entries into ထည့်သွင်းမှုများ!`);
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err) {
+      setError('Invalid JSON/CSV format: ' + err.message);
+    }
+  }
+
+  function handleExportExceedJson() {
+    if (exceedList.length === 0) {
+      setError(t('ledger.nothingToExport') || 'Nothing to export');
+      return;
+    }
+
+    const totalVal = exceedList.reduce((sum, e) => sum + e.excess, 0);
+    const exportData = {
+      app: 'SaaS Platform 2D',
+      type: 'exceed_limit',
+      exportedAt: new Date().toISOString(),
+      totalExcess: totalVal,
+      itemCount: exceedList.length,
+      items: exceedList.map(e => ({
+        num: e.num,
+        amount: e.excess,
+      })),
+    };
+
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    link.setAttribute('download', `exceed_limit_${dateStr}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setSuccessMsg('Exported exceed_limit.json! Ready for re-import into the app.');
+    setTimeout(() => setSuccessMsg(''), 4000);
   }
 
   function handleExportGrid() {
@@ -666,6 +823,10 @@ export default function LedgerEntry({
     setRateInput(String(rateValue || ''));
     setRateError('');
     setRateOpen(true);
+    setTimeout(() => {
+      rateInputRef.current?.focus();
+      rateInputRef.current?.select();
+    }, 50);
   }
 
   async function saveRate() {
@@ -891,6 +1052,9 @@ export default function LedgerEntry({
       } else if (matchesCombo(e, shortcuts.reports)) {
         e.preventDefault();
         onOpenReports?.();
+      } else if (matchesCombo(e, shortcuts.refresh)) {
+        e.preventDefault();
+        window.location.reload();
       } else if (matchesCombo(e, shortcuts.sortExceedNum)) {
         e.preventDefault();
         toggleExceedSort('num');
@@ -982,9 +1146,9 @@ export default function LedgerEntry({
 
 
   return (
-    <div className="max-w-[1600px] mx-auto min-h-[calc(100vh-1.5rem)] flex flex-col">
+    <div className="w-full h-[calc(100vh-1.5rem)] flex flex-col overflow-hidden">
       {/* Top bar */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-2 mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-2 mb-3 flex flex-wrap items-center justify-between gap-2 shrink-0">
         <div>
           {activeSession ? (
             <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-gray-900">
@@ -1073,20 +1237,32 @@ export default function LedgerEntry({
             </button>
 
             {rateOpen && (
-              <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-10">
+              <form
+                onSubmit={e => {
+                  e.preventDefault();
+                  saveRate();
+                }}
+                className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-10"
+              >
                 <p className="text-xs font-medium text-gray-600 mb-2">{t('ledger.rateHint')}</p>
                 <div className="flex gap-2">
                   <input
+                    ref={rateInputRef}
                     type="text"
                     value={rateInput}
                     onChange={e => setRateInput(e.target.value.replace(/[^0-9.]/g, ''))}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        saveRate();
+                      }
+                    }}
                     placeholder="80"
                     autoFocus
                     className="w-20 px-2 py-1.5 text-sm font-mono text-center border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                   <button
-                    type="button"
-                    onClick={saveRate}
+                    type="submit"
                     disabled={rateSaving}
                     className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition"
                   >
@@ -1094,7 +1270,7 @@ export default function LedgerEntry({
                   </button>
                 </div>
                 {rateError && <p className="text-xs text-red-600 mt-2">{rateError}</p>}
-              </div>
+              </form>
             )}
           </div>
 
@@ -1180,14 +1356,7 @@ export default function LedgerEntry({
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={onOpenHistory}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
-          >
-            <span>📋</span>
-            {t('ledger.historyTitle')} ({formatCombo(shortcuts.history)})
-          </button>
+
 
           {onOpenReports && (
             <button
@@ -1200,13 +1369,15 @@ export default function LedgerEntry({
             </button>
           )}
 
+
+
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[0.5fr_2fr_0.75fr] gap-3 flex-1 min-h-0">
+      <div className="grid grid-cols-1 xl:grid-cols-[0.5fr_2fr_0.75fr] gap-3 flex-1 min-h-0 items-stretch">
         {/* Left panel: input + voucher token list */}
-        <div className="space-y-3">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3">
+        <div className="flex flex-col h-full min-h-0 space-y-3">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 shrink-0">
             <div className="flex items-center gap-2 mb-3">
               <label className="text-xs font-medium text-gray-600">{t('ledger.agentLabel')} ({formatCombo(shortcuts.focusAgent)})</label>
               <AgentCombobox
@@ -1257,11 +1428,11 @@ export default function LedgerEntry({
               </button>
               <button
                 type="button"
-                onClick={handleClear}
+                onClick={editingId ? handleClear : onOpenHistory}
                 disabled={saving}
-                className="px-4 py-2.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium py-2.5 rounded-lg transition flex items-center justify-center gap-1.5"
               >
-                {editingId ? t('common.cancel') : `${t('common.clear')} (${formatCombo(shortcuts.clear)})`}
+                {editingId ? t('common.cancel') : `${t('ledger.historyTitle')} (${formatCombo(shortcuts.history)})`}
               </button>
             </div>
 
@@ -1269,12 +1440,22 @@ export default function LedgerEntry({
           </div>
 
           {/* Voucher token list — raw as-typed text, not expanded numbers */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
-              <span className="text-sm font-semibold text-gray-800">
-                {t('ledger.entriesHeader', { current: pendingTokens.length, max: MAX_ENTRIES })}
-                {search.trim() && <span className="text-gray-400 font-normal"> — {t('ledger.matchSuffix', { n: visibleTokens.length })}</span>}
-              </span>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
+            <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-gray-800">
+                  {t('ledger.entriesHeader')}
+                  {search.trim() && <span className="text-gray-400 font-normal"> — {t('ledger.matchSuffix', { n: visibleTokens.length })}</span>}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setImportModalOpen(true)}
+                  className="text-xs px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 font-medium rounded-lg hover:bg-emerald-100 transition flex items-center gap-1"
+                  title="Import JSON or CSV data/file"
+                >
+                  <span>📥</span> Import
+                </button>
+              </div>
               <div className="flex items-center gap-3">
                 <input
                   type="text"
@@ -1288,12 +1469,13 @@ export default function LedgerEntry({
                 </span>
               </div>
             </div>
-            {pendingTokens.length === 0 ? (
-              <div className="px-4 py-6 text-center text-gray-400 text-sm">{t('ledger.noEntriesYet')}</div>
-            ) : visibleTokens.length === 0 ? (
-              <div className="px-4 py-6 text-center text-gray-400 text-sm">{t('ledger.noMatchEntries', { q: search })}</div>
-            ) : (
-              <table className="w-full text-sm">
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {pendingTokens.length === 0 ? (
+                <div className="px-4 py-6 text-center text-gray-400 text-sm">{t('ledger.noEntriesYet')}</div>
+              ) : visibleTokens.length === 0 ? (
+                <div className="px-4 py-6 text-center text-gray-400 text-sm">{t('ledger.noMatchEntries', { q: search })}</div>
+              ) : (
+                <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
                     <th className="text-left px-4 py-2 font-medium w-12">#</th>
@@ -1363,15 +1545,16 @@ export default function LedgerEntry({
                   ))}
                 </tbody>
               </table>
-            )}
+              )}
+            </div>
           </div>
         </div>
 
         {/* Center panel: 00-99 aggregate table, session-wide — legacy
             layout: 3 column-groups of [Num, Amount] pairs, read top-to-bottom
             within each group, not a 10x10 button grid. */}
-        <div ref={middlePanelRef} className="bg-white rounded-xl border border-gray-200 shadow-sm p-2.5 h-full overflow-hidden flex flex-col">
-          <div className="flex items-center justify-between mb-2">
+        <div ref={middlePanelRef} className="bg-white rounded-xl border border-gray-200 shadow-sm p-2.5 h-full overflow-hidden flex flex-col min-h-0">
+          <div className="flex items-center justify-between mb-2 shrink-0">
             <h2 className="text-sm font-semibold text-gray-800">00 – 99</h2>
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1">
@@ -1488,20 +1671,37 @@ export default function LedgerEntry({
         </div>
 
         <div
-          style={{ height: middlePanelHeight ? `${middlePanelHeight}px` : 'auto' }}
-          className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 overflow-hidden flex flex-col"
+          className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 overflow-hidden flex flex-col h-full min-h-0"
         >
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-2 shrink-0">
             <h2 className="text-sm font-semibold text-gray-800">{t('ledger.exceedPanelTitle')}</h2>
             {limitValue > 0 && exceedList.length > 0 && (
-              <button
-                type="button"
-                onClick={handleExportExceedLimit}
-                className="text-xs px-2 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 font-medium rounded hover:bg-indigo-100 transition flex items-center gap-1"
-                title={`${t('ledger.exportCsv')} (${formatCombo(shortcuts.exportExceed)})`}
-              >
-                <span>📥</span> {t('ledger.exportCsv')} ({formatCombo(shortcuts.exportExceed)})
-              </button>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleExportExceedLimit}
+                  className="text-xs px-2 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 font-medium rounded hover:bg-indigo-100 transition flex items-center gap-1"
+                  title={`${t('ledger.exportCsv')} (${formatCombo(shortcuts.exportExceed)})`}
+                >
+                  <span>📥</span> CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyExceedLimit}
+                  className="text-xs px-2 py-1 bg-blue-50 border border-blue-200 text-blue-700 font-medium rounded hover:bg-blue-100 transition flex items-center gap-1"
+                  title="Copy full text to clipboard"
+                >
+                  <span>📋</span> Copy
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportExceedJson}
+                  className="text-xs px-2 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 font-medium rounded hover:bg-emerald-100 transition flex items-center gap-1"
+                  title="Export JSON file for reuse as import"
+                >
+                  <span>📤</span> Export JSON
+                </button>
+              </div>
             )}
           </div>
           {!(limitValue > 0) ? (
@@ -1673,6 +1873,79 @@ export default function LedgerEntry({
                 className="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition"
               >
                 Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Import JSON/CSV Modal */}
+      {importModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 shadow-2xl border border-gray-100 max-w-lg w-full space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+                <span>📥</span> Import Entries (JSON or CSV)
+              </h3>
+              <button
+                type="button"
+                onClick={() => { setImportModalOpen(false); setImportJsonText(''); }}
+                className="text-gray-400 hover:text-gray-600 text-lg font-bold px-2"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                  1. Choose JSON or CSV File (.json, .csv)
+                </label>
+                <input
+                  type="file"
+                  accept=".json,.csv,text/csv,application/json"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (evt) => {
+                        setImportJsonText(evt.target?.result || '');
+                      };
+                      reader.readAsText(file);
+                    }
+                  }}
+                  className="block w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                  2. Or Paste JSON or CSV Text Directly
+                </label>
+                <textarea
+                  rows={6}
+                  value={importJsonText}
+                  onChange={(e) => setImportJsonText(e.target.value)}
+                  placeholder={`Paste JSON or CSV data here...\n\nExample CSV:\n35, 1100\n11, 900\n12, 900\n\nExample JSON:\n{"items": [{"num": "35", "amount": 1100}]}`}
+                  className="w-full p-2.5 text-xs font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-3">
+              <button
+                type="button"
+                onClick={() => { setImportModalOpen(false); setImportJsonText(''); }}
+                className="btn-secondary text-xs px-3.5 py-2"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDoImportJson(importJsonText)}
+                disabled={!importJsonText.trim()}
+                className="btn-primary bg-emerald-600 hover:bg-emerald-700 text-xs px-4 py-2 disabled:opacity-50"
+              >
+                Import Entries
               </button>
             </div>
           </div>

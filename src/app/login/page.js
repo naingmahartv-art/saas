@@ -7,6 +7,7 @@ export default function LoginPage() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
   const [forgotOpen, setForgotOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotMsg, setForgotMsg] = useState('');
@@ -42,14 +43,27 @@ export default function LoginPage() {
         body: JSON.stringify(form),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error || 'Login failed'); return; }
-      if (data.role === 'super_admin') router.push('/admin');
-      else if (data.role === 'org_admin') router.push(`/org/${data.orgId}/admin/dashboard`);
-      else router.push(`/org/${data.orgId}/2d/dashboard`);
+      if (!res.ok) {
+        setError(data.error || 'Login failed');
+        setLoading(false);
+        return;
+      }
+      setRedirecting(true);
+      const targetUrl = data.role === 'super_admin'
+        ? '/admin'
+        : data.role === 'org_admin'
+          ? `/org/${data.orgId}/admin/dashboard`
+          : `/org/${data.orgId}/2d/ledger`;
+      
+      if (typeof window !== 'undefined') {
+        window.location.href = targetUrl;
+      } else {
+        router.push(targetUrl);
+      }
     } catch {
       setError('Something went wrong');
-    } finally {
       setLoading(false);
+      setRedirecting(false);
     }
   }
 
@@ -95,8 +109,14 @@ export default function LoginPage() {
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
               />
             </div>
-            <button type="submit" disabled={loading} className="btn-primary w-full">
-              {loading ? 'Signing in…' : 'Sign in'}
+            <button type="submit" disabled={loading || redirecting} className="btn-primary w-full flex items-center justify-center gap-2">
+              {(loading || redirecting) && (
+                <svg className="w-4 h-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+              {redirecting ? 'Loading workspace…' : loading ? 'Signing in…' : 'Sign in'}
             </button>
 
             <button
@@ -143,6 +163,21 @@ export default function LoginPage() {
           Multi-tenant SaaS Platform — 3-tier access control
         </p>
       </div>
+
+      {redirecting && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-8 shadow-2xl border border-gray-100 text-center max-w-xs w-full">
+            <div className="w-12 h-12 bg-brand-600 rounded-xl mx-auto mb-4 flex items-center justify-center animate-bounce">
+              <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin mx-auto mb-3" />
+            <h3 className="text-base font-semibold text-gray-900 mb-1">Signing in…</h3>
+            <p className="text-xs text-gray-500">Loading your workspace, please wait</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

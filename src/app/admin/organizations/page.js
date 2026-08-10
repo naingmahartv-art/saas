@@ -4,9 +4,11 @@ import { orgsCol, PLAN_PRICES } from '@/lib/db/firestore.js';
 import NavBar from '@/components/NavBar';
 import OrgManager from './OrgManager';
 
-export default async function OrganizationsPage() {
+export default async function OrganizationsPage({ searchParams }) {
   const session = await getSession();
   if (!session || session.role !== 'super_admin') redirect('/login');
+
+  const { create } = (await searchParams) || {};
 
   const snap = await orgsCol().orderBy('createdAt', 'asc').get();
   const orgs = snap.docs.map(d => d.data());
@@ -21,7 +23,7 @@ export default async function OrganizationsPage() {
             <p className="text-sm text-gray-500 mt-1">Create and manage all organizations</p>
           </div>
         </div>
-        <OrgManager initialOrgs={orgs} plans={PLAN_PRICES} />
+        <OrgManager initialOrgs={orgs} initialShowCreate={create === '1'} />
       </main>
     </div>
   );

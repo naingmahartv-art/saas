@@ -8,7 +8,8 @@ export const DEFAULT_SHORTCUTS = {
   checkAgent: 'alt+g',
   luckyNumber: 'alt+k',
   limit: 'alt+l',
-  reports: 'alt+r',
+  reports: 'alt+p',
+  refresh: 'alt+r',
   sortExceedNum: 'alt+1',
   sortExceedAmount: 'alt+2',
   sortExceedExcess: 'alt+3',
@@ -126,6 +127,9 @@ export function mergeShortcuts(overrides) {
       const combo = overrides[action];
       if (typeof combo === 'string' && isValidCombo(combo)) merged[action] = combo;
     }
+  }
+  if (merged.reports === 'alt+r' || merged.reports === merged.refresh) {
+    merged.reports = 'alt+p';
   }
   return merged;
 }

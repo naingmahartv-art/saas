@@ -20,11 +20,8 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { name, plan } = await request.json();
-  if (!name || !plan) return NextResponse.json({ error: 'Name and plan required' }, { status: 400 });
-  if (!['basic', 'advance'].includes(plan)) {
-    return NextResponse.json({ error: 'Plan must be basic or advance' }, { status: 400 });
-  }
+  const { name, plan = 'basic' } = await request.json();
+  if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 });
 
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const orgId = uuidv4();

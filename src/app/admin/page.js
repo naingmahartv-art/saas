@@ -15,8 +15,6 @@ export default async function AdminDashboard() {
   const stats = {
     totalOrgs: orgs.length,
     activeOrgs: orgs.filter((o) => o.status === 'active').length,
-    basicOrgs: orgs.filter((o) => o.plan === 'basic').length,
-    advanceOrgs: orgs.filter((o) => o.plan === 'advance').length,
     totalUsers: allUsers.filter((u) => u.role !== 'super_admin').length,
   };
 
@@ -27,16 +25,15 @@ export default async function AdminDashboard() {
       <main className="max-w-5xl mx-auto px-6 py-8">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900">Project Owner Dashboard</h1>
-          <p className="text-gray-500 text-sm mt-1">Manage all organizations and subscriptions</p>
+          <p className="text-gray-500 text-sm mt-1">Manage all organizations and users</p>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           {[
             { label: 'Total Organizations', value: stats.totalOrgs, color: 'bg-blue-50 text-blue-700' },
-            { label: 'Active', value: stats.activeOrgs, color: 'bg-green-50 text-green-700' },
-            { label: 'Basic Plan', value: stats.basicOrgs, color: 'bg-indigo-50 text-indigo-700' },
-            { label: 'Advance Plan', value: stats.advanceOrgs, color: 'bg-purple-50 text-purple-700' },
+            { label: 'Active Organizations', value: stats.activeOrgs, color: 'bg-green-50 text-green-700' },
+            { label: 'Total Users', value: stats.totalUsers, color: 'bg-indigo-50 text-indigo-700' },
           ].map((s) => (
             <div key={s.label} className="card text-center">
               <p className={`text-3xl font-bold ${s.color.split(' ')[1]}`}>{s.value}</p>
@@ -72,9 +69,6 @@ export default async function AdminDashboard() {
                     <p className="text-xs text-gray-400">/{org.slug}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={org.plan === 'advance' ? 'badge-advance' : 'badge-basic'}>
-                      {org.plan === 'advance' ? 'Advance' : 'Basic'}
-                    </span>
                     <span className={org.status === 'active' ? 'badge-active' : 'badge-suspended'}>
                       {org.status}
                     </span>

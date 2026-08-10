@@ -55,7 +55,7 @@ export default function SidebarOrgAdmin({ orgId, orgName, userName, role }) {
 
       <div className="px-2 py-4 border-t border-gray-100 space-y-2">
         <Link
-          href={`/org/${orgId}/2d/dashboard`}
+          href={`/org/${orgId}/2d/ledger`}
           className="flex items-center px-3 py-2 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50"
         >
           {t('nav.openApp')}
@@ -67,8 +67,9 @@ export default function SidebarOrgAdmin({ orgId, orgName, userName, role }) {
         <button
           type="button"
           onClick={logout}
-          className="w-full flex items-center justify-center px-3 text-sm py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+          className="w-full flex items-center justify-center gap-2 px-3 text-sm font-medium py-1.5 border border-red-200 text-red-600 hover:bg-red-50 transition rounded-lg"
         >
+          <span>🚪</span>
           {t('nav.signOut')}
         </button>
       </div>

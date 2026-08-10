@@ -38,7 +38,7 @@ export default function LedgerHistory({ orgId, activeSession, onEdit, onDeleted,
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState('srNo');
-  const [sortDir, setSortDir] = useState('desc');
+  const [sortDir, setSortDir] = useState('asc');
   const [expanded, setExpanded] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [statusMsg, setStatusMsg] = useState('');

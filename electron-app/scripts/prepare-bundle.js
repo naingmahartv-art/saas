@@ -14,8 +14,28 @@ if (!fs.existsSync(STANDALONE_DIR)) {
   process.exit(1);
 }
 
-fs.rmSync(OUT_DIR, { recursive: true, force: true });
-fs.cpSync(STANDALONE_DIR, OUT_DIR, { recursive: true });
+function findServerDir(dir) {
+  if (fs.existsSync(path.join(dir, 'server.js'))) return dir;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      const found = findServerDir(path.join(dir, entry.name));
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+const standaloneSource = findServerDir(STANDALONE_DIR) || STANDALONE_DIR;
+console.log('Copying standalone source from:', standaloneSource);
+
+try {
+  fs.rmSync(OUT_DIR, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+} catch (e) {
+  console.warn('Warning removing old app-bundle:', e.message);
+}
+fs.cpSync(standaloneSource, OUT_DIR, { recursive: true });
+
 fs.mkdirSync(path.join(OUT_DIR, '.next'), { recursive: true });
 fs.cpSync(STATIC_DIR, path.join(OUT_DIR, '.next', 'static'), { recursive: true });
 
@@ -23,11 +43,27 @@ if (fs.existsSync(PUBLIC_DIR)) {
   fs.cpSync(PUBLIC_DIR, path.join(OUT_DIR, 'public'), { recursive: true });
 }
 
-if (!fs.existsSync(SQLITE_MIGRATIONS_DIR)) {
-  console.error('Missing drizzle/sqlite — run "yarn db:generate:sqlite" in the project root first.');
-  process.exit(1);
+
+let dotenv;
+try {
+  dotenv = require('dotenv');
+} catch {
+  dotenv = require(path.join(PROJECT_DIR, 'node_modules', 'dotenv'));
 }
-fs.cpSync(SQLITE_MIGRATIONS_DIR, path.join(OUT_DIR, 'drizzle', 'sqlite'), { recursive: true });
+
+if (fs.existsSync(SQLITE_MIGRATIONS_DIR)) {
+  fs.cpSync(SQLITE_MIGRATIONS_DIR, path.join(OUT_DIR, 'drizzle', 'sqlite'), { recursive: true });
+}
+
+const envLocalPath = path.join(PROJECT_DIR, '.env.local');
+const envConfig = fs.existsSync(envLocalPath) ? dotenv.parse(fs.readFileSync(envLocalPath)) : {};
+const envConfigCjsPath = path.join(OUT_DIR, 'env-config.cjs');
+const envConfigContent = `// Auto-generated during build from .env.local\nmodule.exports = ${JSON.stringify(envConfig, null, 2)};\n`;
+fs.writeFileSync(envConfigCjsPath, envConfigContent, 'utf8');
+console.log('Embedded env config created at', envConfigCjsPath, 'with', Object.keys(envConfig).length, 'keys');
+
+
+
 
 // Next's `output: 'standalone'` file tracer only copies the compiled .node
 // binary + JS glue for better-sqlite3, not its C++ source/binding.gyp — so
@@ -41,3 +77,4 @@ if (fs.existsSync(ROOT_BETTER_SQLITE3)) {
 }
 
 console.log('app-bundle ready at', OUT_DIR);
+

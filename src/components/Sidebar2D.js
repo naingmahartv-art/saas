@@ -38,6 +38,15 @@ const ICONS = {
       <line x1="16" y1="17" x2="8" y2="17" />
     </>
   ),
+  reports: (
+    <>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+      <line x1="10" y1="9" x2="8" y2="9" />
+    </>
+  ),
   results: (
     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
   ),
@@ -102,9 +111,9 @@ const ROLE_LABEL = {
 };
 
 const NAV_SEGMENTS = [
-  { key: 'dashboard', segment: 'dashboard' },
-  { key: 'agents',    segment: 'agents' },
   { key: 'ledger',    segment: 'ledger' },
+  { key: 'agents',    segment: 'agents' },
+  { key: 'reports',   segment: 'reports' },
   { key: 'balance',   segment: 'balance' },
   { key: 'settings',  segment: 'settings' },
   { key: 'account',   segment: 'user-settings' },
@@ -116,11 +125,20 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
 
+  const [isElectron, setIsElectron] = useState(false);
+
   useEffect(() => {
     try {
       setCollapsed(localStorage.getItem(STORAGE_KEY) === 'true');
     } catch {
       // localStorage unavailable
+    }
+    if (
+      process.env.NEXT_PUBLIC_APP_MODE === 'electron' ||
+      (typeof window !== 'undefined' &&
+        (window.isElectronApp || window.navigator?.userAgent?.toLowerCase().includes('electron')))
+    ) {
+      setIsElectron(true);
     }
   }, []);
 
@@ -138,42 +156,62 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
 
   const base = `/org/${orgId}/2d`;
   const canAccessAdmin = role === 'org_admin' || role === 'super_admin';
-  // Electron builds are the app-only kiosk experience — no admin panel link.
-  const showAdminLink = canAccessAdmin && process.env.NEXT_PUBLIC_APP_MODE !== 'electron';
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
   }
 
+  const showAdminLink = canAccessAdmin && !isElectron;
+
+  const navSegments = NAV_SEGMENTS.filter(s => {
+    if (isElectron && s.key === 'reports') return false;
+    return true;
+  });
+
   return (
     <aside className={`${collapsed ? 'w-14' : 'w-60'} shrink-0 h-screen sticky top-0 flex flex-col bg-white border-r border-gray-200 transition-[width] duration-200 overflow-hidden`}>
-      <div className="px-3 py-4 border-b border-gray-100 flex items-center gap-2.5">
-        <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center shrink-0">
-          <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-        </div>
-        {!collapsed && (
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900 truncate">{orgName}</p>
-            <p className="text-xs text-gray-400">2D</p>
-          </div>
+      <div className={`px-2.5 py-3.5 border-b border-gray-100 flex items-center ${collapsed ? 'justify-center' : 'justify-between gap-2'}`}>
+        {collapsed ? (
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            title={t('nav.expand')}
+            className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 flex items-center justify-center transition shrink-0"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+        ) : (
+          <>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">{orgName}</p>
+                <p className="text-xs text-gray-400">2D</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              title={t('nav.collapse')}
+              className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+          </>
         )}
-        <button
-          type="button"
-          onClick={toggleCollapsed}
-          title={collapsed ? t('nav.expand') : t('nav.collapse')}
-          className="ml-auto shrink-0 p-1 rounded-md text-gray-400 hover:bg-gray-50 hover:text-gray-600"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            {collapsed ? <polyline points="9 18 15 12 9 6" /> : <polyline points="15 18 9 12 15 6" />}
-          </svg>
-        </button>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-0.5">
-        {NAV_SEGMENTS.map(({ key, segment }) => {
+        {navSegments.map(({ key, segment }) => {
           const href = `${base}/${segment}`;
           const active = pathname === href || pathname?.startsWith(href + '/');
           return (
@@ -228,13 +266,26 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
         )}
         <button
           type="button"
-          onClick={logout}
-          title={collapsed ? t('nav.signOut') : undefined}
-          className={`w-full flex items-center gap-2.5 text-sm py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition ${
+          onClick={() => window.location.reload()}
+          title={collapsed ? t('ledger.refreshBtn') : t('ledger.refreshHint')}
+          className={`w-full flex items-center gap-2.5 text-sm py-1.5 font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition rounded-lg ${
             collapsed ? 'justify-center px-0' : 'px-3'
           }`}
         >
-          <Icon name="logout" />
+          <svg className="w-[18px] h-[18px] text-gray-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          {!collapsed && <span>{t('ledger.refreshBtn')} (Alt+R)</span>}
+        </button>
+        <button
+          type="button"
+          onClick={logout}
+          title={collapsed ? t('nav.signOut') : undefined}
+          className={`w-full flex items-center gap-2.5 text-sm py-1.5 font-medium border border-red-200 text-red-600 hover:bg-red-50 transition rounded-lg ${
+            collapsed ? 'justify-center px-0' : 'px-3'
+          }`}
+        >
+          <Icon name="logout" className="w-[18px] h-[18px] text-red-600 shrink-0" />
           {!collapsed && <span>{t('nav.signOut')}</span>}
         </button>
       </div>

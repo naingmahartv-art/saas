@@ -5,8 +5,8 @@ import autoTable from 'jspdf-autotable';
 // and one or more table sections (each with its own optional heading, e.g.
 // per-voucher blocks in the Agent report). Returns a Blob ready for
 // download or navigator.share({ files: [...] }).
-export function buildReportPdf({ title, subtitle, sections }) {
-  const doc = new jsPDF();
+export function buildReportPdf({ title, subtitle, sections, orientation = 'portrait' }) {
+  const doc = new jsPDF({ orientation });
   let y = 16;
 
   doc.setFontSize(14);

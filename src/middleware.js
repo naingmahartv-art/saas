@@ -10,24 +10,20 @@ const ALL_ROLES = ['super_admin', 'org_admin', 'supervisor', 'cashier'];
 function homeFor(session) {
   if (session.role === 'super_admin') return '/admin';
   if (session.role === 'org_admin') return `/org/${session.orgId}/admin/dashboard`;
-  if (session.orgId) return `/org/${session.orgId}/2d/dashboard`;
+  if (session.orgId) return `/org/${session.orgId}/2d/ledger`;
   return '/login';
 }
 
 export async function middleware(request) {
   const { pathname } = request.nextUrl;
 
-  // Allow public paths — root is an exact match (not startsWith, which
-  // would otherwise match every path and disable auth entirely)
-  if (pathname === '/' || PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
-    return NextResponse.next();
-  }
-
-  // Allow static files, Next.js internals, and public downloads
+  // Allow static files, Next.js internals, public downloads, and auth endpoints
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
-    pathname.startsWith('/downloads')
+    pathname.startsWith('/downloads') ||
+    pathname.startsWith('/api/auth/login') ||
+    pathname.startsWith('/api/auth/forgot-password')
   ) {
     return NextResponse.next();
   }
@@ -35,6 +31,20 @@ export async function middleware(request) {
   const token = request.cookies.get('saas_session')?.value;
   const session = token ? await verifyToken(token) : null;
 
+  // If user has a valid active JWT token (token has life) and visits / or /login:
+  if (session && (pathname === '/' || pathname === '/login')) {
+    if (session.status === 'suspended') {
+      return NextResponse.redirect(new URL('/suspended', request.url));
+    }
+    return NextResponse.redirect(new URL(homeFor(session), request.url));
+  }
+
+  // Allow public login and suspended pages when unauthenticated
+  if (!session && (pathname === '/login' || pathname === '/suspended')) {
+    return NextResponse.next();
+  }
+
+  // Require authentication for all other protected routes
   if (!session) {
     return NextResponse.redirect(new URL('/login', request.url));
   }

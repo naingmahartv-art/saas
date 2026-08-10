@@ -35,52 +35,29 @@ let serverProcess = null;
 let mainWindow = null;
 let serverUrl = null;
 
-function parseEnvFile(filePath) {
-  const result = {};
-  const raw = fs.readFileSync(filePath, 'utf8');
-  for (const line of raw.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let value = trimmed.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
+function loadEmbeddedConfig() {
+  const candidates = [
+    path.join(APP_BUNDLE_DIR, 'env-config.cjs'),
+    path.join(APP_BUNDLE_DIR, 'env-config.json'),
+    path.join(APP_BUNDLE_DIR, 'env-config.js'),
+  ];
+  for (const envPath of candidates) {
+    if (fs.existsSync(envPath)) {
+      try {
+        const loaded = require(envPath);
+        if (loaded && Object.keys(loaded).length > 0) {
+          console.log(`Loaded ${Object.keys(loaded).length} env variables from ${envPath}`);
+          return loaded;
+        }
+      } catch (e) {
+        console.error(`Failed to load env config from ${envPath}:`, e);
+      }
     }
-    result[key] = value;
   }
-  return result;
+  return {};
 }
 
-function loadUserConfig() {
-  if (!fs.existsSync(CONFIG_FILE)) {
-    return { config: null, missing: REQUIRED_KEYS };
-  }
-  const config = parseEnvFile(CONFIG_FILE);
-  const missing = REQUIRED_KEYS.filter(key => !config[key]);
-  return { config, missing };
-}
 
-function showConfigMissingDialog(missing) {
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  const template =
-    REQUIRED_KEYS.map(key => `${key}=`).join('\n') +
-    '\n\n# Optional — enables two-way cloud sync when online. Leave blank to\n' +
-    '# run fully offline forever.\nNEON_DATABASE_URL=\n';
-  if (!fs.existsSync(CONFIG_FILE)) {
-    fs.writeFileSync(CONFIG_FILE, template);
-  }
-  dialog.showErrorBox(
-    'Setup required',
-    `Missing configuration: ${missing.join(', ')}.\n\n` +
-      `Open this file and fill in the values, then restart the app:\n${CONFIG_FILE}`
-  );
-  shell.showItemInFolder(CONFIG_FILE);
-}
 
 // Always picks a port this process can actually bind, rather than trusting a
 // fixed port — dev machines commonly have unrelated services already
@@ -144,6 +121,8 @@ function startServer(port, userConfig) {
       PORT: String(port),
       DATABASE_DRIVER: 'sqlite',
       SQLITE_DB_PATH,
+      NEXT_PUBLIC_APP_MODE: 'electron',
+      APP_MODE: 'electron',
     },
   });
 
@@ -157,10 +136,18 @@ function startServer(port, userConfig) {
 }
 
 function loadingHtml() {
-  return `data:text/html,<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:sans-serif;background:#f8fafc;color:#334155">
-    <div style="text-align:center">
-      <div style="font-size:20px;font-weight:600;margin-bottom:8px">SaaS Platform</div>
-      <div style="font-size:13px;color:#94a3b8">Starting local server…</div>
+  return `data:text/html,<html><head><style>
+    body { display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; }
+    .card { text-align: center; padding: 40px 48px; background: #1e293b; border-radius: 16px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.4); border: 1px solid #334155; }
+    .spinner { width: 44px; height: 44px; border: 4px solid #334155; border-top-color: #6366f1; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 20px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h2 { margin: 0 0 8px; font-size: 22px; font-weight: 700; color: #ffffff; letter-spacing: -0.02em; }
+    p { margin: 0; font-size: 14px; color: #94a3b8; }
+  </style></head><body>
+    <div class="card">
+      <div class="spinner"></div>
+      <h2>SaaS Platform</h2>
+      <p>Loading SaaS Platform, please wait…</p>
     </div>
   </body></html>`;
 }
@@ -170,6 +157,7 @@ function createWindow() {
     width: 1280,
     height: 800,
     title: 'SaaS Platform',
+    backgroundColor: '#0f172a',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -195,12 +183,7 @@ app.whenReady().then(async () => {
     return;
   }
 
-  const { config, missing } = loadUserConfig();
-  if (missing.length > 0) {
-    showConfigMissingDialog(missing);
-    app.quit();
-    return;
-  }
+  const config = loadEmbeddedConfig();
 
   const isFreshInstall = !fs.existsSync(SQLITE_DB_PATH);
 
@@ -218,7 +201,7 @@ app.whenReady().then(async () => {
     return;
   }
 
-  if (mainWindow) mainWindow.loadURL(serverUrl);
+  if (mainWindow) mainWindow.loadURL(serverUrl + '/');
 
   if (isFreshInstall) {
     dialog.showMessageBox(mainWindow, {
