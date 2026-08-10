@@ -493,29 +493,38 @@ export default function LedgerEntry({
       setQuickEntryOpen(false);
       return;
     }
-    const amountVal = parseFloat(quickEntryAmount);
-    if (isNaN(amountVal) || amountVal <= 0) {
+    const rawAmtStr = quickEntryAmount.trim().toUpperCase();
+    if (!rawAmtStr) {
       setError('Please enter a valid amount.');
       setQuickEntryOpen(false);
       return;
     }
 
     const newTokens = [];
+    const parseErrors = [];
     for (let i = 0; i < cleanNums.length; i += 2) {
       const num = cleanNums.slice(i, i + 2);
       if (num.length === 2) {
-        newTokens.push({ id: nextTokenId(), tokenText: `${num}${amountVal}`, entries: [{ num, amount: amountVal }] });
+        const tokenExpr = `${num}${rawAmtStr}`;
+        const { token, error: parseErr } = tokenFromText(tokenExpr, t);
+        if (parseErr) {
+          parseErrors.push(parseErr);
+        } else if (token) {
+          newTokens.push(token);
+        }
       }
     }
 
     if (newTokens.length === 0) {
-      setError('Please enter complete 2-digit numbers.');
+      setError(parseErrors[0] || 'Please enter valid 2-digit numbers and amount.');
       setQuickEntryOpen(false);
       return;
     }
 
     setPendingTokens(prev => [...prev, ...newTokens]);
     setQuickEntryOpen(false);
+    setQuickEntryNums('');
+    setQuickEntryAmount('');
     setTimeout(() => {
       inputRef.current?.focus();
     }, 50);
@@ -554,13 +563,20 @@ export default function LedgerEntry({
     setSuccessMsg('');
   }
 
-  // Space always commits the current code into the Entries list. Enter does
-  // the same when a code has been typed; Enter on an empty box instead opens
-  // the quick-entry modal (bulk numbers + one shared amount). Neither ever
-  // saves — a voucher is only created by clicking Save or pressing F1 (see
-  // the window-level F1 listener below).
+  // Spacebar or Enter on an empty/long text box opens the quick-entry modal
+  // (bulk numbers + one shared amount / R expression).
   function handleKeyDown(e) {
-    if (e.key === 'Enter') {
+    if (e.key === ' ' || e.code === 'Space') {
+      e.preventDefault();
+      if (!agentId) {
+        setError(t('ledger.selectAgentFirst'));
+        return;
+      }
+      setQuickEntryNums(formatDashInput(inputValue));
+      setQuickEntryAmount('');
+      setQuickEntryOpen(true);
+      setInputValue('');
+    } else if (e.key === 'Enter') {
       e.preventDefault();
       if (inputValue.trim()) {
         const next = commitGroup(inputValue, pendingTokens);
@@ -578,13 +594,6 @@ export default function LedgerEntry({
       setQuickEntryAmount('');
       setQuickEntryOpen(true);
       setInputValue('');
-    } else if (e.key === ' ') {
-      e.preventDefault();
-      const next = commitGroup(inputValue, pendingTokens);
-      if (next) {
-        setPendingTokens(next);
-        setInputValue('');
-      }
     }
   }
 
@@ -1847,9 +1856,9 @@ export default function LedgerEntry({
                   ref={quickAmountRef}
                   type="text"
                   value={quickEntryAmount}
-                  onChange={e => setQuickEntryAmount(e.target.value.replace(/[^0-9]/g, ''))}
+                  onChange={e => setQuickEntryAmount(e.target.value.replace(/[^0-9rR.*+/]/gi, '').toUpperCase())}
                   onKeyDown={handleQuickAmountKeyDown}
-                  placeholder="100"
+                  placeholder="100, R100, or 100R50"
                   className="w-full px-3 py-2 text-sm font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
