@@ -3,15 +3,16 @@ import { getSession } from '@/lib/auth';
 import { systemResourcesCol } from '@/lib/db/firestore.js';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 const DEFAULT_RESOURCES = [
   {
     id: 'exe_main',
     type: 'exe',
-    title: 'SaaS Platform Desktop Setup 1.0.4.exe',
-    version: '1.0.4',
+    title: 'SaaS Platform Desktop Setup.exe',
+    version: '1.0.5',
     url: 'https://firebasestorage.googleapis.com/v0/b/shweywethla-49cb4.firebasestorage.app/o/share%2FSaaS%20Platform%20Setup%201.0.4.exe?alt=media&token=4ba05faa-bf39-4667-99fc-0d9df8a72958',
-    description: 'Windows Standalone Desktop App Installer v1.0.4 with full offline support & high speed performance.',
+    description: 'Windows Standalone Desktop App Installer with full offline support & high speed performance.',
     updatedAt: Date.now(),
   },
   {
@@ -52,6 +53,11 @@ const DEFAULT_RESOURCES = [
   },
 ];
 
+const JSON_HEADERS = {
+  'Content-Type': 'application/json',
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+};
+
 export async function GET() {
   try {
     const snap = await systemResourcesCol().get();
@@ -63,21 +69,21 @@ export async function GET() {
         batch.set(ref, item);
       });
       await batch.commit();
-      return NextResponse.json({ resources: DEFAULT_RESOURCES });
+      return NextResponse.json({ resources: DEFAULT_RESOURCES }, { headers: JSON_HEADERS });
     }
 
     const resources = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    return NextResponse.json({ resources });
+    return NextResponse.json({ resources }, { headers: JSON_HEADERS });
   } catch (err) {
     console.error('GET /api/admin/resources error:', err);
-    return NextResponse.json({ resources: DEFAULT_RESOURCES });
+    return NextResponse.json({ resources: DEFAULT_RESOURCES }, { headers: JSON_HEADERS });
   }
 }
 
 export async function POST(request) {
   const session = await getSession();
   if (!session || session.role !== 'super_admin') {
-    return NextResponse.json({ error: 'Unauthorized — Super Admin only' }, { status: 403 });
+    return NextResponse.json({ error: 'Unauthorized — Super Admin only' }, { status: 403, headers: JSON_HEADERS });
   }
 
   try {
@@ -85,13 +91,20 @@ export async function POST(request) {
     const { id, type, title, version, url, description } = body;
 
     if (!url || !title) {
-      return NextResponse.json({ error: 'Title and URL are required.' }, { status: 400 });
+      return NextResponse.json({ error: 'Title and URL are required.' }, { status: 400, headers: JSON_HEADERS });
     }
 
-    const docId = id || `res_${Date.now()}`;
+    const docType = type || 'tutorial';
+    let docId = id;
+    if (!docId && docType === 'exe') {
+      docId = 'exe_main';
+    } else if (!docId) {
+      docId = `res_${Date.now()}`;
+    }
+
     const payload = {
       id: docId,
-      type: type || 'tutorial',
+      type: docType,
       title: title.trim(),
       version: (version || '1.0.0').trim(),
       url: url.trim(),
@@ -102,30 +115,30 @@ export async function POST(request) {
 
     await systemResourcesCol().doc(docId).set(payload, { merge: true });
 
-    return NextResponse.json({ success: true, resource: payload });
+    return NextResponse.json({ success: true, resource: payload }, { headers: JSON_HEADERS });
   } catch (err) {
     console.error('POST /api/admin/resources error:', err);
-    return NextResponse.json({ error: err.message || 'Failed to save resource.' }, { status: 500 });
+    return NextResponse.json({ error: err.message || 'Failed to save resource.' }, { status: 500, headers: JSON_HEADERS });
   }
 }
 
 export async function DELETE(request) {
   const session = await getSession();
   if (!session || session.role !== 'super_admin') {
-    return NextResponse.json({ error: 'Unauthorized — Super Admin only' }, { status: 403 });
+    return NextResponse.json({ error: 'Unauthorized — Super Admin only' }, { status: 403, headers: JSON_HEADERS });
   }
 
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     if (!id) {
-      return NextResponse.json({ error: 'Resource ID is required.' }, { status: 400 });
+      return NextResponse.json({ error: 'Resource ID is required.' }, { status: 400, headers: JSON_HEADERS });
     }
 
     await systemResourcesCol().doc(id).delete();
-    return NextResponse.json({ success: true, deletedId: id });
+    return NextResponse.json({ success: true, deletedId: id }, { headers: JSON_HEADERS });
   } catch (err) {
     console.error('DELETE /api/admin/resources error:', err);
-    return NextResponse.json({ error: err.message || 'Failed to delete resource.' }, { status: 500 });
+    return NextResponse.json({ error: err.message || 'Failed to delete resource.' }, { status: 500, headers: JSON_HEADERS });
   }
 }

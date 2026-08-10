@@ -38,7 +38,7 @@ export default function LandingPage() {
   const [exeTitle, setExeTitle] = useState('SaaS Platform Setup.exe');
 
   useEffect(() => {
-    fetch('/api/admin/resources')
+    fetch('/api/admin/resources', { cache: 'no-store' })
       .then((res) => res.json())
       .then((data) => {
         if (data.resources && data.resources.length > 0) {

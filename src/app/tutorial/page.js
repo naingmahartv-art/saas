@@ -79,7 +79,7 @@ export default function TutorialPage() {
   const [videos, setVideos] = useState(TUTORIAL_VIDEOS);
 
   useEffect(() => {
-    fetch('/api/admin/resources')
+    fetch('/api/admin/resources', { cache: 'no-store' })
       .then((res) => res.json())
       .then((data) => {
         if (data.resources && data.resources.length > 0) {
