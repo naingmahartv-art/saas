@@ -43,6 +43,8 @@ export const orgDoc = (orgId) => getDb().collection('organizations').doc(orgId);
 export const usersCol = () => getDb().collection('users');
 export const userDoc = (userId) => getDb().collection('users').doc(userId);
 
+export const systemResourcesCol = () => getDb().collection('systemResources');
+
 export const orgAgentsCol = (orgId) => orgDoc(orgId).collection('agents');
 export const orgAgentDoc = (orgId, agentId) => orgAgentsCol(orgId).doc(agentId);
 

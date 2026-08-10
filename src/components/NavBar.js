@@ -35,6 +35,7 @@ export default function NavBar({ title, userName, role, orgId }) {
           <nav className="hidden md:flex items-center gap-1 mr-2">
             <a href="/admin" className="text-sm px-3 py-1.5 rounded-lg hover:bg-gray-50 text-gray-600">Dashboard</a>
             <a href="/admin/organizations" className="text-sm px-3 py-1.5 rounded-lg hover:bg-gray-50 text-gray-600">Organizations</a>
+            <a href="/admin/resources" className="text-sm px-3 py-1.5 rounded-lg hover:bg-gray-50 text-indigo-600 font-medium">EXE & Videos</a>
           </nav>
         )}
         {role === 'org_admin' && orgId && (

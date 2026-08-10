@@ -52,6 +52,9 @@ export default async function AdminDashboard() {
             <Link href="/admin/organizations?create=1" className="btn-secondary">
               + Create Organization
             </Link>
+            <Link href="/admin/resources" className="btn-secondary bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200 flex items-center gap-1.5 font-medium">
+              🎬 EXE & Tutorial Videos Manager
+            </Link>
           </div>
         </div>
 

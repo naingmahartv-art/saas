@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 
 const DOWNLOAD_URL = "https://firebasestorage.googleapis.com/v0/b/shweywethla-49cb4.firebasestorage.app/o/share%2FSaaS%20Platform%20Setup%201.0.4.exe?alt=media&token=4ba05faa-bf39-4667-99fc-0d9df8a72958";
@@ -75,10 +75,41 @@ const SHORTCUT_TABLE = [
 
 export default function TutorialPage() {
   const [activeTab, setActiveTab] = useState('all');
+  const [downloadUrl, setDownloadUrl] = useState(DOWNLOAD_URL);
+  const [videos, setVideos] = useState(TUTORIAL_VIDEOS);
+
+  useEffect(() => {
+    fetch('/api/admin/resources')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.resources && data.resources.length > 0) {
+          const exeRes = data.resources.find((r) => r.type === 'exe');
+          if (exeRes?.url) setDownloadUrl(exeRes.url);
+
+          const tutorialRes = data.resources.filter((r) => r.type === 'tutorial');
+          if (tutorialRes.length > 0) {
+            const mapped = tutorialRes.map((r, i) => ({
+              id: i + 1,
+              title: r.title,
+              subtitle: r.description || 'Step-by-step video guide.',
+              mySubtitle: r.description || 'ဗီဒီယို သင်ခန်းစာ လမ်းညွှန်။',
+              videoUrl: r.url,
+              tags: ['Tutorial', `v${r.version || '1.0'}`],
+              highlights: [
+                r.description || 'Watch step-by-step video guide',
+                `Version ${r.version || '1.0.0'} feature demonstration`,
+              ],
+            }));
+            setVideos(mapped);
+          }
+        }
+      })
+      .catch((err) => console.error(err));
+  }, []);
 
   const filteredVideos = activeTab === 'all'
-    ? TUTORIAL_VIDEOS
-    : TUTORIAL_VIDEOS.filter(v => v.id === Number(activeTab));
+    ? videos
+    : videos.filter(v => v.id === Number(activeTab));
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 font-sans selection:bg-indigo-500 selection:text-white">
@@ -109,19 +140,19 @@ export default function TutorialPage() {
             <Link href="/tutorial" className="text-indigo-400 font-semibold flex items-center gap-1.5">
               <span>📚</span> Tutorials
             </Link>
-            <a href={DOWNLOAD_URL} className="hover:text-indigo-400 transition flex items-center gap-1">
-              <span>💻</span> Download v1.0.4
+            <a href={downloadUrl} className="hover:text-indigo-400 transition flex items-center gap-1">
+              <span>💻</span> Download EXE
             </a>
           </nav>
 
           <div className="flex items-center gap-3">
             <a
-              href={DOWNLOAD_URL}
+              href={downloadUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="hidden sm:inline-flex items-center gap-2 text-xs px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold rounded-lg shadow-md shadow-emerald-500/20 transition active:scale-95"
             >
-              <span>📥</span> Setup 1.0.4.exe
+              <span>📥</span> Download Setup.exe
             </a>
             <Link
               href="/login"
