@@ -1383,8 +1383,8 @@ export default function LedgerEntry({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[0.5fr_2fr_0.75fr] gap-3 flex-1 min-h-0 items-stretch">
-        {/* Left panel: input + voucher token list */}
+      <div className="grid grid-cols-1 xl:grid-cols-[2fr_1.1fr_0.6fr] gap-3 flex-1 min-h-0 items-stretch">
+        {/* Left panel: input + voucher token list (Wide 80-cell grid) */}
         <div className="flex flex-col h-full min-h-0 space-y-3">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 shrink-0">
             <div className="flex items-center gap-2 mb-3">
@@ -1420,11 +1420,6 @@ export default function LedgerEntry({
             )}
 
             {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mt-3">{error}</p>}
-            {/* {!error && warnings.length > 0 && (
-              <div className="text-sm text-yellow-700 bg-yellow-50 rounded-lg px-3 py-2 mt-3 space-y-0.5">
-                {warnings.map((w, i) => <p key={i}>{w}</p>)}
-              </div>
-            )} */}
 
             <div className="flex gap-2 mt-3">
               <button
@@ -1448,71 +1443,52 @@ export default function LedgerEntry({
             {successMsg && <p className="text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2 mt-3">{successMsg}</p>}
           </div>
 
-          {/* Voucher token list — raw as-typed text, not expanded numbers */}
+          {/* Voucher token list — Multi-column 80+ cell grid view */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
-            <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2 shrink-0">
+            <div className="px-3 py-2 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2 shrink-0 bg-gray-50/50">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-gray-800">
-                  {t('ledger.entriesHeader')}
+                <span className="text-xs font-bold text-gray-800">
+                  {t('ledger.entriesHeader')} ({visibleTokens.length} items)
                   {search.trim() && <span className="text-gray-400 font-normal"> — {t('ledger.matchSuffix', { n: visibleTokens.length })}</span>}
                 </span>
                 <button
                   type="button"
                   onClick={() => setImportModalOpen(true)}
-                  className="text-xs px-2.5 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 font-medium rounded-lg hover:bg-emerald-100 transition flex items-center gap-1"
+                  className="text-[11px] px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold rounded hover:bg-emerald-100 transition flex items-center gap-1"
                   title="Import JSON or CSV data/file"
                 >
                   <span>📥</span> Import
                 </button>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
                 <input
                   type="text"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder={t('ledger.findPlaceholder')}
-                  className="px-2.5 py-1.5 text-xs font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 w-24"
+                  className="px-2 py-1 text-xs font-mono border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 w-24"
                 />
-                <span className="text-sm font-semibold text-gray-900">
+                <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
                   {t('ledger.totalLabel', { n: pendingTotal.toLocaleString() })}
                 </span>
               </div>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="flex-1 min-h-0 overflow-y-auto p-2">
               {pendingTokens.length === 0 ? (
                 <div className="px-4 py-6 text-center text-gray-400 text-sm">{t('ledger.noEntriesYet')}</div>
               ) : visibleTokens.length === 0 ? (
                 <div className="px-4 py-6 text-center text-gray-400 text-sm">{t('ledger.noMatchEntries', { q: search })}</div>
               ) : (
-                <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
-                    <th className="text-left px-4 py-2 font-medium w-12">#</th>
-                    <th className="text-left px-4 py-2 font-medium">
-                      <button type="button" onClick={() => toggleSort('tokenText')} className="flex items-center gap-1 hover:text-gray-800 transition">
-                        {t('ledger.voucherCol')} ({formatCombo(shortcuts.sortVoucher)})
-                        {sortKey === 'tokenText' && <span>{sortDir === 'asc' ? '▲' : '▼'}</span>}
-                      </button>
-                    </th>
-                    <th className="px-4 py-2"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1.5 font-mono text-xs">
                   {visibleTokens.map((p, idx) => (
-                    <tr key={p.id} className="hover:bg-gray-50 transition">
-                      <td className="px-4 py-2 text-xs font-semibold text-gray-400 font-mono">
-                        {idx < 10 ? (
-                          <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded text-[10px]" title={`Press ${formatCombo('alt+shift+' + (idx === 9 ? '0' : idx + 1))} to edit`}>
-                            {idx === 9 ? '0' : idx + 1}
-                          </span>
-                        ) : (
-                          idx + 1
-                        )}
-                      </td>
-                      <td
-                        className="px-4 py-2 font-mono font-medium text-gray-900"
-                        onClick={() => startTokenEdit(p)}
-                      >
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between bg-gray-50/90 border border-gray-200 rounded px-2 py-1 hover:bg-indigo-50 hover:border-indigo-300 transition group"
+                    >
+                      <div className="flex items-center gap-1 min-w-0 flex-1">
+                        <span className="text-[10px] text-gray-400 font-sans font-bold shrink-0">
+                          #{idx + 1}
+                        </span>
                         {editingTokenId === p.id ? (
                           <input
                             type="text"
@@ -1529,31 +1505,30 @@ export default function LedgerEntry({
                             }}
                             onBlur={() => commitTokenEdit(p.id)}
                             autoFocus
-                            className="w-full px-2 py-1 font-mono text-sm border border-indigo-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="w-full px-1 py-0.5 font-mono text-xs border border-indigo-400 rounded"
                           />
                         ) : (
                           <button
                             type="button"
                             onClick={() => startTokenEdit(p)}
-                            className="font-mono font-medium text-left hover:text-indigo-700"
-                            title="Click to edit"
+                            className="font-mono font-bold text-gray-900 truncate hover:text-indigo-600 text-xs text-left"
+                            title="Click to edit token"
                           >
                             {p.tokenText}
                           </button>
                         )}
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        <button
-                          onClick={() => removeToken(p.id)}
-                          className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded hover:bg-red-50 transition"
-                        >
-                          {t('common.delete')}
-                        </button>
-                      </td>
-                    </tr>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeToken(p.id)}
+                        className="text-[10px] text-red-500 hover:text-red-700 font-bold px-1 hover:bg-red-100 rounded transition shrink-0 ml-1"
+                        title="Delete entry"
+                      >
+                        ✕
+                      </button>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
               )}
             </div>
           </div>
