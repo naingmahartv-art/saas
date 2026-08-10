@@ -10,8 +10,7 @@ export function getRealtimeDb() {
       const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
       const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
       const databaseURL =
-        process.env.FIREBASE_DATABASE_URL ||
-        (projectId ? `https://${projectId}-default-rtdb.firebaseio.com` : 'https://shweywethla-49cb4-default-rtdb.firebaseio.com');
+        process.env.FIREBASE_DATABASE_URL || 'https://saas-2d-3d-default-rtdb.asia-southeast1.firebasedatabase.app';
 
       initializeApp({
         credential: cert({
