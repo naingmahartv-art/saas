@@ -1383,8 +1383,8 @@ export default function LedgerEntry({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[2fr_1.1fr_0.6fr] gap-3 flex-1 min-h-0 items-stretch">
-        {/* Left panel: input + voucher token list (Wide 80-cell grid) */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_1.8fr_0.6fr] gap-3 flex-1 min-h-0 items-stretch">
+        {/* Left panel: input + voucher token list (4-cell column grid) */}
         <div className="flex flex-col h-full min-h-0 space-y-3">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 shrink-0">
             <div className="flex items-center gap-2 mb-3">
@@ -1479,7 +1479,7 @@ export default function LedgerEntry({
               ) : visibleTokens.length === 0 ? (
                 <div className="px-4 py-6 text-center text-gray-400 text-sm">{t('ledger.noMatchEntries', { q: search })}</div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1.5 font-mono text-xs">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 font-mono text-xs">
                   {visibleTokens.map((p, idx) => (
                     <div
                       key={p.id}
