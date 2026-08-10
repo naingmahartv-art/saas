@@ -4,13 +4,14 @@ import { getDatabase } from 'firebase-admin/database';
 let rtdbInstance = null;
 
 export function getRealtimeDb() {
+  const databaseURL =
+    process.env.FIREBASE_DATABASE_URL || 'https://saas-2d-3d-default-rtdb.asia-southeast1.firebasedatabase.app';
+
   if (!rtdbInstance) {
     if (getApps().length === 0) {
       const projectId = process.env.FIREBASE_PROJECT_ID;
       const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
       const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
-      const databaseURL =
-        process.env.FIREBASE_DATABASE_URL || 'https://saas-2d-3d-default-rtdb.asia-southeast1.firebasedatabase.app';
 
       initializeApp({
         credential: cert({
@@ -23,7 +24,8 @@ export function getRealtimeDb() {
         databaseURL,
       });
     }
-    rtdbInstance = getDatabase();
+    const app = getApps()[0];
+    rtdbInstance = getDatabase(app, databaseURL);
   }
   return rtdbInstance;
 }
