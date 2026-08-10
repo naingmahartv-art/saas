@@ -11,10 +11,6 @@ export default async function OrgAdminLayout({ children, params }) {
   if (!session || (session.role !== 'super_admin' && session.orgId !== orgId)) {
     redirect('/login');
   }
-  const isElectron = process.env.NEXT_PUBLIC_APP_MODE === 'electron' || process.env.APP_MODE === 'electron';
-  if (isElectron) {
-    redirect(`/org/${orgId}/select-app`);
-  }
   if (!canAccessAdminPanel(session.role)) {
     redirect(`/org/${orgId}/2d/ledger`);
   }

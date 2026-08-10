@@ -35,6 +35,9 @@ export async function middleware(request) {
 
   // If user has a valid active JWT token and visits /login:
   if (session && pathname === '/login') {
+    if (request.nextUrl.searchParams.has('logout') || request.nextUrl.searchParams.has('error') || request.nextUrl.searchParams.has('reason')) {
+      return NextResponse.next();
+    }
     if (session.status === 'suspended') {
       return NextResponse.redirect(new URL('/suspended', request.url));
     }
