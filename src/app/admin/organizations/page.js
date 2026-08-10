@@ -4,6 +4,8 @@ import { orgsCol, PLAN_PRICES } from '@/lib/db/firestore.js';
 import NavBar from '@/components/NavBar';
 import OrgManager from './OrgManager';
 
+export const dynamic = 'force-dynamic';
+
 export default async function OrganizationsPage({ searchParams }) {
   const session = await getSession();
   if (!session || session.role !== 'super_admin') redirect('/login');

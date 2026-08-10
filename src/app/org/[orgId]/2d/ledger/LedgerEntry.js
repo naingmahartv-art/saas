@@ -1452,18 +1452,22 @@ export default function LedgerEntry({
             {successMsg && <p className="text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2 mt-3">{successMsg}</p>}
           </div>
 
-          {/* Voucher token list — Multi-column 80+ cell grid view */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
-            <div className="px-3 py-2 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2 shrink-0 bg-gray-50/50">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-gray-800">
-                  {t('ledger.entriesHeader')} ({visibleTokens.length} items)
-                  {search.trim() && <span className="text-gray-400 font-normal"> — {t('ledger.matchSuffix', { n: visibleTokens.length })}</span>}
+          {/* Voucher token list — Modern Table Grid View */}
+          <div className="bg-white rounded-xl border border-slate-200/90 shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
+            <div className="px-3.5 py-2.5 border-b border-indigo-900/40 flex flex-wrap items-center justify-between gap-2 shrink-0 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xs font-bold tracking-wide text-slate-100 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+                  {t('ledger.entriesHeader')}
+                  <span className="bg-indigo-500/25 border border-indigo-400/30 text-indigo-200 px-2 py-0.5 rounded text-[11px] font-mono">
+                    {visibleTokens.length} items
+                  </span>
+                  {search.trim() && <span className="text-slate-400 font-normal"> — {t('ledger.matchSuffix', { n: visibleTokens.length })}</span>}
                 </span>
                 <button
                   type="button"
                   onClick={() => setImportModalOpen(true)}
-                  className="text-[11px] px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold rounded hover:bg-emerald-100 transition flex items-center gap-1"
+                  className="text-[11px] px-2.5 py-1 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 font-semibold rounded hover:bg-emerald-500/30 transition flex items-center gap-1.5 backdrop-blur-sm"
                   title="Import JSON or CSV data/file"
                 >
                   <span>📥</span> Import
@@ -1475,74 +1479,76 @@ export default function LedgerEntry({
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder={t('ledger.findPlaceholder')}
-                  className="px-2 py-1 text-xs font-mono border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 w-24"
+                  className="px-2.5 py-1 text-xs font-mono bg-slate-800/90 border border-slate-700 text-slate-100 placeholder-slate-400 rounded focus:outline-none focus:ring-2 focus:ring-indigo-400 w-28"
                 />
-                <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                <span className="text-xs font-bold text-emerald-300 bg-emerald-500/20 border border-emerald-400/30 px-2.5 py-1 rounded font-mono shadow-inner">
                   {t('ledger.totalLabel', { n: pendingTotal.toLocaleString() })}
                 </span>
               </div>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto p-2">
+            <div className="flex-1 min-h-0 overflow-y-auto p-2 bg-slate-50/30">
               {pendingTokens.length === 0 ? (
-                <div className="px-4 py-6 text-center text-gray-400 text-sm">{t('ledger.noEntriesYet')}</div>
+                <div className="px-4 py-8 text-center text-slate-400 text-sm font-medium">{t('ledger.noEntriesYet')}</div>
               ) : visibleTokens.length === 0 ? (
-                <div className="px-4 py-6 text-center text-gray-400 text-sm">{t('ledger.noMatchEntries', { q: search })}</div>
+                <div className="px-4 py-8 text-center text-slate-400 text-sm font-medium">{t('ledger.noMatchEntries', { q: search })}</div>
               ) : (
-                <table className="w-full text-xs border border-collapse border-gray-300 table-fixed">
-                  <colgroup>
-                    <col className="w-[20%]" />
-                    <col className="w-[20%]" />
-                    <col className="w-[20%]" />
-                    <col className="w-[20%]" />
-                    <col className="w-[20%]" />
-                  </colgroup>
-                  <tbody>
-                    {entryTableRows.map((row, rIdx) => (
-                      <tr key={rIdx}>
-                        {Array.from({ length: 5 }, (_, cIdx) => {
-                          const p = row[cIdx];
-                          if (!p) return <td key={cIdx} className="border border-gray-200 bg-gray-50/20 px-1 py-1" />;
+                <div className="border border-slate-200/90 rounded-lg overflow-hidden bg-white shadow-xs">
+                  <table className="w-full text-xs border-collapse table-fixed">
+                    <colgroup>
+                      <col className="w-[20%]" />
+                      <col className="w-[20%]" />
+                      <col className="w-[20%]" />
+                      <col className="w-[20%]" />
+                      <col className="w-[20%]" />
+                    </colgroup>
+                    <tbody>
+                      {entryTableRows.map((row, rIdx) => (
+                        <tr key={rIdx} className="even:bg-slate-50/50 hover:bg-indigo-50/40 transition-colors duration-150">
+                          {Array.from({ length: 5 }, (_, cIdx) => {
+                            const p = row[cIdx];
+                            if (!p) return <td key={cIdx} className="border border-slate-150/80 bg-slate-50/20 px-1 py-1.5" />;
 
-                          return (
-                            <td
-                              key={p.id}
-                              className="border border-gray-300 px-1 py-1 text-center font-mono font-bold text-gray-900 hover:bg-indigo-50 transition"
-                            >
-                              {editingTokenId === p.id ? (
-                                <input
-                                  type="text"
-                                  value={editingTokenValue}
-                                  onChange={e => setEditingTokenValue(normalizeInput(e.target.value, replaceSlash, replaceAsterisk))}
-                                  onKeyDown={e => {
-                                    if (e.key === 'Enter') {
-                                      e.preventDefault();
-                                      commitTokenEdit(p.id);
-                                    } else if (e.key === 'Escape') {
-                                      e.preventDefault();
-                                      cancelTokenEdit();
-                                    }
-                                  }}
-                                  onBlur={() => commitTokenEdit(p.id)}
-                                  autoFocus
-                                  className="w-full px-1 py-0.5 font-mono text-xs border border-indigo-400 rounded text-center"
-                                />
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => startTokenEdit(p)}
-                                  className="w-full truncate font-mono font-bold text-gray-900 hover:text-indigo-600 text-xs text-center"
-                                  title="Click to edit token"
-                                >
-                                  {p.tokenText}
-                                </button>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                            return (
+                              <td
+                                key={p.id}
+                                className="border border-slate-200/80 px-1.5 py-1.5 text-center font-mono font-bold text-slate-900 hover:bg-indigo-100/60 transition-colors duration-150"
+                              >
+                                {editingTokenId === p.id ? (
+                                  <input
+                                    type="text"
+                                    value={editingTokenValue}
+                                    onChange={e => setEditingTokenValue(normalizeInput(e.target.value, replaceSlash, replaceAsterisk))}
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        commitTokenEdit(p.id);
+                                      } else if (e.key === 'Escape') {
+                                        e.preventDefault();
+                                        cancelTokenEdit();
+                                      }
+                                    }}
+                                    onBlur={() => commitTokenEdit(p.id)}
+                                    autoFocus
+                                    className="w-full px-1 py-0.5 font-mono text-xs border-2 border-indigo-500 rounded text-indigo-950 text-center font-bold shadow-inner ring-2 ring-indigo-200"
+                                  />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => startTokenEdit(p)}
+                                    className="w-full truncate font-mono font-bold text-slate-900 hover:text-indigo-700 text-xs text-center transition-colors"
+                                    title="Click to edit token"
+                                  >
+                                    {p.tokenText}
+                                  </button>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </div>
