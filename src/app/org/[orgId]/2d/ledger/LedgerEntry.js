@@ -1480,52 +1480,39 @@ export default function LedgerEntry({
                 <div className="px-4 py-6 text-center text-gray-400 text-sm">{t('ledger.noMatchEntries', { q: search })}</div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-1.5 font-mono text-xs">
-                  {visibleTokens.map((p, idx) => (
+                  {visibleTokens.map((p) => (
                     <div
                       key={p.id}
-                      className="flex items-center justify-between bg-gray-50/90 border border-gray-200 rounded px-2 py-1 hover:bg-indigo-50 hover:border-indigo-300 transition group"
+                      className="flex items-center justify-center bg-gray-50/90 border border-gray-200 rounded px-1.5 py-1 hover:bg-indigo-50 hover:border-indigo-300 transition"
                     >
-                      <div className="flex items-center gap-1 min-w-0 flex-1">
-                        <span className="text-[10px] text-gray-400 font-sans font-bold shrink-0">
-                          #{idx + 1}
-                        </span>
-                        {editingTokenId === p.id ? (
-                          <input
-                            type="text"
-                            value={editingTokenValue}
-                            onChange={e => setEditingTokenValue(normalizeInput(e.target.value, replaceSlash, replaceAsterisk))}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                commitTokenEdit(p.id);
-                              } else if (e.key === 'Escape') {
-                                e.preventDefault();
-                                cancelTokenEdit();
-                              }
-                            }}
-                            onBlur={() => commitTokenEdit(p.id)}
-                            autoFocus
-                            className="w-full px-1 py-0.5 font-mono text-xs border border-indigo-400 rounded"
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => startTokenEdit(p)}
-                            className="font-mono font-bold text-gray-900 truncate hover:text-indigo-600 text-xs text-left"
-                            title="Click to edit token"
-                          >
-                            {p.tokenText}
-                          </button>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeToken(p.id)}
-                        className="text-[10px] text-red-500 hover:text-red-700 font-bold px-1 hover:bg-red-100 rounded transition shrink-0 ml-1"
-                        title="Delete entry"
-                      >
-                        ✕
-                      </button>
+                      {editingTokenId === p.id ? (
+                        <input
+                          type="text"
+                          value={editingTokenValue}
+                          onChange={e => setEditingTokenValue(normalizeInput(e.target.value, replaceSlash, replaceAsterisk))}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              commitTokenEdit(p.id);
+                            } else if (e.key === 'Escape') {
+                              e.preventDefault();
+                              cancelTokenEdit();
+                            }
+                          }}
+                          onBlur={() => commitTokenEdit(p.id)}
+                          autoFocus
+                          className="w-full px-1 py-0.5 font-mono text-xs border border-indigo-400 rounded text-center"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => startTokenEdit(p)}
+                          className="font-mono font-bold text-gray-900 truncate hover:text-indigo-600 text-xs text-center w-full"
+                          title="Click to edit token"
+                        >
+                          {p.tokenText}
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
