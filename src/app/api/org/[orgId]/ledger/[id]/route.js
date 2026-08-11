@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { getDb, orgSessionDoc, orgSessionVoucherDoc, sessionId as buildSessionId } from '@/lib/db/firestore.js';
+import { getDb, orgSessionDoc, orgSessionVoucherDoc, orgAgentDoc, sessionId as buildSessionId } from '@/lib/db/firestore.js';
 import { applyRtdbDelta } from '@/lib/db/rtdb.js';
 import { getSession } from '@/lib/auth';
 import { parseNumberExpression } from '@/lib/lottery/numberParser.js';
