@@ -1833,14 +1833,13 @@ export default function LedgerEntry({
             <h2 className="text-sm font-semibold text-gray-800">{t('ledger.exceedPanelTitle')}</h2>
             {isLimitActive && exceedList.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setIsBuyModalOpen(true)}
+                <Link
+                  href={`/org/${orgId}/2d/buy`}
                   className="text-xs px-2 py-1 bg-purple-50 border border-purple-200 text-purple-700 font-medium rounded hover:bg-purple-100 transition flex items-center gap-1"
-                  title="Create Buy Voucher to offload over-limit numbers"
+                  title="Go to Buy Page to enter buy vouchers"
                 >
                   <span>🛒</span> Buy
-                </button>
+                </Link>
                 <button
                   type="button"
                   onClick={handleCopyExceedLimit}
