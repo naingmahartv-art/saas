@@ -4,6 +4,7 @@ import { parseNumberExpression, MAX_ENTRIES } from '@/lib/lottery/numberParser.j
 import { createRuleEngine } from '@/lib/lottery/ruleEngine.js';
 import { useI18n } from '@/lib/i18n/index.js';
 import AgentCombobox from './AgentCombobox.js';
+import BuyVoucherModal from './BuyVoucherModal.js';
 import { matchesCombo, formatCombo as rawFormatCombo } from '@/lib/ledger/shortcuts.js';
 import { useIsMac } from '@/lib/ledger/useLedgerShortcuts.js';
 import { enqueue, onQueueEvent, startAutoDrain } from '@/lib/ledger/voucherQueue.js';
@@ -139,6 +140,7 @@ export default function LedgerEntry({
   const [importJsonText, setImportJsonText] = useState('');
   const [exceedSortKey, setExceedSortKey] = useState('excess');
   const [exceedSortDir, setExceedSortDir] = useState('desc');
+  const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
   const [gridSortKey, setGridSortKey] = useState('number');
   const [gridSortDir, setGridSortDir] = useState('asc');
   const inputRef = useRef(null);
@@ -1702,11 +1704,11 @@ export default function LedgerEntry({
               <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={handleExportExceedLimit}
-                  className="text-xs px-2 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 font-medium rounded hover:bg-indigo-100 transition flex items-center gap-1"
-                  title={`${t('ledger.exportCsv')} (${formatCombo(shortcuts.exportExceed)})`}
+                  onClick={() => setIsBuyModalOpen(true)}
+                  className="text-xs px-2 py-1 bg-purple-50 border border-purple-200 text-purple-700 font-medium rounded hover:bg-purple-100 transition flex items-center gap-1"
+                  title="Create Buy Voucher to offload over-limit numbers"
                 >
-                  <span>📥</span> CSV
+                  <span>🛒</span> Buy
                 </button>
                 <button
                   type="button"
@@ -1969,6 +1971,23 @@ export default function LedgerEntry({
             </div>
           </div>
         </div>
+      )}
+
+      {isBuyModalOpen && (
+        <BuyVoucherModal
+          orgId={orgId}
+          activeSession={activeSession}
+          exceedList={exceedList}
+          canWrite={canWrite}
+          onClose={() => setIsBuyModalOpen(false)}
+          onSuccess={(buyItems) => {
+            if (onOptimisticSave) {
+              onOptimisticSave(buyItems.map(item => ({ num: item.num, amount: -item.amount })));
+            }
+            setSuccessMsg('Buy Voucher created successfully!');
+            setTimeout(() => setSuccessMsg(''), 3000);
+          }}
+        />
       )}
     </div>
   );
