@@ -319,8 +319,8 @@ export default function LedgerEntry({
       return;
     }
 
-    const lines = exceedList.map(e => `${e.num} - ${e.excess.toLocaleString()}`);
-    const text = `[Buy List / အဝယ်စာရင်း]\n${lines.join('\n')}`;
+    const lines = exceedList.map(e => `${e.num},${e.excess}`);
+    const text = lines.join('\n');
 
     try {
       await navigator.clipboard.writeText(text);
