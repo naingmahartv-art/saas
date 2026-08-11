@@ -151,9 +151,57 @@ export default function LedgerEntry({
   const [quickEntryOpen, setQuickEntryOpen] = useState(false);
   const [quickEntryNums, setQuickEntryNums] = useState('');
   const [quickEntryAmount, setQuickEntryAmount] = useState('');
+  const [draggedTokenId, setDraggedTokenId] = useState(null);
+  const [dragOverTokenId, setDragOverTokenId] = useState(null);
   const quickNumsRef = useRef(null);
   const quickAmountRef = useRef(null);
   const lastQueuedClientIdRef = useRef(null);
+
+  function handleCellDragStart(e, tokenId) {
+    setDraggedTokenId(tokenId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', tokenId);
+  }
+
+  function handleCellDragOver(e, tokenId) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverTokenId !== tokenId) {
+      setDragOverTokenId(tokenId);
+    }
+  }
+
+  function handleCellDragLeave(e, tokenId) {
+    if (dragOverTokenId === tokenId) {
+      setDragOverTokenId(null);
+    }
+  }
+
+  function handleCellDrop(e, targetTokenId) {
+    e.preventDefault();
+    const sourceTokenId = draggedTokenId || e.dataTransfer.getData('text/plain');
+    if (!sourceTokenId || !targetTokenId || sourceTokenId === targetTokenId) {
+      setDraggedTokenId(null);
+      setDragOverTokenId(null);
+      return;
+    }
+    setPendingTokens(prev => {
+      const srcIdx = prev.findIndex(p => p.id === sourceTokenId);
+      const targetIdx = prev.findIndex(p => p.id === targetTokenId);
+      if (srcIdx === -1 || targetIdx === -1) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(srcIdx, 1);
+      next.splice(targetIdx, 0, moved);
+      return next;
+    });
+    setDraggedTokenId(null);
+    setDragOverTokenId(null);
+  }
+
+  function handleCellDragEnd() {
+    setDraggedTokenId(null);
+    setDragOverTokenId(null);
+  }
 
   const notBuySet = useMemo(() => new Set(notBuyNumbers || []), [notBuyNumbers]);
   const hotSet = useMemo(() => new Set(hotNumbers || []), [hotNumbers]);
@@ -1519,10 +1567,23 @@ export default function LedgerEntry({
                             const p = row[cIdx];
                             if (!p) return <td key={cIdx} className="border border-slate-150/80 bg-slate-50/20 px-1 py-1.5" />;
 
+                            const isDragging = draggedTokenId === p.id;
+                            const isDragOver = dragOverTokenId === p.id;
+
                             return (
                               <td
                                 key={p.id}
-                                className="border border-slate-200/80 px-1.5 py-1.5 text-center font-mono font-bold text-slate-900 hover:bg-indigo-100/60 transition-colors duration-150"
+                                draggable={editingTokenId !== p.id}
+                                onDragStart={e => handleCellDragStart(e, p.id)}
+                                onDragOver={e => handleCellDragOver(e, p.id)}
+                                onDragLeave={e => handleCellDragLeave(e, p.id)}
+                                onDrop={e => handleCellDrop(e, p.id)}
+                                onDragEnd={handleCellDragEnd}
+                                className={`border border-slate-200/80 px-1.5 py-1.5 text-center font-mono font-bold text-slate-900 transition-all duration-150 cursor-grab active:cursor-grabbing ${
+                                  isDragging ? 'opacity-40 bg-indigo-100 scale-95 border-dashed border-indigo-500' : ''
+                                } ${
+                                  isDragOver ? 'bg-indigo-200/90 ring-2 ring-indigo-500 scale-105 z-10 shadow-md' : 'hover:bg-indigo-100/60'
+                                }`}
                               >
                                 {editingTokenId === p.id ? (
                                   <input
@@ -1546,8 +1607,8 @@ export default function LedgerEntry({
                                   <button
                                     type="button"
                                     onClick={() => startTokenEdit(p)}
-                                    className="w-full truncate font-mono font-bold text-slate-900 hover:text-indigo-700 text-xs text-center transition-colors"
-                                    title="Click to edit token"
+                                    className="w-full truncate font-mono font-bold text-slate-900 hover:text-indigo-700 text-xs text-center transition-colors select-none"
+                                    title="Click to edit, or drag & drop to reorder"
                                   >
                                     {p.tokenText}
                                   </button>
