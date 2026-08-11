@@ -3,6 +3,8 @@ import { orgSessionDoc, orgSessionVouchersCol, orgRatesDoc, sessionId as buildSe
 import { getSession } from '@/lib/auth/session.js';
 import { isBeforeCutover, getLegacyResults } from '@/lib/db/legacy-reports.js';
 
+import { parseNumberExpression } from '@/lib/lottery/numberParser.js';
+
 const pad2 = (n) => String(n).padStart(2, '0');
 const ALL_NUMBERS = Array.from({ length: 100 }, (_, i) => pad2(i));
 
@@ -49,10 +51,28 @@ export async function GET(request, { params }) {
   const num1Rate = rateSnap.exists ? (rateSnap.data().num1Rate ?? 0) : 0;
 
   const vouchers = vouchersSnap.docs.map(d => d.data());
-  const agentNames = [...new Set(vouchers.map(v => v.agentName))].sort();
+  const agentNames = [...new Set(vouchers.map(v => v.agentName || v.agentId))].filter(Boolean).sort();
 
-  // Flatten every voucher's detail lines for per-number/per-agent aggregation.
-  const details = vouchers.flatMap(v => (v.details || []).map(d => ({ ...d, agentName: v.agentName })));
+  // Flatten every voucher's detail lines or tokens for per-number/per-agent aggregation.
+  const details = vouchers.flatMap(v => {
+    const agentName = v.agentName || v.agentId;
+    if (v.details && v.details.length > 0) {
+      return v.details.map(d => ({ num1: pad2(d.num1), value: d.value, agentName }));
+    }
+    if (v.tokens && v.tokens.length > 0) {
+      const list = [];
+      for (const tokText of v.tokens) {
+        const { entries } = parseNumberExpression(tokText);
+        if (entries && entries.length > 0) {
+          for (const e of entries) {
+            list.push({ num1: pad2(e.num), value: parseFloat(e.amount) || 0, agentName });
+          }
+        }
+      }
+      return list;
+    }
+    return [];
+  });
 
   const numberTotals = new Map();
   for (const d of details) {
