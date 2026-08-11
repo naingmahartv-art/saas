@@ -108,29 +108,36 @@ export default function BuyEntry({
   const grandTotal = totalsEntries.reduce((s, e) => s + e.amount, 0);
 
   const exceedList = useMemo(() => {
-    if (!isLimitActive) return [];
-    const list = totalsEntries
-      .filter(e => e.amount > limitValue)
-      .map(e => {
-        const excess = e.amount - limitValue;
-        const buy = buyTotals?.[e.num] || 0;
-        const total = Math.max(0, excess - buy);
-        return { ...e, excess, buy, total };
-      });
+    const list = [];
+    const allNums = new Set([
+      ...Object.keys(totals || {}),
+      ...Object.keys(buyTotals || {}),
+    ]);
 
-    return [...list].sort((a, b) => {
+    for (const num of allNums) {
+      const amount = totals?.[num] || 0;
+      const buy = buyTotals?.[num] || 0;
+      const excess = isLimitActive && limitValue > 0 ? Math.max(0, amount - limitValue) : amount;
+      const total = Math.max(0, excess - buy);
+
+      if (amount > (isLimitActive ? limitValue : 0) || buy > 0 || excess > 0) {
+        list.push({ num, amount, excess, buy, total });
+      }
+    }
+
+    return list.sort((a, b) => {
       let av = a[exceedSortKey];
       let bv = b[exceedSortKey];
 
       if (exceedSortKey === 'num') {
-        const cmp = av.localeCompare(bv);
+        const cmp = String(av || '').localeCompare(String(bv || ''));
         return exceedSortDir === 'asc' ? cmp : -cmp;
       } else {
-        const cmp = av - bv;
+        const cmp = (Number(av) || 0) - (Number(bv) || 0);
         return exceedSortDir === 'asc' ? cmp : -cmp;
       }
     });
-  }, [totalsEntries, limitValue, isLimitActive, buyTotals, exceedSortKey, exceedSortDir]);
+  }, [totals, buyTotals, isLimitActive, limitValue, exceedSortKey, exceedSortDir]);
 
   const totalExcess = useMemo(() => {
     return exceedList.reduce((sum, e) => sum + e.excess, 0);
