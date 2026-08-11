@@ -117,7 +117,14 @@ function defaultExpandModifier(modifier, num, amount, baseIncluded) {
   switch (modifier.toUpperCase()) {
     case 'A':
       // APoo: all same-digit numbers (00,11,...,99)
-      // If a number is given, only include it if it's an APoo number
+      // +A = even doubles (22,44,66,00,88)
+      // -A = odd doubles (11,33,55,77,99)
+      if (num === '+' || num === 'EVEN') {
+        return ['22', '44', '66', '00', '88'].map(n => ({ num: n, amount }));
+      }
+      if (num === '-' || num === 'ODD') {
+        return ['11', '33', '55', '77', '99'].map(n => ({ num: n, amount }));
+      }
       if (num) {
         return APOO_NUMBERS.includes(num) ? [{ num, amount }] : [];
       }
@@ -182,11 +189,21 @@ function defaultExpandModifier(modifier, num, amount, baseIncluded) {
     }
 
     case 'F': {
-      // Series: `num` is the seed digit 0-9 (e.g. "1F" -> digit 1).
-      // Expands to the tens-D series D0-D9, EXCEPT "0F" starts at 01
-      // (skips "00") — 0F is 9 numbers, 1F-9F are 10 numbers each.
+      // Series:
+      // Case 1: Digit AFTER F (e.g. F1300 -> BACK_1) -> Units digit fixed to d (01,11,21,...,91)
+      // Case 2: Digit BEFORE F (e.g. 1F300 -> 01) -> Tens digit fixed to d (10,11,12,...,19)
       if (!num) return [];
-      const digit = num[1];
+
+      if (typeof num === 'string' && num.startsWith('BACK_')) {
+        const unitDigit = num.replace('BACK_', '');
+        const out = [];
+        for (let t = 0; t <= 9; t++) {
+          out.push({ num: `${t}${unitDigit}`, amount });
+        }
+        return out;
+      }
+
+      const digit = num.length === 2 ? num[1] : num[0];
       const start = digit === '0' ? 1 : 0;
       const out = [];
       for (let u = start; u <= 9; u++) out.push({ num: `${digit}${u}`, amount });
@@ -272,6 +289,66 @@ function parseToken(token, expand) {
       }
     }
     return out;
+  }
+
+  // Helper for trailing modifiers on prefix matches (+A, -A, Fd, dF)
+  function expandTrail(baseItems, trail, expFn) {
+    if (!trail) return baseItems;
+    const results = [...baseItems];
+    let idx = 0;
+    const readTrailDigits = () => {
+      let start = idx;
+      while (idx < trail.length && /[0-9]/.test(trail[idx])) idx++;
+      return trail.slice(start, idx);
+    };
+    while (idx < trail.length) {
+      const mod = trail[idx];
+      if (!/[A-Z]/.test(mod)) { idx++; continue; }
+      idx++;
+      const amt = parseFloat(readTrailDigits()) || 0;
+      for (const item of baseItems) {
+        results.push(...expFn(mod, item.num, amt, true));
+      }
+    }
+    return results;
+  }
+
+  // +A (Even Apoo) e.g. "+A300" or "+A300R200"
+  const plusAMatch = token.match(/^\+A(\d*)([A-Z0-9]*)$/i);
+  if (plusAMatch) {
+    const amount = parseFloat(plusAMatch[1]) || 0;
+    const trail = plusAMatch[2];
+    const baseItems = expand('A', '+', amount, false);
+    return expandTrail(baseItems, trail, expand);
+  }
+
+  // -A (Odd Apoo) e.g. "-A300" or "-A300R200"
+  const minusAMatch = token.match(/^-A(\d*)([A-Z0-9]*)$/i);
+  if (minusAMatch) {
+    const amount = parseFloat(minusAMatch[1]) || 0;
+    const trail = minusAMatch[2];
+    const baseItems = expand('A', '-', amount, false);
+    return expandTrail(baseItems, trail, expand);
+  }
+
+  // Fd (Digit AFTER F, e.g. F1300, F2300, F0300)
+  const fBackMatch = token.match(/^F([0-9])(\d*)([A-Z0-9]*)$/i);
+  if (fBackMatch) {
+    const unitDigit = fBackMatch[1];
+    const amount = parseFloat(fBackMatch[2]) || 0;
+    const trail = fBackMatch[3];
+    const baseItems = expand('F', `BACK_${unitDigit}`, amount, false);
+    return expandTrail(baseItems, trail, expand);
+  }
+
+  // dF (Digit BEFORE F, e.g. 1F300, 2F300, 0F300)
+  const fFrontMatch = token.match(/^([0-9])F(\d*)([A-Z0-9]*)$/i);
+  if (fFrontMatch) {
+    const tensDigit = fFrontMatch[1];
+    const amount = parseFloat(fFrontMatch[2]) || 0;
+    const trail = fFrontMatch[3];
+    const baseItems = expand('F', `0${tensDigit}`, amount, false);
+    return expandTrail(baseItems, trail, expand);
   }
 
 
