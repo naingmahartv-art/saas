@@ -117,10 +117,10 @@ function defaultExpandModifier(modifier, num, amount, baseIncluded) {
   switch (modifier.toUpperCase()) {
     case 'A':
       // APoo: all same-digit numbers (00,11,...,99)
-      // +A = even doubles (22,44,66,00,88)
+      // +A = even doubles (00,22,44,66,88)
       // -A = odd doubles (11,33,55,77,99)
       if (num === '+' || num === 'EVEN') {
-        return ['22', '44', '66', '00', '88'].map(n => ({ num: n, amount }));
+        return ['00', '22', '44', '66', '88'].map(n => ({ num: n, amount }));
       }
       if (num === '-' || num === 'ODD') {
         return ['11', '33', '55', '77', '99'].map(n => ({ num: n, amount }));
@@ -439,9 +439,9 @@ export function parseNumberExpression(expression, config = {}) {
   const allEntries = [];
 
   for (const group of groups) {
-    // Parity-flag groups (++/--/+-/-+/SS/MM/SM/MS) are a single token —
+    // Parity-flag groups (++/--/+-/-+/SS/MM/SM/MS) and +A/-A shortcodes are single tokens —
     // don't split them on '+'/'*' below (parseToken handles them directly).
-    if (PARITY_FLAG_RE.test(group.toUpperCase())) {
+    if (PARITY_FLAG_RE.test(group.toUpperCase()) || /^(\+|-)?A/i.test(group)) {
       allEntries.push(...parseToken(group, expand));
       continue;
     }
