@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import LedgerEntry from '../ledger/LedgerEntry.js';
+import BuyEntry from './BuyEntry.js';
 import LedgerHistory from '../ledger/LedgerHistory.js';
 import SessionPicker from '../ledger/SessionPicker.js';
 import ReportsModal from '../ledger/ReportsModal.js';
@@ -60,17 +60,6 @@ export default function BuyWorkspace({
     setNotBuyNumbers(live.notBuyNumbers || []);
   }, [live]);
 
-  const applyOptimisticTotals = useCallback((entries) => {
-    setTotals(prev => {
-      const next = { ...prev };
-      for (const e of entries) {
-        const amt = parseFloat(e.amount) || 0;
-        next[e.num] = (next[e.num] || 0) + amt;
-      }
-      return next;
-    });
-  }, []);
-
   const applyOptimisticBuyTotals = useCallback((buyItems) => {
     setBuyTotals(prev => {
       const next = { ...prev };
@@ -97,8 +86,7 @@ export default function BuyWorkspace({
 
   return (
     <div className="w-full px-3 py-3">
-      <LedgerEntry
-        isBuyPage={true}
+      <BuyEntry
         orgId={orgId}
         activeSession={activeSession}
         agents={agents}
@@ -109,22 +97,12 @@ export default function BuyWorkspace({
         luckyNumber={luckyNumber}
         totals={totals}
         buyTotals={buyTotals}
-        editingVoucher={editingVoucher}
         canWrite={canWrite}
         shortcuts={shortcuts}
         replaceSlash={replaceSlash}
         replaceAsterisk={replaceAsterisk}
-        onOptimisticSave={applyOptimisticTotals}
         onOptimisticBuySave={applyOptimisticBuyTotals}
-        onSaved={() => {
-          setEditingVoucher(null);
-          refreshTotals();
-          setRefreshSignal(s => s + 1);
-        }}
-        onCancelEdit={() => setEditingVoucher(null)}
-        onOpenHistory={() => setIsHistoryOpen(true)}
         onOpenSessionPicker={() => setIsSessionPickerOpen(true)}
-        onOpenReports={() => setIsReportsOpen(true)}
       />
 
       {isSessionPickerOpen && (
