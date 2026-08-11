@@ -10,8 +10,8 @@ const SLOT_RANGE_KEY = { '09:00': 'slot0900Range', '12:00': 'slot1200Range', '04
 export default function SessionPicker({ orgId, activeSession, machines, onClose }) {
   const { t } = useI18n();
   const router = useRouter();
-  const [onDate, setOnDate] = useState(activeSession?.onDate ?? todayStr());
-  const [ampm, setAmpm] = useState(activeSession?.ampm ?? getCurrentSlotKey());
+  const [onDate, setOnDate] = useState(todayStr());
+  const [ampm, setAmpm] = useState(getCurrentSlotKey());
   const [machineId, setMachineId] = useState(activeSession?.machineId ?? machines[0]?.machineId ?? 1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
