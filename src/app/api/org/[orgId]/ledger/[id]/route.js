@@ -38,7 +38,7 @@ export async function PUT(request, { params }) {
   }
 
   const body = await request.json();
-  const { tokens } = body;
+  const { tokens, agentId } = body;
   const coords = parseSessionCoords(body);
   if (!coords) {
     return NextResponse.json({ error: 'onCount, ampm, and onDate are required' }, { status: 400 });
@@ -74,11 +74,30 @@ export async function PUT(request, { params }) {
   const db = getDb();
   let slip;
   let deltaMap = {};
+  let updatedAgentId;
+  let updatedAgentName;
 
   await db.runTransaction(async (tx) => {
     const voucherSnap = await tx.get(voucherRef);
     if (!voucherSnap.exists) throw new Error('NOT_FOUND');
     slip = voucherSnap.data();
+
+    updatedAgentId = slip.agentId;
+    updatedAgentName = slip.agentName;
+
+    if (agentId && agentId !== slip.agentId) {
+      updatedAgentId = agentId;
+      if (agentId === 'buy_offload') {
+        updatedAgentName = 'Buy Offload (အဝယ်စာရင်း)';
+      } else {
+        const agentSnap = await orgAgentDoc(orgId, agentId).get();
+        if (agentSnap.exists) {
+          updatedAgentName = agentSnap.data().agentName;
+        } else {
+          updatedAgentName = agentId;
+        }
+      }
+    }
 
     let oldEntries = [];
     if (slip.tokens && slip.tokens.length > 0) {
@@ -107,7 +126,12 @@ export async function PUT(request, { params }) {
       totalsUpdate[`totals.${num}`] = FieldValue.increment(amt);
     }
 
-    tx.update(voucherRef, { tokens, amount: newAmount });
+    tx.update(voucherRef, {
+      tokens,
+      amount: newAmount,
+      agentId: updatedAgentId,
+      agentName: updatedAgentName,
+    });
     if (Object.keys(totalsUpdate).length > 0) tx.update(sessionRef, totalsUpdate);
   }).catch(err => {
     if (err.message === 'NOT_FOUND') return null;
@@ -119,8 +143,8 @@ export async function PUT(request, { params }) {
   }
 
   // Update Realtime DB
-  if (Object.keys(deltaMap).length > 0) {
-    await applyRtdbDelta(orgId, sid, slip.agentId, deltaMap, 0);
+  if (Object.keys(deltaMap).length > 0 || updatedAgentId !== slip.agentId) {
+    await applyRtdbDelta(orgId, sid, updatedAgentId || slip.agentId, deltaMap, 0);
   }
 
   await logActivity({
