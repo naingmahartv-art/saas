@@ -1,5 +1,6 @@
 'use client';
 import { useMemo, useRef, useState, useEffect, Fragment } from 'react';
+import Link from 'next/link';
 import { parseNumberExpression, MAX_ENTRIES } from '@/lib/lottery/numberParser.js';
 import { createRuleEngine } from '@/lib/lottery/ruleEngine.js';
 import { useI18n } from '@/lib/i18n/index.js';
@@ -77,6 +78,7 @@ function buildNumberTable(numbersFlat) {
 }
 
 export default function LedgerEntry({
+  isBuyPage = false,
   orgId,
   activeSession,
   agents,
@@ -285,8 +287,10 @@ export default function LedgerEntry({
   }, [limit]);
 
   useEffect(() => {
-    setRateValue(rate?.num1Rate || 0);
-  }, [rate]);
+    if (isBuyPage && !agentId) {
+      setAgentId('buy_offload');
+    }
+  }, [isBuyPage, agentId]);
 
   useEffect(() => {
     setPendingTokens([]);
@@ -786,6 +790,42 @@ export default function LedgerEntry({
       return;
     }
 
+    if (isBuyPage) {
+      setSaving(true);
+      try {
+        const res = await fetch(`/api/org/${orgId}/ledger/buy-voucher`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            onCount: activeSession.onCount,
+            ampm: activeSession.ampm,
+            onDate: activeSession.onDate,
+            machineId: activeSession.machineId,
+            items: entries,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error || t('common.failedToSave'));
+          return;
+        }
+        if (onOptimisticBuySave) onOptimisticBuySave(entries);
+        setPendingTokens([]);
+        setInputValue('');
+        setAgentId('buy_offload');
+        setWarnings([]);
+        setSuccessMsg('Buy Voucher saved successfully!');
+        setTimeout(() => {
+          agentSelectRef.current?.focus();
+        }, 50);
+      } catch (err) {
+        setError(err.message || t('common.networkError'));
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     const clientId = enqueue(orgId, {
       agentId,
       onCount: activeSession.onCount,
@@ -1233,7 +1273,26 @@ export default function LedgerEntry({
     <div className="w-full h-[calc(100vh-1.5rem)] flex flex-col overflow-hidden">
       {/* Top bar */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-2 mb-3 flex flex-wrap items-center justify-between gap-2 shrink-0">
-        <div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-semibold">
+            <Link
+              href={`/org/${orgId}/2d/ledger`}
+              className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${
+                !isBuyPage ? 'bg-white text-indigo-700 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>📝</span> Ledger (2D)
+            </Link>
+            <Link
+              href={`/org/${orgId}/2d/buy`}
+              className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${
+                isBuyPage ? 'bg-purple-600 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>🛒</span> Buy Page (အဝယ်စာရင်း)
+            </Link>
+          </div>
+
           {activeSession ? (
             <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-gray-900">
               <span className="badge-active">{t(`session.${SLOT_LABEL_KEY[activeSession.ampm] || 'slot0900'}`)}</span>
