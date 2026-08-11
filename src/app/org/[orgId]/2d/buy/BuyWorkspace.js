@@ -33,7 +33,7 @@ export default function BuyWorkspace({
       const acknowledged = sessionStorage.getItem('session_picker_acknowledged');
       if (acknowledged) return false;
     }
-    return !initialActiveSession;
+    return !activeSession;
   });
 
   useEffect(() => {

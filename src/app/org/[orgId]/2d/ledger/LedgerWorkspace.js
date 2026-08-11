@@ -38,7 +38,7 @@ export default function LedgerWorkspace({
       const acknowledged = sessionStorage.getItem('session_picker_acknowledged');
       if (acknowledged) return false;
     }
-    return !initialActiveSession;
+    return !activeSession;
   });
 
   useEffect(() => {
