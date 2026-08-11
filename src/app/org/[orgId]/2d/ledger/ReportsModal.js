@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useI18n } from '@/lib/i18n/index.js';
 import { buildReportPdf, reportFileName } from '@/lib/reports/buildPdf.js';
+import { parseNumberExpression, MAX_ENTRIES } from '@/lib/lottery/numberParser.js';
 
 const SLOT_LABEL_KEY = { '09:00': 'slot0900', '12:00': 'slot1200', '04:00': 'slot0400' };
 
@@ -21,6 +22,27 @@ function downloadBlob(blob, filename) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function getSlipItems(slip) {
+  if (slip.details && slip.details.length > 0) {
+    return slip.details.map(d => ({ num: String(d.num1).padStart(2, '0'), amount: d.value }));
+  }
+  if (slip.tokens && slip.tokens.length > 0) {
+    const items = [];
+    for (const tokText of slip.tokens) {
+      const { entries } = parseNumberExpression(tokText, { maxEntries: MAX_ENTRIES });
+      if (entries && entries.length > 0) {
+        for (const e of entries) {
+          items.push({ num: String(e.num).padStart(2, '0'), amount: e.amount });
+        }
+      } else {
+        items.push({ num: tokText, amount: 0 });
+      }
+    }
+    return items;
+  }
+  return [];
 }
 
 async function shareOrDownload(blob, filename, t, setStatus) {
@@ -98,7 +120,17 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose }) 
     } finally {
       setAgentLoading(false);
     }
-  }, [orgId]);
+
+    if (activeSession) {
+      try {
+        const res = await fetch(
+          `/api/org/${orgId}/results?onCount=${activeSession.onCount}&ampm=${activeSession.ampm}&onDate=${activeSession.onDate}`
+        );
+        const data = await res.json();
+        setPayoutData(data);
+      } catch {}
+    }
+  }, [orgId, activeSession]);
 
   useEffect(() => {
     if (tab === 'agent' && selectedAgent) loadAgentReport(selectedAgent.agentName);
@@ -277,9 +309,10 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose }) 
     const rows = [[t('reports.dateTimeCol'), t('reports.numberCol'), t('reports.amountCol')]];
     for (const slip of sortedAgentSlips) {
       const when = new Date(slip.createdAt).toLocaleString();
-      for (const d of slip.details || []) {
-        const isWinner = luckyNo && String(d.num1).padStart(2, '0') === String(luckyNo).padStart(2, '0');
-        rows.push([when, isWinner ? `${d.num1} (WIN)` : d.num1, d.value]);
+      const items = getSlipItems(slip);
+      for (const d of items) {
+        const isWinner = luckyNo && String(d.num).padStart(2, '0') === String(luckyNo).padStart(2, '0');
+        rows.push([when, isWinner ? `${d.num} (WIN)` : d.num, d.amount]);
       }
     }
     rows.push(['', t('reports.grandTotalLabel'), agentGrandTotal]);
@@ -287,14 +320,17 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose }) 
   }
 
   function buildAgentPdfBlob() {
-    const sections = sortedAgentSlips.map(slip => ({
-      heading: `${new Date(slip.createdAt).toLocaleString()}`,
-      head: [[PDF_EN.number, PDF_EN.amount]],
-      rows: (slip.details || []).map(d => {
-        const isWinner = luckyNo && String(d.num1).padStart(2, '0') === String(luckyNo).padStart(2, '0');
-        return [isWinner ? `${d.num1} (WIN)` : d.num1, d.value.toLocaleString()];
-      }),
-    }));
+    const sections = sortedAgentSlips.map(slip => {
+      const items = getSlipItems(slip);
+      return {
+        heading: `${new Date(slip.createdAt).toLocaleString()}${slip.tokens ? ` [${slip.tokens.join(', ')}]` : ''}`,
+        head: [[PDF_EN.number, PDF_EN.amount]],
+        rows: items.map(d => {
+          const isWinner = luckyNo && String(d.num).padStart(2, '0') === String(luckyNo).padStart(2, '0');
+          return [isWinner ? `${d.num} (WIN)` : d.num, d.amount.toLocaleString()];
+        }),
+      };
+    });
     sections.push({ head: [[PDF_EN.grandTotal]], rows: [[agentGrandTotal.toLocaleString()]] });
     return buildReportPdf({
       title: `${PDF_EN.agentReport} — ${selectedAgent?.agentName || ''}`,
@@ -573,39 +609,47 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose }) 
                 <p className="text-sm text-gray-400 text-center py-10">{t('reports.noVouchers')}</p>
               ) : (
                 <div className="space-y-4">
-                  {sortedAgentSlips.map(slip => (
-                    <div key={slip.id} className="border border-gray-200 rounded-lg overflow-hidden">
-                      <div className="bg-gray-50 px-3 py-2 flex items-center justify-between text-sm">
-                        <span className="text-gray-600 font-medium">{new Date(slip.createdAt).toLocaleString()}</span>
+                  {sortedAgentSlips.map(slip => {
+                    const items = getSlipItems(slip);
+                    return (
+                      <div key={slip.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                        <div className="bg-gray-50 px-3 py-2 flex items-center justify-between text-sm">
+                          <span className="text-gray-600 font-medium">{new Date(slip.createdAt).toLocaleString()}</span>
+                          {slip.tokens && slip.tokens.length > 0 && (
+                            <span className="text-xs text-gray-500 font-mono">
+                              {slip.tokens.join(', ')}
+                            </span>
+                          )}
+                        </div>
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-gray-100">
+                              <th className="text-left px-3 py-1.5 font-medium">{t('reports.numberCol')}</th>
+                              <th className="text-right px-3 py-1.5 font-medium">{t('reports.amountCol')}</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                            {items.map((d, i) => {
+                              const isWinner = luckyNo && String(d.num).padStart(2, '0') === String(luckyNo).padStart(2, '0');
+                              return (
+                                <tr key={i} className={isWinner ? 'bg-red-50 font-bold' : ''}>
+                                  <td className={`px-3 py-1 font-mono ${isWinner ? 'text-red-600 font-bold text-base' : 'text-gray-800'}`}>
+                                    {d.num} {isWinner && <span className="text-xs text-red-600 font-bold ml-1.5">🏆 (WIN)</span>}
+                                  </td>
+                                  <td className={`px-3 py-1 text-right font-mono ${isWinner ? 'text-red-600 font-bold text-base' : 'text-gray-700'}`}>
+                                    {d.amount.toLocaleString()}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                        <div className="px-3 py-1.5 bg-gray-50 text-right text-sm font-semibold text-gray-800">
+                          {t('reports.subtotalLabel')}: {slip.amount.toLocaleString()}
+                        </div>
                       </div>
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-gray-100">
-                            <th className="text-left px-3 py-1.5 font-medium">{t('reports.numberCol')}</th>
-                            <th className="text-right px-3 py-1.5 font-medium">{t('reports.amountCol')}</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-50">
-                          {(slip.details || []).map((d, i) => {
-                            const isWinner = luckyNo && String(d.num1).padStart(2, '0') === String(luckyNo).padStart(2, '0');
-                            return (
-                              <tr key={i} className={isWinner ? 'bg-red-50/80 font-bold' : ''}>
-                                <td className={`px-3 py-1 font-mono ${isWinner ? 'text-red-600 font-bold' : 'text-gray-800'}`}>
-                                  {d.num1} {isWinner && <span className="text-xs text-red-600 font-semibold ml-1">🏆 (WIN)</span>}
-                                </td>
-                                <td className={`px-3 py-1 text-right font-mono ${isWinner ? 'text-red-600 font-bold' : 'text-gray-700'}`}>
-                                  {d.value.toLocaleString()}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                      <div className="px-3 py-1.5 bg-gray-50 text-right text-sm font-semibold text-gray-800">
-                        {t('reports.subtotalLabel')}: {slip.amount.toLocaleString()}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   <div className="text-right text-base font-bold text-indigo-700 pt-2">
                     {t('reports.grandTotalLabel')}: {agentGrandTotal.toLocaleString()}
                   </div>
