@@ -140,7 +140,9 @@ function defaultExpandModifier(modifier, num, amount, baseIncluded) {
       //     amount applies to BOTH the base and its reverse: 34/300, 43/300.
       if (!num) return [];
       const reversed = num[1] + num[0];
-      if (reversed === num) return [];
+      if (reversed === num) {
+        return baseIncluded ? [] : [{ num, amount }];
+      }
       if (baseIncluded) return [{ num: reversed, amount }];
       return [{ num, amount }, { num: reversed, amount }];
     }

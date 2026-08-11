@@ -279,27 +279,32 @@ export default function BuyEntry({
   function handleAddQuickEntry() {
     setError('');
     setWarnings([]);
-    const numsRaw = quickEntryNums.trim();
-    const amtRaw = quickEntryAmount.trim();
+    const cleanNums = quickEntryNums.replace(/[^0-9]/g, '');
+    const amtRaw = quickEntryAmount.trim().toUpperCase();
 
-    if (!numsRaw || !amtRaw) {
+    if (!cleanNums || !amtRaw) {
       setError('Please enter both numbers and amount');
       return;
     }
 
-    const expr = `${numsRaw}R${amtRaw}`;
-    const { entries: parsed, error: parseError } = parseNumberExpression(expr, { maxEntries: MAX_ENTRIES });
+    const newTokens = [];
+    for (let i = 0; i < cleanNums.length; i += 2) {
+      const num = cleanNums.slice(i, i + 2);
+      if (num.length === 2) {
+        const expr = `${num}${amtRaw}`;
+        const { entries: parsed, error: parseError } = parseNumberExpression(expr, { maxEntries: MAX_ENTRIES });
+        if (!parseError && parsed.length > 0) {
+          newTokens.push({ id: Date.now() + Math.random().toString(), tokenText: expr, entries: parsed });
+        }
+      }
+    }
 
-    if (parseError) {
-      setError(parseError);
+    if (newTokens.length === 0) {
+      setError('Invalid numbers or amount expression');
       return;
     }
 
-    setPendingTokens(prev => [
-      ...prev,
-      { id: Date.now() + Math.random().toString(), tokenText: expr, entries: parsed },
-    ]);
-
+    setPendingTokens(prev => [...prev, ...newTokens]);
     setQuickEntryNums('');
     setQuickEntryAmount('');
     setQuickEntryOpen(false);
