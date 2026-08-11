@@ -121,6 +121,7 @@ export default function LedgerEntry({
   const [luckyError, setLuckyError] = useState('');
   const [cellPopup, setCellPopup] = useState(null); // { num, amount } | null
   const [limitValue, setLimitValue] = useState(limit?.limitValue ?? null);
+  const isLimitActive = limitValue !== null && limitValue !== undefined && limitValue >= 0;
   const [limitOpen, setLimitOpen] = useState(false);
   const [limitInput, setLimitInput] = useState('');
   const [limitSaving, setLimitSaving] = useState(false);
