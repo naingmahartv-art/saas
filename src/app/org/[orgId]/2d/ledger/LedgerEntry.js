@@ -86,9 +86,11 @@ export default function LedgerEntry({
   hotNumbers,
   luckyNumber,
   totals,
+  buyTotals,
   editingVoucher,
   onSaved,
   onOptimisticSave,
+  onOptimisticBuySave,
   onCancelEdit,
   onOpenHistory,
   onOpenSessionPicker,
@@ -369,8 +371,8 @@ export default function LedgerEntry({
       return;
     }
 
-    const headers = 'Number,Amount';
-    const lines = exceedList.map(e => `${e.num},${e.excess}`);
+    const headers = 'Number,Exceed,Buy,Total';
+    const lines = exceedList.map(e => `${e.num},${e.excess},${e.buy},${e.total}`);
     const text = [headers, ...lines].join('\n');
 
     try {
@@ -1020,7 +1022,12 @@ export default function LedgerEntry({
     if (!isLimitActive) return [];
     const list = totalsEntries
       .filter(e => e.amount > limitValue)
-      .map(e => ({ ...e, excess: e.amount - limitValue }));
+      .map(e => {
+        const excess = e.amount - limitValue;
+        const buy = buyTotals?.[e.num] || 0;
+        const total = Math.max(0, excess - buy);
+        return { ...e, excess, buy, total };
+      });
 
     return [...list].sort((a, b) => {
       let av = a[exceedSortKey];
@@ -1034,15 +1041,19 @@ export default function LedgerEntry({
         return exceedSortDir === 'asc' ? cmp : -cmp;
       }
     });
-  }, [totalsEntries, limitValue, exceedSortKey, exceedSortDir]);
+  }, [totalsEntries, limitValue, isLimitActive, buyTotals, exceedSortKey, exceedSortDir]);
 
   const totalExcess = useMemo(() => {
     return exceedList.reduce((sum, e) => sum + e.excess, 0);
   }, [exceedList]);
 
-  const totalFree = useMemo(() => {
-    return grandTotal - totalExcess;
-  }, [grandTotal, totalExcess]);
+  const totalBuy = useMemo(() => {
+    return exceedList.reduce((sum, e) => sum + e.buy, 0);
+  }, [exceedList]);
+
+  const totalRemaining = useMemo(() => {
+    return exceedList.reduce((sum, e) => sum + e.total, 0);
+  }, [exceedList]);
 
   function toggleGridSort(key) {
     if (gridSortKey === key) {
@@ -1790,37 +1801,47 @@ export default function LedgerEntry({
                 <p className="text-xs text-gray-400 text-center py-6">{t('ledger.noExceedEntries')}</p>
               ) : (
                 <div className="flex-1 min-h-0 overflow-y-auto mb-2">
-                  <table className="w-full text-sm border border-collapse border-gray-200">
+                  <table className="w-full text-xs border border-collapse border-gray-200">
                     <thead>
                       <tr className="bg-gray-50 text-[10px] text-gray-500 uppercase tracking-wide border-b border-gray-200 font-medium">
-                        <th className="px-1.5 py-1 border border-gray-200 text-center font-medium">
+                        <th className="px-1 py-1 border border-gray-200 text-center font-medium">
                           <button
                             type="button"
                             onClick={() => toggleExceedSort('num')}
                             className="hover:text-gray-800 transition font-semibold flex items-center justify-center gap-0.5 mx-auto"
                           >
-                            {t('ledger.numberCol')} ({formatCombo(shortcuts.sortExceedNum)})
+                            Number ({formatCombo(shortcuts.sortExceedNum)})
                             {exceedSortKey === 'num' && <span>{exceedSortDir === 'asc' ? '▲' : '▼'}</span>}
                           </button>
                         </th>
-                        <th className="px-1.5 py-1 border border-gray-200 text-right font-medium">
-                          <button
-                            type="button"
-                            onClick={() => toggleExceedSort('amount')}
-                            className="hover:text-gray-800 transition font-semibold flex items-center justify-center gap-0.5 ml-auto"
-                          >
-                            {t('ledger.amountCol')} ({formatCombo(shortcuts.sortExceedAmount)})
-                            {exceedSortKey === 'amount' && <span>{exceedSortDir === 'asc' ? '▲' : '▼'}</span>}
-                          </button>
-                        </th>
-                        <th className="px-1.5 py-1 border border-gray-200 text-right font-medium bg-purple-50">
+                        <th className="px-1 py-1 border border-gray-200 text-right font-medium bg-purple-50">
                           <button
                             type="button"
                             onClick={() => toggleExceedSort('excess')}
                             className="hover:text-gray-800 transition font-semibold flex items-center justify-center gap-0.5 ml-auto text-purple-900"
                           >
-                            {t('ledger.exceedLabel')} ({formatCombo(shortcuts.sortExceedExcess)})
+                            Exceed ({formatCombo(shortcuts.sortExceedExcess)})
                             {exceedSortKey === 'excess' && <span>{exceedSortDir === 'asc' ? '▲' : '▼'}</span>}
+                          </button>
+                        </th>
+                        <th className="px-1 py-1 border border-gray-200 text-right font-medium bg-amber-50">
+                          <button
+                            type="button"
+                            onClick={() => toggleExceedSort('buy')}
+                            className="hover:text-gray-800 transition font-semibold flex items-center justify-center gap-0.5 ml-auto text-amber-900"
+                          >
+                            Buy ({formatCombo(shortcuts.sortExceedAmount)})
+                            {exceedSortKey === 'buy' && <span>{exceedSortDir === 'asc' ? '▲' : '▼'}</span>}
+                          </button>
+                        </th>
+                        <th className="px-1 py-1 border border-gray-200 text-right font-medium bg-indigo-50">
+                          <button
+                            type="button"
+                            onClick={() => toggleExceedSort('total')}
+                            className="hover:text-gray-800 transition font-semibold flex items-center justify-center gap-0.5 ml-auto text-indigo-900"
+                          >
+                            Total ({formatCombo(shortcuts.sortExceedAmount)})
+                            {exceedSortKey === 'total' && <span>{exceedSortDir === 'asc' ? '▲' : '▼'}</span>}
                           </button>
                         </th>
                       </tr>
@@ -1831,11 +1852,14 @@ export default function LedgerEntry({
                           <td className="px-1.5 py-1 font-mono font-semibold text-center bg-purple-500 text-white border border-gray-200">
                             {e.num}
                           </td>
-                          <td className="px-1.5 py-1 text-right font-mono whitespace-nowrap border border-gray-200 text-gray-700">
-                            {e.amount.toLocaleString()}
-                          </td>
                           <td className="px-1.5 py-1 text-right font-mono whitespace-nowrap border border-gray-200 bg-purple-50 text-purple-900 font-semibold">
                             {e.excess.toLocaleString()}
+                          </td>
+                          <td className="px-1.5 py-1 text-right font-mono whitespace-nowrap border border-gray-200 bg-amber-50 text-amber-900 font-semibold">
+                            {e.buy > 0 ? e.buy.toLocaleString() : '0'}
+                          </td>
+                          <td className="px-1.5 py-1 text-right font-mono whitespace-nowrap border border-gray-200 bg-indigo-50 text-indigo-900 font-bold">
+                            {e.total.toLocaleString()}
                           </td>
                         </tr>
                       ))}
@@ -1844,18 +1868,18 @@ export default function LedgerEntry({
                 </div>
               )}
 
-              <div className="border-t border-gray-200 pt-3 space-y-2 text-sm">
+              <div className="border-t border-gray-200 pt-2.5 space-y-1.5 text-xs font-mono">
                 <div className="flex justify-between text-gray-600 px-1 font-semibold">
-                  <span>{t('ledger.exceedLabel')}:</span>
-                  <span className="font-mono text-base">{totalExcess.toLocaleString()}</span>
+                  <span>Exceed Total:</span>
+                  <span className="text-purple-900">{totalExcess.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-gray-600 px-1 font-semibold">
-                  <span>{t('ledger.freeLabel')}:</span>
-                  <span className="font-mono text-base">{totalFree.toLocaleString()}</span>
+                  <span>Buy Total:</span>
+                  <span className="text-amber-700">{totalBuy.toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between text-gray-900 font-bold border-t border-gray-250 pt-2 px-1 text-base">
-                  <span>{t('common.total')}:</span>
-                  <span className="font-mono text-lg text-indigo-700">{grandTotal.toLocaleString()}</span>
+                <div className="flex justify-between text-gray-900 font-bold border-t border-gray-200 pt-1.5 px-1 text-sm">
+                  <span>Total (Exceed - Buy):</span>
+                  <span className="text-indigo-700 font-extrabold">{totalRemaining.toLocaleString()}</span>
                 </div>
               </div>
             </div>
@@ -2042,8 +2066,8 @@ export default function LedgerEntry({
           canWrite={canWrite}
           onClose={() => setIsBuyModalOpen(false)}
           onSuccess={(buyItems) => {
-            if (onOptimisticSave) {
-              onOptimisticSave(buyItems.map(item => ({ num: item.num, amount: -item.amount })));
+            if (onOptimisticBuySave) {
+              onOptimisticBuySave(buyItems);
             }
             setSuccessMsg('Buy Voucher created successfully!');
             setTimeout(() => setSuccessMsg(''), 3000);

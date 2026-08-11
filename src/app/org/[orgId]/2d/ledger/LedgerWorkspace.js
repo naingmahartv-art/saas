@@ -24,6 +24,7 @@ export default function LedgerWorkspace({
   canWrite,
 }) {
   const [totals, setTotals] = useState({});
+  const [buyTotals, setBuyTotals] = useState({});
   const [luckyNumber, setLuckyNumber] = useState(initialLuckyNumber);
   const [hotNumbers, setHotNumbers] = useState(initialHotNumbers);
   const [notBuyNumbers, setNotBuyNumbers] = useState(initialNotBuyNumbers);
@@ -45,6 +46,7 @@ export default function LedgerWorkspace({
       );
       const data = await res.json();
       setTotals(data.totals || {});
+      setBuyTotals(data.buyTotals || {});
     } catch {
       // keep last known totals on failure
     }
@@ -63,6 +65,7 @@ export default function LedgerWorkspace({
   useEffect(() => {
     if (!live) return;
     setTotals(live.totals || {});
+    if (live.buyTotals) setBuyTotals(live.buyTotals);
     setLuckyNumber(live.luckyNumber ?? null);
     setHotNumbers(live.hotNumbers || []);
     setNotBuyNumbers(live.notBuyNumbers || []);
@@ -79,6 +82,17 @@ export default function LedgerWorkspace({
       for (const e of entries) {
         const amt = parseFloat(e.amount) || 0;
         next[e.num] = (next[e.num] || 0) + amt;
+      }
+      return next;
+    });
+  }, []);
+
+  const applyOptimisticBuyTotals = useCallback((buyItems) => {
+    setBuyTotals(prev => {
+      const next = { ...prev };
+      for (const item of buyItems) {
+        const amt = parseFloat(item.amount) || 0;
+        next[item.num] = (next[item.num] || 0) + amt;
       }
       return next;
     });
@@ -109,12 +123,14 @@ export default function LedgerWorkspace({
         hotNumbers={hotNumbers}
         luckyNumber={luckyNumber}
         totals={totals}
+        buyTotals={buyTotals}
         editingVoucher={editingVoucher}
         canWrite={canWrite}
         shortcuts={shortcuts}
         replaceSlash={replaceSlash}
         replaceAsterisk={replaceAsterisk}
         onOptimisticSave={applyOptimisticTotals}
+        onOptimisticBuySave={applyOptimisticBuyTotals}
         onSaved={() => {
           setEditingVoucher(null);
           refreshTotals();

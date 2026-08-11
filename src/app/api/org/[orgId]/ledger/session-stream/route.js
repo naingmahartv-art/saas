@@ -40,6 +40,7 @@ export async function GET(request, { params }) {
           controller.enqueue(
             sseFrame({
               totals: val.totals || {},
+              buyTotals: val.buyTotals || {},
               luckyNumber: val.luckyNumber || null,
               hotNumbers: val.hotNumbers || [],
               notBuyNumbers: val.notBuyNumbers || [],
@@ -58,6 +59,7 @@ export async function GET(request, { params }) {
           controller.enqueue(
             sseFrame({
               totals: data.totals || {},
+              buyTotals: data.buyTotals || {},
               luckyNumber: data.luckyNumber || null,
               hotNumbers: data.hotNumbers || [],
               notBuyNumbers: data.notBuyNumbers || [],

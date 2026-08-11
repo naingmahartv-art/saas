@@ -43,7 +43,7 @@ export async function GET(request, { params }) {
           return NextResponse.json({ byAgent });
         }
       } else if (val.totals) {
-        return NextResponse.json({ totals: val.totals || {} });
+        return NextResponse.json({ totals: val.totals || {}, buyTotals: val.buyTotals || {} });
       }
     }
   } catch (err) {
@@ -64,6 +64,8 @@ export async function GET(request, { params }) {
   }
 
   const sessionSnap = await orgSessionDoc(orgId, sid).get();
-  const totals = sessionSnap.exists ? (sessionSnap.data().totals || {}) : {};
-  return NextResponse.json({ totals });
+  const sessionData = sessionSnap.exists ? sessionSnap.data() : {};
+  const totals = sessionData.totals || {};
+  const buyTotals = sessionData.buyTotals || {};
+  return NextResponse.json({ totals, buyTotals });
 }

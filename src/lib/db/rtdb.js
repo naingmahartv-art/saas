@@ -97,3 +97,32 @@ export async function applyRtdbDelta(orgId, sessionId, agentId, deltaMap = {}, v
     console.error(`[applyRtdbDelta Error] orgId=${orgId} sessionId=${sessionId}:`, err);
   }
 }
+
+/**
+ * Applies buyTotals deltas to Realtime DB so live SSE streams update buyTotals in real-time.
+ */
+export async function applyRtdbBuyDelta(orgId, sessionId, buyDeltaMap = {}) {
+  try {
+    const sessionRef = rtdbSessionRef(orgId, sessionId);
+
+    await sessionRef.transaction((currentData) => {
+      const data = currentData || {};
+      const buyTotals = data.buyTotals || {};
+
+      for (const [num, amt] of Object.entries(buyDeltaMap)) {
+        if (!amt) continue;
+        const newBuy = (buyTotals[num] || 0) + amt;
+        if (newBuy > 0) {
+          buyTotals[num] = newBuy;
+        } else {
+          delete buyTotals[num];
+        }
+      }
+
+      data.buyTotals = buyTotals;
+      return data;
+    });
+  } catch (err) {
+    console.error(`[applyRtdbBuyDelta Error] orgId=${orgId} sessionId=${sessionId}:`, err);
+  }
+}

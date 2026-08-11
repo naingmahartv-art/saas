@@ -6,7 +6,7 @@ import {
   orgSessionVouchersCol,
   sessionId as buildSessionId,
 } from '@/lib/db/firestore.js';
-import { applyRtdbDelta } from '@/lib/db/rtdb.js';
+import { applyRtdbBuyDelta } from '@/lib/db/rtdb.js';
 import { getSession } from '@/lib/auth';
 import { assertCashierWriteAllowed, getClientIp } from '@/lib/auth/permissions.js';
 import { logActivity } from '@/lib/db/log-activity.js';
@@ -56,12 +56,10 @@ export async function POST(request, { params }) {
   const db = getDb();
   const voucherRef = orgSessionVouchersCol(orgId, sid).doc();
 
-  // Construct negative perNumber map for database deduction
-  const negativePerNumber = {};
+  // Increment buyTotals in session document (00-99 ledger grid totals remain untouched!)
   const totalsUpdate = {};
   for (const [num, amt] of Object.entries(perNumber)) {
-    negativePerNumber[num] = -amt;
-    totalsUpdate[`totals.${num}`] = FieldValue.increment(-amt);
+    totalsUpdate[`buyTotals.${num}`] = FieldValue.increment(amt);
   }
 
   const { srNo } = await db.runTransaction(async (tx) => {
@@ -84,7 +82,7 @@ export async function POST(request, { params }) {
       machineId: parseInt(machineId) || 1,
       agentId: 'buy_offload',
       agentName: 'Buy Offload (အဝယ်စာရင်း)',
-      amount: -totalBuyAmount,
+      amount: totalBuyAmount,
       tokens,
       isBuyVoucher: true,
       voucherType: 'buy',
@@ -97,8 +95,8 @@ export async function POST(request, { params }) {
     return { srNo: nextSrNo };
   });
 
-  // Apply negative delta to Realtime Database so live SSE streams subtract buy amounts in real-time
-  await applyRtdbDelta(orgId, sid, 'buy_offload', negativePerNumber, 1);
+  // Apply buyTotals delta to Realtime Database so live SSE streams update buyTotals in real-time
+  await applyRtdbBuyDelta(orgId, sid, perNumber);
 
   await logActivity({
     orgId,
