@@ -319,8 +319,9 @@ export default function LedgerEntry({
       return;
     }
 
+    const headers = 'Number,Amount';
     const lines = exceedList.map(e => `${e.num},${e.excess}`);
-    const text = lines.join('\n');
+    const text = [headers, ...lines].join('\n');
 
     try {
       await navigator.clipboard.writeText(text);
