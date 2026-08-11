@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { parseNumberExpression, MAX_ENTRIES } from '@/lib/lottery/numberParser.js';
 import { useI18n } from '@/lib/i18n/index.js';
-import useIsMac from '@/lib/hooks/useIsMac.js';
+import { useIsMac } from '@/lib/ledger/useLedgerShortcuts.js';
 import { formatCombo as rawFormatCombo, matchesCombo } from '@/lib/ledger/shortcuts.js';
 import SessionPicker from '../ledger/SessionPicker.js';
 
