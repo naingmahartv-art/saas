@@ -702,6 +702,7 @@ export default function LedgerEntry({
         }
         setPendingTokens([]);
         setInputValue('');
+        setAgentId('');
         setWarnings([]);
         setSuccessMsg(t('ledger.updatedSrNo', { n: editingSrNo }));
         setEditingId(null);
@@ -746,6 +747,7 @@ export default function LedgerEntry({
 
     setPendingTokens([]);
     setInputValue('');
+    setAgentId('');
     setWarnings([]);
     setSuccessMsg(t('ledger.queuedMsg'));
     setTimeout(() => {
