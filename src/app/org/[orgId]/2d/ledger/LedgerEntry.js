@@ -550,6 +550,19 @@ export default function LedgerEntry({
     URL.revokeObjectURL(url);
   }
 
+  function buildTokenExprForNum(num, amtRaw) {
+    const isApoo = num.length === 2 && num[0] === num[1];
+    if (!isApoo) {
+      return `${num}${amtRaw}`;
+    }
+    if (/R/i.test(amtRaw)) {
+      const parts = amtRaw.split(/R/i);
+      const baseAmt = parts[0].trim() || parts[1]?.trim() || '';
+      return `${num}${baseAmt}`;
+    }
+    return `${num}${amtRaw}`;
+  }
+
   async function handleQuickSubmit() {
     const cleanNums = quickEntryNums.replace(/[^0-9]/g, '');
     if (!cleanNums) {
@@ -569,7 +582,7 @@ export default function LedgerEntry({
     for (let i = 0; i < cleanNums.length; i += 2) {
       const num = cleanNums.slice(i, i + 2);
       if (num.length === 2) {
-        const tokenExpr = `${num}${rawAmtStr}`;
+        const tokenExpr = buildTokenExprForNum(num, rawAmtStr);
         const { token, error: parseErr } = tokenFromText(tokenExpr, t);
         if (parseErr) {
           parseErrors.push(parseErr);

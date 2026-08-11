@@ -276,6 +276,19 @@ export default function BuyEntry({
     if (warnList.length > 0) setWarnings(warnList);
   }
 
+  function buildTokenExprForNum(num, amtRaw) {
+    const isApoo = num.length === 2 && num[0] === num[1];
+    if (!isApoo) {
+      return `${num}${amtRaw}`;
+    }
+    if (/R/i.test(amtRaw)) {
+      const parts = amtRaw.split(/R/i);
+      const baseAmt = parts[0].trim() || parts[1]?.trim() || '';
+      return `${num}${baseAmt}`;
+    }
+    return `${num}${amtRaw}`;
+  }
+
   function handleAddQuickEntry() {
     setError('');
     setWarnings([]);
@@ -291,7 +304,7 @@ export default function BuyEntry({
     for (let i = 0; i < cleanNums.length; i += 2) {
       const num = cleanNums.slice(i, i + 2);
       if (num.length === 2) {
-        const expr = `${num}${amtRaw}`;
+        const expr = buildTokenExprForNum(num, amtRaw);
         const { entries: parsed, error: parseError } = parseNumberExpression(expr, { maxEntries: MAX_ENTRIES });
         if (!parseError && parsed.length > 0) {
           newTokens.push({ id: Date.now() + Math.random().toString(), tokenText: expr, entries: parsed });
