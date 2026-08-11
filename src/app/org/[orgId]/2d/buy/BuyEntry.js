@@ -118,7 +118,7 @@ export default function BuyEntry({
       const amount = totals?.[num] || 0;
       const buy = buyTotals?.[num] || 0;
       const excess = isLimitActive && limitValue > 0 ? Math.max(0, amount - limitValue) : amount;
-      const total = Math.max(0, excess - buy);
+      const total = excess - buy;
 
       if (amount > (isLimitActive ? limitValue : 0) || buy > 0 || excess > 0) {
         list.push({ num, amount, excess, buy, total });

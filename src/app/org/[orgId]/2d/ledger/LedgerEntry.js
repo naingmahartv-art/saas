@@ -1069,7 +1069,7 @@ export default function LedgerEntry({
       const amount = totals?.[num] || 0;
       const buy = buyTotals?.[num] || 0;
       const excess = isLimitActive && limitValue > 0 ? Math.max(0, amount - limitValue) : amount;
-      const total = Math.max(0, excess - buy);
+      const total = excess - buy;
 
       if ((isLimitActive && amount > limitValue) || buy > 0) {
         list.push({ num, amount, excess, buy, total });
