@@ -1716,14 +1716,6 @@ export default function LedgerEntry({
                 >
                   <span>📋</span> Copy
                 </button>
-                <button
-                  type="button"
-                  onClick={handleExportExceedJson}
-                  className="text-xs px-2 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 font-medium rounded hover:bg-emerald-100 transition flex items-center gap-1"
-                  title="Export JSON file for reuse as import"
-                >
-                  <span>📤</span> Export JSON
-                </button>
               </div>
             )}
           </div>
