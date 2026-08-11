@@ -104,9 +104,14 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose }) 
     if (tab === 'agent' && selectedAgent) loadAgentReport(selectedAgent.agentName);
   }, [tab, selectedAgent, loadAgentReport]);
 
-  const agentGrandTotal = useMemo(
-    () => agentSlips.reduce((sum, s) => sum + (s.amount || 0), 0),
+  const sortedAgentSlips = useMemo(
+    () => [...agentSlips].sort((a, b) => (a.srNo || a.createdAt || 0) - (b.srNo || b.createdAt || 0)),
     [agentSlips]
+  );
+
+  const agentGrandTotal = useMemo(
+    () => sortedAgentSlips.reduce((sum, s) => sum + (s.amount || 0), 0),
+    [sortedAgentSlips]
   );
 
   // --- Summary Report ---
@@ -268,23 +273,27 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose }) 
 
   // --- Export builders ---
   function exportAgentCsv() {
-    if (!selectedAgent || agentSlips.length === 0) return;
-    const rows = [[t('reports.srNoCol'), t('reports.dateTimeCol'), t('reports.numberCol'), t('reports.amountCol')]];
-    for (const slip of agentSlips) {
+    if (!selectedAgent || sortedAgentSlips.length === 0) return;
+    const rows = [[t('reports.dateTimeCol'), t('reports.numberCol'), t('reports.amountCol')]];
+    for (const slip of sortedAgentSlips) {
       const when = new Date(slip.createdAt).toLocaleString();
       for (const d of slip.details || []) {
-        rows.push([slip.srNo, when, d.num1, d.value]);
+        const isWinner = luckyNo && String(d.num1).padStart(2, '0') === String(luckyNo).padStart(2, '0');
+        rows.push([when, isWinner ? `${d.num1} (WIN)` : d.num1, d.value]);
       }
     }
-    rows.push(['', '', t('reports.grandTotalLabel'), agentGrandTotal]);
+    rows.push(['', t('reports.grandTotalLabel'), agentGrandTotal]);
     downloadBlob(new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8;' }), reportFileName(`agent-${selectedAgent.agentName}`, dateLabel, 'csv'));
   }
 
   function buildAgentPdfBlob() {
-    const sections = agentSlips.map(slip => ({
-      heading: `${PDF_EN.srNo} ${slip.srNo} — ${new Date(slip.createdAt).toLocaleString()}`,
+    const sections = sortedAgentSlips.map(slip => ({
+      heading: `${new Date(slip.createdAt).toLocaleString()}`,
       head: [[PDF_EN.number, PDF_EN.amount]],
-      rows: (slip.details || []).map(d => [d.num1, d.value.toLocaleString()]),
+      rows: (slip.details || []).map(d => {
+        const isWinner = luckyNo && String(d.num1).padStart(2, '0') === String(luckyNo).padStart(2, '0');
+        return [isWinner ? `${d.num1} (WIN)` : d.num1, d.value.toLocaleString()];
+      }),
     }));
     sections.push({ head: [[PDF_EN.grandTotal]], rows: [[agentGrandTotal.toLocaleString()]] });
     return buildReportPdf({
@@ -295,12 +304,12 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose }) 
   }
 
   function exportAgentPdf() {
-    if (!selectedAgent || agentSlips.length === 0) return;
+    if (!selectedAgent || sortedAgentSlips.length === 0) return;
     downloadBlob(buildAgentPdfBlob(), reportFileName(`agent-${selectedAgent.agentName}`, dateLabel, 'pdf'));
   }
 
   function shareAgentPdf() {
-    if (!selectedAgent || agentSlips.length === 0) return;
+    if (!selectedAgent || sortedAgentSlips.length === 0) return;
     shareOrDownload(buildAgentPdfBlob(), reportFileName(`agent-${selectedAgent.agentName}`, dateLabel, 'pdf'), t, setStatusMsg);
   }
 
@@ -560,15 +569,14 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose }) 
                 <p className="text-sm text-gray-400 text-center py-10">{t('reports.selectAgentPrompt')}</p>
               ) : agentLoading ? (
                 <p className="text-sm text-gray-400 text-center py-10">{t('common.loading')}</p>
-              ) : agentSlips.length === 0 ? (
+              ) : sortedAgentSlips.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-10">{t('reports.noVouchers')}</p>
               ) : (
                 <div className="space-y-4">
-                  {agentSlips.map(slip => (
+                  {sortedAgentSlips.map(slip => (
                     <div key={slip.id} className="border border-gray-200 rounded-lg overflow-hidden">
                       <div className="bg-gray-50 px-3 py-2 flex items-center justify-between text-sm">
-                        <span className="font-semibold text-gray-800">{t('reports.srNoCol')} {slip.srNo}</span>
-                        <span className="text-gray-500">{new Date(slip.createdAt).toLocaleString()}</span>
+                        <span className="text-gray-600 font-medium">{new Date(slip.createdAt).toLocaleString()}</span>
                       </div>
                       <table className="w-full text-sm">
                         <thead>
@@ -578,12 +586,19 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose }) 
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
-                          {(slip.details || []).map((d, i) => (
-                            <tr key={i}>
-                              <td className="px-3 py-1 font-mono">{d.num1}</td>
-                              <td className="px-3 py-1 text-right font-mono">{d.value.toLocaleString()}</td>
-                            </tr>
-                          ))}
+                          {(slip.details || []).map((d, i) => {
+                            const isWinner = luckyNo && String(d.num1).padStart(2, '0') === String(luckyNo).padStart(2, '0');
+                            return (
+                              <tr key={i} className={isWinner ? 'bg-red-50/80 font-bold' : ''}>
+                                <td className={`px-3 py-1 font-mono ${isWinner ? 'text-red-600 font-bold' : 'text-gray-800'}`}>
+                                  {d.num1} {isWinner && <span className="text-xs text-red-600 font-semibold ml-1">🏆 (WIN)</span>}
+                                </td>
+                                <td className={`px-3 py-1 text-right font-mono ${isWinner ? 'text-red-600 font-bold' : 'text-gray-700'}`}>
+                                  {d.value.toLocaleString()}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                       <div className="px-3 py-1.5 bg-gray-50 text-right text-sm font-semibold text-gray-800">
