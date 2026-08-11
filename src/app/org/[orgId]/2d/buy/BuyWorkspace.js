@@ -27,9 +27,27 @@ export default function BuyWorkspace({
   const [notBuyNumbers, setNotBuyNumbers] = useState(initialNotBuyNumbers);
   const [editingVoucher, setEditingVoucher] = useState(null);
   const [refreshSignal, setRefreshSignal] = useState(0);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [isReportsOpen, setIsReportsOpen] = useState(false);
-  const [isSessionPickerOpen, setIsSessionPickerOpen] = useState(true);
+  // SessionPicker starts closed if an active session exists or has already been acknowledged
+  const [isSessionPickerOpen, setIsSessionPickerOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const acknowledged = sessionStorage.getItem('session_picker_acknowledged');
+      if (acknowledged) return false;
+    }
+    return !initialActiveSession;
+  });
+
+  useEffect(() => {
+    if (activeSession && typeof window !== 'undefined') {
+      sessionStorage.setItem('session_picker_acknowledged', 'true');
+    }
+  }, [activeSession]);
+
+  const handleCloseSessionPicker = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('session_picker_acknowledged', 'true');
+    }
+    setIsSessionPickerOpen(false);
+  }, []);
   const { shortcuts, replaceSlash, replaceAsterisk } = useLedgerShortcuts();
 
   const refreshTotals = useCallback(async () => {
@@ -110,7 +128,7 @@ export default function BuyWorkspace({
           orgId={orgId}
           activeSession={activeSession}
           machines={machines}
-          onClose={() => setIsSessionPickerOpen(false)}
+          onClose={handleCloseSessionPicker}
         />
       )}
 

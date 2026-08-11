@@ -32,10 +32,27 @@ export default function LedgerWorkspace({
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isReportsOpen, setIsReportsOpen] = useState(false);
-  // Every time the Ledger page is opened, the cashier must confirm which
-  // date+slot session they're working in — so this starts open, not just
-  // when no session exists yet.
-  const [isSessionPickerOpen, setIsSessionPickerOpen] = useState(true);
+  // SessionPicker starts closed if an active session exists or has already been acknowledged
+  const [isSessionPickerOpen, setIsSessionPickerOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const acknowledged = sessionStorage.getItem('session_picker_acknowledged');
+      if (acknowledged) return false;
+    }
+    return !initialActiveSession;
+  });
+
+  useEffect(() => {
+    if (activeSession && typeof window !== 'undefined') {
+      sessionStorage.setItem('session_picker_acknowledged', 'true');
+    }
+  }, [activeSession]);
+
+  const handleCloseSessionPicker = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('session_picker_acknowledged', 'true');
+    }
+    setIsSessionPickerOpen(false);
+  }, []);
   const { shortcuts, replaceSlash, replaceAsterisk } = useLedgerShortcuts();
 
   const refreshTotals = useCallback(async () => {
@@ -147,7 +164,7 @@ export default function LedgerWorkspace({
           orgId={orgId}
           activeSession={activeSession}
           machines={machines}
-          onClose={() => setIsSessionPickerOpen(false)}
+          onClose={handleCloseSessionPicker}
         />
       )}
 
