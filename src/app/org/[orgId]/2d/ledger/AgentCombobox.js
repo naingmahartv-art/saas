@@ -18,7 +18,7 @@ const AgentCombobox = forwardRef(function AgentCombobox({ agents, value, onChang
   }, [value, agents]);
 
   const suggestions = query.trim()
-    ? agents.filter(a => a.agentName.toLowerCase().includes(query.trim().toLowerCase()))
+    ? agents.filter(a => a.agentName.toLowerCase().startsWith(query.trim().toLowerCase()))
     : agents;
 
   function selectAgent(agent) {

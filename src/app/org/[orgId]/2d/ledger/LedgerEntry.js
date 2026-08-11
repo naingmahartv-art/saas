@@ -120,7 +120,7 @@ export default function LedgerEntry({
   const [luckySaving, setLuckySaving] = useState(false);
   const [luckyError, setLuckyError] = useState('');
   const [cellPopup, setCellPopup] = useState(null); // { num, amount } | null
-  const [limitValue, setLimitValue] = useState(limit?.limitValue || 0);
+  const [limitValue, setLimitValue] = useState(limit?.limitValue ?? null);
   const [limitOpen, setLimitOpen] = useState(false);
   const [limitInput, setLimitInput] = useState('');
   const [limitSaving, setLimitSaving] = useState(false);
@@ -375,9 +375,15 @@ export default function LedgerEntry({
 
             itemsToImport.push({ num: numCandidate, amount: amtCandidate });
           } else if (parts.length === 1) {
-            const subParts = parts[0].split(/[=\s\-\/]+/).filter(Boolean);
-            if (subParts.length >= 2) {
-              itemsToImport.push({ num: subParts[0], amount: subParts[1] });
+            // Remove spaces, hyphens, and combine without separation (e.g., "12 - 32000" -> "1232000")
+            const cleanedExpr = parts[0].replace(/[\s\-]+/g, '');
+            if (cleanedExpr) {
+              const { token } = tokenFromText(cleanedExpr, t);
+              if (token) {
+                newTokens.push(token);
+              } else {
+                itemsToImport.push({ num: cleanedExpr, amount: '' });
+              }
             }
           }
         }
@@ -550,7 +556,7 @@ export default function LedgerEntry({
     for (const e of token.entries) {
       if (notBuySet.has(e.num)) msgs.push(t('ledger.notBuyRejected', { num: e.num }));
       if (hotSet.has(e.num)) msgs.push(t('ledger.hotNumberMsg', { num: e.num }));
-      if (limitValue > 0 && e.amount > limitValue) msgs.push(t('ledger.overLimitMsg', { num: e.num, limit: limitValue }));
+      if (isLimitActive && e.amount > limitValue) msgs.push(t('ledger.overLimitMsg', { num: e.num, limit: limitValue }));
     }
 
     setError('');
@@ -586,14 +592,6 @@ export default function LedgerEntry({
         }
         return;
       }
-      if (!agentId) {
-        setError(t('ledger.selectAgentFirst'));
-        return;
-      }
-      setQuickEntryNums(formatDashInput(inputValue));
-      setQuickEntryAmount('');
-      setQuickEntryOpen(true);
-      setInputValue('');
     }
   }
 
@@ -749,6 +747,9 @@ export default function LedgerEntry({
     setInputValue('');
     setWarnings([]);
     setSuccessMsg(t('ledger.queuedMsg'));
+    setTimeout(() => {
+      agentSelectRef.current?.focus();
+    }, 50);
   }
 
   function openLucky() {
@@ -962,7 +963,7 @@ export default function LedgerEntry({
   // number is (amount - limit), not the raw total — e.g. a 3829 total
   // against a 1000 limit shows 2829, not 3829.
   const exceedList = useMemo(() => {
-    if (!(limitValue > 0)) return [];
+    if (!isLimitActive) return [];
     const list = totalsEntries
       .filter(e => e.amount > limitValue)
       .map(e => ({ ...e, excess: e.amount - limitValue }));
@@ -1297,11 +1298,11 @@ export default function LedgerEntry({
               type="button"
               onClick={() => (limitOpen ? setLimitOpen(false) : openLimit())}
               className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition ${
-                limitValue > 0 ? 'bg-indigo-50 border-indigo-300 text-indigo-800' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                isLimitActive ? 'bg-indigo-50 border-indigo-300 text-indigo-800' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
               }`}
             >
               <span>🚧</span>
-              {limitValue > 0 ? `${t('ledger.limitPrefix', { n: limitValue.toLocaleString() })} (${formatCombo(shortcuts.limit)})` : `${t('ledger.limitBtn')} (${formatCombo(shortcuts.limit)})`}
+              {isLimitActive ? `${t('ledger.limitPrefix', { n: Number(limitValue).toLocaleString() })} (${formatCombo(shortcuts.limit)})` : `${t('ledger.limitBtn')} (${formatCombo(shortcuts.limit)})`}
             </button>
 
             {limitOpen && (
@@ -1616,7 +1617,7 @@ export default function LedgerEntry({
                       const isNotBuy = notBuySet.has(num);
                       const isHot = hotSet.has(num);
                       const isLucky = num === luckyNo;
-                      const isOverLimit = limitValue > 0 && amount > limitValue;
+                      const isOverLimit = isLimitActive && amount > limitValue;
 
                       // Purple (over limit) and red (winning number) carry
                       // through to the amount cell too — green ("has
@@ -1690,7 +1691,7 @@ export default function LedgerEntry({
         >
           <div className="flex items-center justify-between mb-2 shrink-0">
             <h2 className="text-sm font-semibold text-gray-800">{t('ledger.exceedPanelTitle')}</h2>
-            {limitValue > 0 && exceedList.length > 0 && (
+            {isLimitActive && exceedList.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
@@ -1719,7 +1720,7 @@ export default function LedgerEntry({
               </div>
             )}
           </div>
-          {!(limitValue > 0) ? (
+          {!isLimitActive ? (
             <p className="text-xs text-gray-400 text-center py-6">{t('ledger.noLimitHint')}</p>
           ) : (
             <div className="flex flex-col flex-1 min-h-0 justify-between">
@@ -1862,7 +1863,11 @@ export default function LedgerEntry({
                   ref={quickAmountRef}
                   type="text"
                   value={quickEntryAmount}
-                  onChange={e => setQuickEntryAmount(e.target.value.replace(/[^0-9rR.*+/]/gi, '').toUpperCase())}
+                  onChange={e => {
+                    let val = normalizeInput(e.target.value, replaceSlash, replaceAsterisk);
+                    val = val.replace(/[*\/]/g, 'R').replace(/[^0-9rR]/gi, '').toUpperCase();
+                    setQuickEntryAmount(val);
+                  }}
                   onKeyDown={handleQuickAmountKeyDown}
                   placeholder="100, R100, or 100R50"
                   className="w-full px-3 py-2 text-sm font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"

@@ -34,8 +34,7 @@ export function onCountToSessionParts(onCount) {
 
 export function getCurrentSlotKey(date = new Date()) {
   const hour = date.getHours();
-  const slot = SLOTS.find(s => hour >= s.startHour && hour < s.endHour);
-  return (slot || SLOTS[SLOTS.length - 1]).key;
+  return hour < 12 ? '12:00' : '04:00';
 }
 
 export function todayStr(date = new Date()) {
