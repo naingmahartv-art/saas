@@ -1465,6 +1465,9 @@ export default function LedgerEntry({
                 <span className="text-xs font-bold tracking-wide text-slate-100 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
                   {t('ledger.entriesHeader')}
+                  <span className="bg-purple-500/25 border border-purple-400/30 text-purple-200 px-2 py-0.5 rounded text-[11px] font-mono">
+                    {pendingTokens.length} Vouchers
+                  </span>
                   <span className="bg-indigo-500/25 border border-indigo-400/30 text-indigo-200 px-2 py-0.5 rounded text-[11px] font-mono">
                     {visibleTokens.length} items
                   </span>
