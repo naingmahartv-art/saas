@@ -24,23 +24,24 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-function getSlipItems(slip) {
-  if (slip.details && slip.details.length > 0) {
-    return slip.details.map(d => ({ num: String(d.num1).padStart(2, '0'), amount: d.value }));
-  }
+function getTokenItemsForSlip(slip, luckyNo) {
   if (slip.tokens && slip.tokens.length > 0) {
-    const items = [];
-    for (const tokText of slip.tokens) {
+    return slip.tokens.map(tokText => {
       const { entries } = parseNumberExpression(tokText, { maxEntries: MAX_ENTRIES });
-      if (entries && entries.length > 0) {
-        for (const e of entries) {
-          items.push({ num: String(e.num).padStart(2, '0'), amount: e.amount });
-        }
-      } else {
-        items.push({ num: tokText, amount: 0 });
-      }
-    }
-    return items;
+      const amount = entries ? entries.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0) : 0;
+      const isWinner = Boolean(
+        luckyNo &&
+          entries?.some(e => String(e.num).padStart(2, '0') === String(luckyNo).padStart(2, '0'))
+      );
+      return { tokText, amount, isWinner };
+    });
+  }
+  if (slip.details && slip.details.length > 0) {
+    return slip.details.map(d => {
+      const num = String(d.num1).padStart(2, '0');
+      const isWinner = Boolean(luckyNo && num === String(luckyNo).padStart(2, '0'));
+      return { tokText: num, amount: d.value, isWinner };
+    });
   }
   return [];
 }
@@ -306,34 +307,42 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose }) 
   // --- Export builders ---
   function exportAgentCsv() {
     if (!selectedAgent || sortedAgentSlips.length === 0) return;
-    const rows = [[t('reports.dateTimeCol'), t('reports.numberCol'), t('reports.amountCol')]];
+    const rows = [[`Customer Name : ${selectedAgent.agentName}`, dateLabel]];
     for (const slip of sortedAgentSlips) {
       const when = new Date(slip.createdAt).toLocaleString();
-      const items = getSlipItems(slip);
-      for (const d of items) {
-        const isWinner = luckyNo && String(d.num).padStart(2, '0') === String(luckyNo).padStart(2, '0');
-        rows.push([when, isWinner ? `${d.num} (WIN)` : d.num, d.amount]);
+      rows.push([`Accept SrNo# : ${slip.srNo}`, when]);
+      rows.push(['Num#', 'Amount']);
+      const tokenItems = getTokenItemsForSlip(slip, luckyNo);
+      for (const t of tokenItems) {
+        rows.push([t.isWinner ? `${t.tokText} (WIN)` : t.tokText, t.amount]);
       }
+      rows.push(['Subtotal', slip.amount]);
+      rows.push([]);
     }
-    rows.push(['', t('reports.grandTotalLabel'), agentGrandTotal]);
+    rows.push(['Grand Total Amount', agentGrandTotal]);
     downloadBlob(new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8;' }), reportFileName(`agent-${selectedAgent.agentName}`, dateLabel, 'csv'));
   }
 
   function buildAgentPdfBlob() {
     const sections = sortedAgentSlips.map(slip => {
-      const items = getSlipItems(slip);
+      const tokenItems = getTokenItemsForSlip(slip, luckyNo);
       return {
-        heading: `${new Date(slip.createdAt).toLocaleString()}${slip.tokens ? ` [${slip.tokens.join(', ')}]` : ''}`,
-        head: [[PDF_EN.number, PDF_EN.amount]],
-        rows: items.map(d => {
-          const isWinner = luckyNo && String(d.num).padStart(2, '0') === String(luckyNo).padStart(2, '0');
-          return [isWinner ? `${d.num} (WIN)` : d.num, d.amount.toLocaleString()];
-        }),
+        heading: `Accept SrNo# : ${slip.srNo}   ${new Date(slip.createdAt).toLocaleString()}`,
+        head: [['Num#', 'Amount']],
+        rows: [
+          ...tokenItems.map(t => [t.isWinner ? `${t.tokText} (WIN)` : t.tokText, t.amount.toLocaleString()]),
+          ['Subtotal', slip.amount.toLocaleString()],
+        ],
       };
     });
-    sections.push({ head: [[PDF_EN.grandTotal]], rows: [[agentGrandTotal.toLocaleString()]] });
+
+    sections.push({
+      head: [['Grand Total Amount']],
+      rows: [[agentGrandTotal.toLocaleString()]],
+    });
+
     return buildReportPdf({
-      title: `${PDF_EN.agentReport} — ${selectedAgent?.agentName || ''}`,
+      title: `Customer Name : ${selectedAgent?.agentName || ''}`,
       subtitle: sessionLabel,
       sections,
     });
@@ -608,50 +617,68 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose }) 
               ) : sortedAgentSlips.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-10">{t('reports.noVouchers')}</p>
               ) : (
-                <div className="space-y-4">
-                  {sortedAgentSlips.map(slip => {
-                    const items = getSlipItems(slip);
-                    return (
-                      <div key={slip.id} className="border border-gray-200 rounded-lg overflow-hidden">
-                        <div className="bg-gray-50 px-3 py-2 flex items-center justify-between text-sm">
-                          <span className="text-gray-600 font-medium">{new Date(slip.createdAt).toLocaleString()}</span>
-                          {slip.tokens && slip.tokens.length > 0 && (
-                            <span className="text-xs text-gray-500 font-mono">
-                              {slip.tokens.join(', ')}
-                            </span>
-                          )}
-                        </div>
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-gray-100">
-                              <th className="text-left px-3 py-1.5 font-medium">{t('reports.numberCol')}</th>
-                              <th className="text-right px-3 py-1.5 font-medium">{t('reports.amountCol')}</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-50">
-                            {items.map((d, i) => {
-                              const isWinner = luckyNo && String(d.num).padStart(2, '0') === String(luckyNo).padStart(2, '0');
-                              return (
-                                <tr key={i} className={isWinner ? 'bg-red-50 font-bold' : ''}>
-                                  <td className={`px-3 py-1 font-mono ${isWinner ? 'text-red-600 font-bold text-base' : 'text-gray-800'}`}>
-                                    {d.num} {isWinner && <span className="text-xs text-red-600 font-bold ml-1.5">🏆 (WIN)</span>}
+                <div className="max-w-2xl mx-auto bg-white p-5 rounded-lg border border-gray-300 font-mono text-sm space-y-6">
+                  {/* Customer Header */}
+                  <div className="flex justify-between items-center pb-2 border-b border-gray-300">
+                    <div>
+                      <span className="font-normal text-gray-600">Customer Name : </span>
+                      <span className="font-bold text-gray-900 text-base">{selectedAgent.agentName}</span>
+                    </div>
+                    <div className="text-gray-600 font-normal">{dateLabel}</div>
+                  </div>
+
+                  {/* Slips List */}
+                  <div className="space-y-6">
+                    {sortedAgentSlips.map(slip => {
+                      const tokenItems = getTokenItemsForSlip(slip, luckyNo);
+                      return (
+                        <div key={slip.id} className="space-y-1">
+                          {/* Accept SrNo Header */}
+                          <div className="flex items-center justify-between text-xs text-gray-700 font-semibold py-1">
+                            <div>
+                              <span>Accept SrNo# : </span>
+                              <span className="text-sm font-bold text-gray-900">{slip.srNo}</span>
+                            </div>
+                            <div className="text-gray-500">
+                              {new Date(slip.createdAt).toLocaleDateString()} / {new Date(slip.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            </div>
+                          </div>
+
+                          {/* Token Table */}
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-gray-400 text-xs text-gray-700">
+                                <th className="text-left py-1 font-bold underline">Num#</th>
+                                <th className="text-right py-1 font-bold underline">Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {tokenItems.map((item, idx) => (
+                                <tr key={idx}>
+                                  <td className={`py-1 font-bold ${item.isWinner ? 'text-red-600 font-extrabold' : 'text-gray-900'}`}>
+                                    {item.tokText}
                                   </td>
-                                  <td className={`px-3 py-1 text-right font-mono ${isWinner ? 'text-red-600 font-bold text-base' : 'text-gray-700'}`}>
-                                    {d.amount.toLocaleString()}
+                                  <td className="py-1 text-right text-gray-900 font-bold">
+                                    {item.amount.toLocaleString()}
                                   </td>
                                 </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                        <div className="px-3 py-1.5 bg-gray-50 text-right text-sm font-semibold text-gray-800">
-                          {t('reports.subtotalLabel')}: {slip.amount.toLocaleString()}
+                              ))}
+                            </tbody>
+                          </table>
+
+                          {/* Subtotal */}
+                          <div className="text-right font-extrabold text-sm pt-1 border-t border-gray-300 text-gray-900">
+                            {slip.amount.toLocaleString()}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                  <div className="text-right text-base font-bold text-indigo-700 pt-2">
-                    {t('reports.grandTotalLabel')}: {agentGrandTotal.toLocaleString()}
+                      );
+                    })}
+                  </div>
+
+                  {/* Grand Total Box */}
+                  <div className="flex justify-between items-center p-3 border-2 border-gray-900 font-extrabold text-base bg-gray-50 mt-4">
+                    <span>Grand Total Amount</span>
+                    <span className="text-lg">{agentGrandTotal.toLocaleString()}</span>
                   </div>
                 </div>
               )}
