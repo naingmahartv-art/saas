@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import LanguageSwitcher from '@/components/LanguageSwitcher.js';
+import ThemeToggle from '@/components/ThemeToggle.js';
 import { useI18n } from '@/lib/i18n/index.js';
 
 const STORAGE_KEY = 'sidebar_collapsed';
@@ -170,14 +171,14 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
   });
 
   return (
-    <aside className={`${collapsed ? 'w-14' : 'w-60'} shrink-0 h-screen sticky top-0 flex flex-col bg-white border-r border-gray-200 transition-[width] duration-200 overflow-hidden`}>
-      <div className={`px-2.5 py-3.5 border-b border-gray-100 flex items-center ${collapsed ? 'justify-center' : 'justify-between gap-2'}`}>
+    <aside className={`${collapsed ? 'w-14' : 'w-60'} shrink-0 h-screen sticky top-0 flex flex-col bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 transition-[width] duration-200 overflow-hidden`}>
+      <div className={`px-2.5 py-3.5 border-b border-gray-100 dark:border-slate-800 flex items-center ${collapsed ? 'justify-center' : 'justify-between gap-2'}`}>
         {collapsed ? (
           <button
             type="button"
             onClick={toggleCollapsed}
             title={t('nav.expand')}
-            className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 flex items-center justify-center transition shrink-0"
+            className="w-9 h-9 rounded-lg bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-slate-700 flex items-center justify-center transition shrink-0"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
               <polyline points="9 18 15 12 9 6" />
@@ -192,15 +193,15 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
                 </svg>
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-gray-900 truncate">{orgName}</p>
-                <p className="text-xs text-gray-400">2D</p>
+                <p className="text-sm font-semibold text-gray-900 dark:text-slate-100 truncate">{orgName}</p>
+                <p className="text-xs text-gray-400 dark:text-slate-500">2D</p>
               </div>
             </div>
             <button
               type="button"
               onClick={toggleCollapsed}
               title={t('nav.collapse')}
-              className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition"
+              className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-600 dark:hover:text-slate-300 transition"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="15 18 9 12 15 6" />
@@ -221,7 +222,7 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
               title={collapsed ? t(`nav.${key}`) : undefined}
               className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition ${
                 collapsed ? 'justify-center' : ''
-              } ${active ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}`}
+              } ${active ? 'bg-indigo-50 dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 font-semibold' : 'text-gray-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800/60 dark:hover:text-slate-200'}`}
             >
               <Icon name={key} />
               {!collapsed && <span>{t(`nav.${key}`)}</span>}
@@ -230,7 +231,8 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
         })}
       </nav>
 
-      <div className="px-2 py-4 border-t border-gray-100 space-y-2">
+      <div className="px-2 py-4 border-t border-gray-100 dark:border-slate-800 space-y-2">
+        <ThemeToggle collapsed={collapsed} />
         {!collapsed && (
           <div className="px-1 pb-1">
             <LanguageSwitcher />
@@ -240,7 +242,7 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
           <Link
             href={`/org/${orgId}/admin/dashboard`}
             title={collapsed ? t('nav.adminPanel') : undefined}
-            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 ${
+            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 ${
               collapsed ? 'justify-center' : ''
             }`}
           >
@@ -252,7 +254,7 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
           href="/tutorial"
           target="_blank"
           title={collapsed ? "Tutorials & Website" : undefined}
-          className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-indigo-600 hover:bg-indigo-50 transition ${
+          className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800 transition ${
             collapsed ? 'justify-center' : ''
           }`}
         >
@@ -262,7 +264,7 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
         <Link
           href={`/org/${orgId}/select-app`}
           title={collapsed ? t('nav.switchApp') : undefined}
-          className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 ${
+          className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 ${
             collapsed ? 'justify-center' : ''
           }`}
         >
@@ -271,32 +273,56 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
         </Link>
         {!collapsed && (
           <div className="px-3">
-            <p className="text-sm font-medium text-gray-900 truncate">{userName}</p>
-            <p className="text-xs text-gray-400">{ROLE_LABEL[role] || role}</p>
+            <p className="text-sm font-medium text-gray-900 dark:text-slate-200 truncate">{userName}</p>
+            <p className="text-xs text-gray-400 dark:text-slate-500">{ROLE_LABEL[role] || role}</p>
           </div>
         )}
         <button
           type="button"
           onClick={() => window.location.reload()}
           title={collapsed ? t('ledger.refreshBtn') : t('ledger.refreshHint')}
-          className={`w-full flex items-center gap-2.5 text-sm py-1.5 font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition rounded-lg ${
+          className={`w-full flex items-center gap-2.5 text-sm py-1.5 font-medium border border-gray-300 dark:border-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800 transition rounded-lg ${
             collapsed ? 'justify-center px-0' : 'px-3'
           }`}
         >
-          <svg className="w-[18px] h-[18px] text-gray-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <svg className="w-[18px] h-[18px] text-gray-600 dark:text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
           {!collapsed && <span>{t('ledger.refreshBtn')} (Alt+R)</span>}
         </button>
         <button
           type="button"
-          onClick={logout}
-          title={collapsed ? t('nav.signOut') : undefined}
-          className={`w-full flex items-center gap-2.5 text-sm py-1.5 font-medium border border-red-200 text-red-600 hover:bg-red-50 transition rounded-lg ${
+          onClick={async () => {
+            try {
+              const res = await fetch(`/api/org/${orgId}/ledger/sync-rtdb`, { method: 'POST' });
+              const data = await res.json();
+              if (data.success) {
+                alert('Successfully synced & recalculated old ledger data to RTDB!');
+                window.location.reload();
+              } else {
+                alert(data.error || 'Failed to sync ledger');
+              }
+            } catch {
+              alert('Error syncing old ledger');
+            }
+          }}
+          title={collapsed ? 'Fix Old Ledger' : 'Recalculate and populate old/legacy Firestore vouchers into RTDB'}
+          className={`w-full flex items-center gap-2.5 text-sm py-1.5 font-medium border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition rounded-lg cursor-pointer ${
             collapsed ? 'justify-center px-0' : 'px-3'
           }`}
         >
-          <Icon name="logout" className="w-[18px] h-[18px] text-red-600 shrink-0" />
+          <span className="text-amber-600 dark:text-amber-400">🔄</span>
+          {!collapsed && <span>Fix Old Ledger</span>}
+        </button>
+        <button
+          type="button"
+          onClick={logout}
+          title={collapsed ? t('nav.signOut') : undefined}
+          className={`w-full flex items-center gap-2.5 text-sm py-1.5 font-medium border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition rounded-lg ${
+            collapsed ? 'justify-center px-0' : 'px-3'
+          }`}
+        >
+          <Icon name="logout" className="w-[18px] h-[18px] text-red-600 dark:text-red-400 shrink-0" />
           {!collapsed && <span>{t('nav.signOut')}</span>}
         </button>
       </div>

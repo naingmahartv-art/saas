@@ -46,8 +46,8 @@ export async function GET(request, { params }) {
 
   let slips = snap.docs.map(d => d.data());
   if (agentName) {
-    const needle = agentName.toLowerCase();
-    slips = slips.filter(s => s.agentName?.toLowerCase().includes(needle));
+    const needle = agentName.trim().toLowerCase();
+    slips = slips.filter(s => s.agentName?.trim().toLowerCase() === needle);
   }
 
   return NextResponse.json({ slips });
@@ -55,8 +55,8 @@ export async function GET(request, { params }) {
 
 function expandTokens(tokens) {
   const expanded = [];
-  for (const tokenText of tokens) {
-    const { entries, error } = parseNumberExpression(tokenText);
+  for (const tokenText of tokens || []) {
+    const { entries, error } = parseNumberExpression(tokenText, { maxEntries: 10000 });
     if (error) {
       const err = new Error(error);
       err.token = tokenText;
@@ -129,11 +129,6 @@ export async function POST(request, { params }) {
     }
     const nextSrNo = (sSnap.data().voucherCount || 0) + 1;
 
-    const totalsUpdate = { voucherCount: nextSrNo };
-    for (const [num, amt] of Object.entries(perNumber)) {
-      totalsUpdate[`totals.${num}`] = FieldValue.increment(amt);
-    }
-
     // Save ultra-light voucher document to Firestore (tokens array only, omit details)
     tx.set(voucherRef, {
       id: voucherRef.id,
@@ -151,7 +146,7 @@ export async function POST(request, { params }) {
       createdAt: now,
       createdBy: session.id,
     });
-    tx.update(sessionRef, totalsUpdate);
+    tx.update(sessionRef, { voucherCount: nextSrNo });
     return { srNo: nextSrNo, created: true };
   });
 

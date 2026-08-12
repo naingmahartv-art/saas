@@ -3,7 +3,7 @@ import { orgUserPreferencesCol } from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth/session.js';
 import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, isValidCombo, mergeShortcuts } from '@/lib/ledger/shortcuts.js';
 
-// GET /api/user/shortcuts — the current user's Ledger keyboard shortcuts, merged over the defaults
+// GET /api/user/shortcuts — the current user's Ledger keyboard shortcuts & preferences
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -16,15 +16,17 @@ export async function GET() {
     defaults: DEFAULT_SHORTCUTS,
     replaceSlash: snap.exists ? snap.data().replaceSlash ?? 'P' : 'P',
     replaceAsterisk: snap.exists ? snap.data().replaceAsterisk ?? 'R' : 'R',
+    fontSize: snap.exists ? snap.data().fontSize ?? '100' : '100',
+    theme: snap.exists ? snap.data().theme ?? 'light' : 'light',
   });
 }
 
-// PUT /api/user/shortcuts — replace the current user's shortcut overrides
+// PUT /api/user/shortcuts — replace the current user's shortcut overrides & preferences
 export async function PUT(request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { shortcuts, replaceSlash, replaceAsterisk } = await request.json();
+  const { shortcuts, replaceSlash, replaceAsterisk, fontSize, theme } = await request.json();
 
   let cleaned = null;
   if (shortcuts && typeof shortcuts === 'object') {
@@ -71,6 +73,12 @@ export async function PUT(request) {
   if (typeof replaceAsterisk === 'string') {
     dataToSave.replaceAsterisk = replaceAsterisk.toUpperCase().slice(0, 1);
   }
+  if (typeof fontSize === 'string' || typeof fontSize === 'number') {
+    dataToSave.fontSize = String(fontSize);
+  }
+  if (typeof theme === 'string') {
+    dataToSave.theme = theme === 'dark' ? 'dark' : 'light';
+  }
 
   await ref.set(dataToSave, { merge: true });
 
@@ -81,5 +89,7 @@ export async function PUT(request) {
     shortcuts: mergeShortcuts(updatedOverrides),
     replaceSlash: updatedSnap.data().replaceSlash ?? 'P',
     replaceAsterisk: updatedSnap.data().replaceAsterisk ?? 'R',
+    fontSize: updatedSnap.data().fontSize ?? '100',
+    theme: updatedSnap.data().theme ?? 'light',
   });
 }

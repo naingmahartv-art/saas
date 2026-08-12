@@ -1,4 +1,5 @@
 const { app, BrowserWindow, dialog, shell } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -165,15 +166,79 @@ function createWindow() {
     },
   });
 
+  // Enable F5 / Ctrl+R to reload the app seamlessly
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && (input.key === 'F5' || ((input.control || input.meta) && input.key.toLowerCase() === 'r'))) {
+      mainWindow.reload();
+      event.preventDefault();
+    }
+  });
+
   mainWindow.loadURL(loadingHtml());
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
 
+function setupAutoUpdater() {
+  if (!app.isPackaged) return;
+  try {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('update-available', (info) => {
+      console.log('Update available:', info.version);
+    });
+
+    autoUpdater.on('update-downloaded', (info) => {
+      dialog.showMessageBox({
+        type: 'info',
+        title: 'Update Ready',
+        message: `A new version (${info.version}) of SaaS Platform has been downloaded.`,
+        buttons: ['Restart Now', 'Later']
+      }).then((result) => {
+        if (result.response === 0) {
+          autoUpdater.quitAndInstall();
+        }
+      });
+    });
+
+    autoUpdater.on('error', (err) => {
+      console.error('Auto-updater error:', err);
+    });
+
+    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+      console.error('Failed to check for updates:', err);
+    });
+  } catch (err) {
+    console.error('Auto updater setup failed:', err);
+  }
+}
+
 app.whenReady().then(async () => {
   createWindow();
+  setupAutoUpdater();
 
+  const config = loadEmbeddedConfig();
+  const remoteUrl = config.REMOTE_URL || process.env.REMOTE_URL;
+
+  // 1. Try loading Vercel Hosted URL first if configured
+  if (remoteUrl) {
+    console.log(`Checking connection to remote URL: ${remoteUrl}`);
+    const isRemoteOnline = await isServerReady(remoteUrl);
+    if (isRemoteOnline) {
+      console.log(`Remote Vercel server online. Loading ${remoteUrl}`);
+      if (mainWindow) mainWindow.loadURL(remoteUrl);
+      
+      app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      });
+      return;
+    }
+    console.warn(`Remote URL ${remoteUrl} unreachable. Falling back to local server.`);
+  }
+
+  // 2. Fallback to local standalone server
   if (!fs.existsSync(SERVER_ENTRY)) {
     dialog.showErrorBox(
       'Build missing',
@@ -182,8 +247,6 @@ app.whenReady().then(async () => {
     app.quit();
     return;
   }
-
-  const config = loadEmbeddedConfig();
 
   const isFreshInstall = !fs.existsSync(SQLITE_DB_PATH);
 

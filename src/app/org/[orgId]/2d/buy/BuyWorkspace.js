@@ -26,6 +26,8 @@ export default function BuyWorkspace({
   const [hotNumbers, setHotNumbers] = useState(initialHotNumbers);
   const [notBuyNumbers, setNotBuyNumbers] = useState(initialNotBuyNumbers);
   const [editingVoucher, setEditingVoucher] = useState(null);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isReportsOpen, setIsReportsOpen] = useState(false);
   const [refreshSignal, setRefreshSignal] = useState(0);
   // SessionPicker starts closed if an active session exists or has already been acknowledged
   const [isSessionPickerOpen, setIsSessionPickerOpen] = useState(() => {
@@ -120,6 +122,8 @@ export default function BuyWorkspace({
         replaceSlash={replaceSlash}
         replaceAsterisk={replaceAsterisk}
         onOptimisticBuySave={applyOptimisticBuyTotals}
+        onOpenHistory={() => setIsHistoryOpen(true)}
+        onOpenReports={() => setIsReportsOpen(true)}
         onOpenSessionPicker={() => setIsSessionPickerOpen(true)}
       />
 

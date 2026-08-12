@@ -57,10 +57,7 @@ export async function POST(request, { params }) {
   const voucherRef = orgSessionVouchersCol(orgId, sid).doc();
 
   // Increment buyTotals in session document (00-99 ledger grid totals remain untouched!)
-  const totalsUpdate = {};
-  for (const [num, amt] of Object.entries(perNumber)) {
-    totalsUpdate[`buyTotals.${num}`] = FieldValue.increment(amt);
-  }
+
 
   const { srNo } = await db.runTransaction(async (tx) => {
     const sSnap = await tx.get(sessionRef);
@@ -69,7 +66,6 @@ export async function POST(request, { params }) {
     }
 
     const nextSrNo = (sSnap.data().voucherCount || 0) + 1;
-    totalsUpdate.voucherCount = nextSrNo;
 
     tx.set(voucherRef, {
       id: voucherRef.id,
@@ -91,7 +87,7 @@ export async function POST(request, { params }) {
       createdBy: session.id,
     });
 
-    tx.update(sessionRef, totalsUpdate);
+    tx.update(sessionRef, { voucherCount: nextSrNo });
     return { srNo: nextSrNo };
   });
 

@@ -2,6 +2,29 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useI18n } from '@/lib/i18n/index.js';
 import { buildReportPdf, reportFileName } from '@/lib/reports/buildPdf.js';
+import { parseNumberExpression, MAX_ENTRIES } from '@/lib/lottery/numberParser.js';
+
+function getTokenItemsForSlip(slip, luckyNo) {
+  if (slip.tokens && slip.tokens.length > 0) {
+    return slip.tokens.map(tokText => {
+      const { entries } = parseNumberExpression(tokText, { maxEntries: MAX_ENTRIES });
+      const amount = entries ? entries.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0) : 0;
+      const isWinner = Boolean(
+        luckyNo &&
+          entries?.some(e => String(e.num).padStart(2, '0') === String(luckyNo).padStart(2, '0'))
+      );
+      return { tokText, amount, isWinner };
+    });
+  }
+  if (slip.details && slip.details.length > 0) {
+    return slip.details.map(d => {
+      const num = String(d.num1).padStart(2, '0');
+      const isWinner = Boolean(luckyNo && num === String(luckyNo).padStart(2, '0'));
+      return { tokText: num, amount: d.value, isWinner };
+    });
+  }
+  return [];
+}
 
 function csvEscape(value) {
   const s = String(value ?? '');
@@ -127,9 +150,9 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
       const comAmt = saleAmount * (comRate / 100);
 
       const lAmount = s.luckyNo
-        ? (s.details || [])
-            .filter(d => String(d.num1) === String(s.luckyNo))
-            .reduce((sum, d) => sum + (d.value || 0), 0)
+        ? getTokenItemsForSlip(s, s.luckyNo)
+            .filter(item => item.isWinner)
+            .reduce((sum, item) => sum + item.amount, 0)
         : 0;
 
       const rate = ag?.rate || s.rate || 80;
@@ -151,7 +174,10 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
         winPayout,
         comPlusL,
         balanceTotal,
-        details: s.details || [],
+        details: getTokenItemsForSlip(s, s.luckyNo).map(item => ({
+          num1: item.tokText, // in ReportsManager "details" is used to show items in a modal. using tokText preserves original tokens
+          value: item.amount,
+        })),
       };
     }).sort((a, b) => (a.srNo || 0) - (b.srNo || 0));
   }, [reportSlips, agentMap]);

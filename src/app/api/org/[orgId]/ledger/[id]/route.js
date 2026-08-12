@@ -10,7 +10,7 @@ import { logActivity } from '@/lib/db/log-activity.js';
 function expandTokens(tokens) {
   const expanded = [];
   for (const tokenText of tokens || []) {
-    const { entries, error } = parseNumberExpression(tokenText);
+    const { entries, error } = parseNumberExpression(tokenText, { maxEntries: 10000 });
     if (error) {
       const err = new Error(error);
       err.token = tokenText;
@@ -121,18 +121,12 @@ export async function PUT(request, { params }) {
       if (diff !== 0) deltaMap[num] = diff;
     }
 
-    const totalsUpdate = {};
-    for (const [num, amt] of Object.entries(deltaMap)) {
-      totalsUpdate[`totals.${num}`] = FieldValue.increment(amt);
-    }
-
     tx.update(voucherRef, {
       tokens,
       amount: newAmount,
       agentId: updatedAgentId,
       agentName: updatedAgentName,
     });
-    if (Object.keys(totalsUpdate).length > 0) tx.update(sessionRef, totalsUpdate);
   }).catch(err => {
     if (err.message === 'NOT_FOUND') return null;
     throw err;
@@ -205,17 +199,14 @@ export async function DELETE(request, { params }) {
       oldEntries = slip.details.map((d) => ({ num: d.num1, amount: d.value }));
     }
 
-    const totalsUpdate = {};
     for (const e of oldEntries) {
       const amt = parseFloat(e.amount) || 0;
       if (amt > 0) {
         deltaMap[e.num] = (deltaMap[e.num] || 0) - amt;
-        totalsUpdate[`totals.${e.num}`] = FieldValue.increment(-amt);
       }
     }
 
     tx.delete(voucherRef);
-    if (Object.keys(totalsUpdate).length > 0) tx.update(sessionRef, totalsUpdate);
   }).catch(err => {
     if (err.message === 'NOT_FOUND') return null;
     throw err;

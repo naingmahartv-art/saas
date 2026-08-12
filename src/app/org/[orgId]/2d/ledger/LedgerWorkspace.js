@@ -25,13 +25,14 @@ export default function LedgerWorkspace({
 }) {
   const [totals, setTotals] = useState({});
   const [buyTotals, setBuyTotals] = useState({});
+  const [vouchersCount, setVouchersCount] = useState(0);
   const [luckyNumber, setLuckyNumber] = useState(initialLuckyNumber);
   const [hotNumbers, setHotNumbers] = useState(initialHotNumbers);
   const [notBuyNumbers, setNotBuyNumbers] = useState(initialNotBuyNumbers);
   const [editingVoucher, setEditingVoucher] = useState(null);
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [isReportsOpen, setIsReportsOpen] = useState(false);
+  const [reportsTab, setReportsTab] = useState(null);
   // SessionPicker starts closed if an active session exists or has already been acknowledged
   const [isSessionPickerOpen, setIsSessionPickerOpen] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -64,6 +65,10 @@ export default function LedgerWorkspace({
       const data = await res.json();
       setTotals(data.totals || {});
       setBuyTotals(data.buyTotals || {});
+      if (data.luckyNumber !== undefined) setLuckyNumber(data.luckyNumber);
+      if (typeof data.vouchersCount === 'number') {
+        setVouchersCount(data.vouchersCount);
+      }
     } catch {
       // keep last known totals on failure
     }
@@ -86,6 +91,7 @@ export default function LedgerWorkspace({
     setLuckyNumber(live.luckyNumber ?? null);
     setHotNumbers(live.hotNumbers || []);
     setNotBuyNumbers(live.notBuyNumbers || []);
+    if (typeof live.voucherCount === 'number') setVouchersCount(live.voucherCount);
   }, [live]);
 
   // Bumps the totals grid the instant a voucher is queued (see
@@ -94,6 +100,7 @@ export default function LedgerWorkspace({
   // cashier's own entries with zero latency instead of waiting on the
   // network round trip that queuing was built to avoid.
   const applyOptimisticTotals = useCallback((entries) => {
+    setVouchersCount(c => c + 1);
     setTotals(prev => {
       const next = { ...prev };
       for (const e of entries) {
@@ -141,6 +148,7 @@ export default function LedgerWorkspace({
         luckyNumber={luckyNumber}
         totals={totals}
         buyTotals={buyTotals}
+        vouchersCount={vouchersCount}
         editingVoucher={editingVoucher}
         canWrite={canWrite}
         shortcuts={shortcuts}
@@ -156,7 +164,9 @@ export default function LedgerWorkspace({
         onCancelEdit={() => setEditingVoucher(null)}
         onOpenHistory={() => setIsHistoryOpen(true)}
         onOpenSessionPicker={() => setIsSessionPickerOpen(true)}
-        onOpenReports={() => setIsReportsOpen(true)}
+        onOpenReports={() => setReportsTab('allAgent')}
+        onOpenSale1={() => setReportsTab('agent')}
+        onOpenSale2={() => setReportsTab('summary')}
       />
 
       {isSessionPickerOpen && (
@@ -168,12 +178,13 @@ export default function LedgerWorkspace({
         />
       )}
 
-      {isReportsOpen && (
+      {reportsTab && (
         <ReportsModal
           orgId={orgId}
           activeSession={activeSession}
           agents={agents}
-          onClose={() => setIsReportsOpen(false)}
+          initialTab={reportsTab}
+          onClose={() => setReportsTab(null)}
         />
       )}
 

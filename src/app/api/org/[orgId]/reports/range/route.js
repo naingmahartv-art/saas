@@ -39,13 +39,13 @@ export async function GET(request, { params }) {
 
     for (const vDoc of vouchersSnap.docs) {
       const v = vDoc.data();
-      if (!agentName || v.agentName?.toLowerCase().includes(agentName.toLowerCase())) {
+      if (!agentName || v.agentName?.trim().toLowerCase() === agentName.trim().toLowerCase()) {
         allSlips.push({
           ...v,
           onDate: sData.onDate,
           ampm: sData.ampm,
           onCount: sData.onCount,
-          luckyNo: sData.luckyNo || sData.winningNumber || null,
+          luckyNo: sData.luckyNumber || sData.luckyNo || sData.winningNumber || null,
           rate: sData.rate || 80,
         });
       }

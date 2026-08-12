@@ -23,7 +23,7 @@ export default async function TwoDLayout({ children, params }) {
   if (meSnap.data()?.status === 'suspended') redirect('/suspended');
 
   return (
-    <div className="min-h-screen flex bg-gray-50">
+    <div className="min-h-screen flex bg-gray-50 dark:bg-slate-950 dark:text-slate-100">
       <Sidebar2D orgId={orgId} orgName={org.name} userName={session.name} role={session.role} />
       <main className="flex-1 min-w-0">{children}</main>
     </div>

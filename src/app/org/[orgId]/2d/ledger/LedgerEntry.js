@@ -5,10 +5,10 @@ import { parseNumberExpression, MAX_ENTRIES } from '@/lib/lottery/numberParser.j
 import { createRuleEngine } from '@/lib/lottery/ruleEngine.js';
 import { useI18n } from '@/lib/i18n/index.js';
 import AgentCombobox from './AgentCombobox.js';
-import BuyVoucherModal from './BuyVoucherModal.js';
 import { matchesCombo, formatCombo as rawFormatCombo } from '@/lib/ledger/shortcuts.js';
 import { useIsMac } from '@/lib/ledger/useLedgerShortcuts.js';
 import { enqueue, onQueueEvent, startAutoDrain } from '@/lib/ledger/voucherQueue.js';
+import useLedgerFontSize from '@/lib/ledger/useLedgerFontSize.js';
 
 const ALLOWED_CHARS = /[^0-9RAGPBWNFXT+\-*/.[\]]/gi;
 
@@ -89,6 +89,7 @@ export default function LedgerEntry({
   luckyNumber,
   totals,
   buyTotals,
+  vouchersCount = 0,
   editingVoucher,
   onSaved,
   onOptimisticSave,
@@ -97,12 +98,15 @@ export default function LedgerEntry({
   onOpenHistory,
   onOpenSessionPicker,
   onOpenReports,
+  onOpenSale1,
+  onOpenSale2,
   canWrite = true,
   shortcuts,
   replaceSlash = 'P',
   replaceAsterisk = 'R',
 }) {
   const { t } = useI18n();
+  const ledgerFontSize = useLedgerFontSize();
   const isMac = useIsMac();
   const formatCombo = (combo) => rawFormatCombo(combo, isMac);
   const [agentId, setAgentId] = useState('');
@@ -119,6 +123,8 @@ export default function LedgerEntry({
   const [sortDir, setSortDir] = useState('asc');
   const [editingTokenId, setEditingTokenId] = useState(null);
   const [editingTokenValue, setEditingTokenValue] = useState('');
+  const [selectedTokenIds, setSelectedTokenIds] = useState(new Set());
+  const [lastSelectedIndex, setLastSelectedIndex] = useState(null);
   const [luckyNo, setLuckyNo] = useState(luckyNumber || null);
   const [luckyOpen, setLuckyOpen] = useState(false);
   const [luckyInput, setLuckyInput] = useState('');
@@ -141,9 +147,34 @@ export default function LedgerEntry({
   const [checkAgentResults, setCheckAgentResults] = useState(null);
   const [checkAgentLoading, setCheckAgentLoading] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [importJsonText, setImportJsonText] = useState('');
   const [exceedSortKey, setExceedSortKey] = useState('excess');
   const [exceedSortDir, setExceedSortDir] = useState('desc');
+  const [syncLoading, setSyncLoading] = useState(false);
+
+  async function handleSyncOldLedger() {
+    if (!activeSession) return;
+    setSyncLoading(true);
+    try {
+      const date = activeSession.onDate || activeSession.date || new Date().toISOString().slice(0, 10);
+      const count = activeSession.onCount || 1;
+      const am = activeSession.ampm || 'AM';
+      const res = await fetch(
+        `/api/org/${orgId}/ledger/sync-rtdb?onCount=${count}&ampm=${encodeURIComponent(am)}&onDate=${date}`,
+        { method: 'POST' }
+      );
+      const data = await res.json();
+      if (data.success) {
+        setSuccessMsg('Successfully synced & recalculated old ledger data to RTDB!');
+        window.location.reload();
+      } else {
+        setError(data.error || 'Failed to sync ledger');
+      }
+    } catch (err) {
+      setError('Error syncing old ledger: ' + (err?.message || err));
+    } finally {
+      setSyncLoading(false);
+    }
+  }
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
   const [gridSortKey, setGridSortKey] = useState('number');
   const [gridSortDir, setGridSortDir] = useState('asc');
@@ -375,12 +406,21 @@ export default function LedgerEntry({
       return;
     }
 
-    const headers = 'Number,Exceed,Buy,Total';
-    const lines = exceedList.map(e => `${e.num},${e.excess},${e.buy},${e.total}`);
+    const headers = 'Number,Exceed';
+    const lines = exceedList.map(e => `${e.num},${e.excess}`);
     const text = [headers, ...lines].join('\n');
 
     try {
-      await navigator.clipboard.writeText(text);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
       setSuccessMsg(t('ledger.copiedToClipboard') || 'Copied to clipboard!');
       setTimeout(() => setSuccessMsg(''), 3000);
     } catch {
@@ -679,6 +719,45 @@ export default function LedgerEntry({
       setEditingTokenId(null);
       setEditingTokenValue('');
     }
+    setSelectedTokenIds(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
+
+  function removeSelectedTokens() {
+    if (selectedTokenIds.size === 0) return;
+    setPendingTokens(prev => prev.filter(p => !selectedTokenIds.has(p.id)));
+    if (editingTokenId && selectedTokenIds.has(editingTokenId)) {
+      setEditingTokenId(null);
+      setEditingTokenValue('');
+    }
+    setSelectedTokenIds(new Set());
+    setLastSelectedIndex(null);
+  }
+
+  function handleCellSelect(p, index, e) {
+    if (e.ctrlKey || e.metaKey) {
+      setSelectedTokenIds(prev => {
+        const next = new Set(prev);
+        if (next.has(p.id)) {
+          next.delete(p.id);
+        } else {
+          next.add(p.id);
+        }
+        return next;
+      });
+      setLastSelectedIndex(index);
+    } else if (e.shiftKey && lastSelectedIndex !== null) {
+      const start = Math.min(lastSelectedIndex, index);
+      const end = Math.max(lastSelectedIndex, index);
+      const rangeIds = visibleTokens.slice(start, end + 1).map(item => item.id);
+      setSelectedTokenIds(prev => new Set([...prev, ...rangeIds]));
+    } else {
+      setSelectedTokenIds(new Set([p.id]));
+      setLastSelectedIndex(index);
+    }
   }
 
   function startTokenEdit(token) {
@@ -729,6 +808,37 @@ export default function LedgerEntry({
     if (onCancelEdit) onCancelEdit();
   }
 
+  async function handleDeleteVoucher(vId) {
+    const targetId = vId || editingId;
+    if (!targetId || !activeSession) return;
+    setSaving(true);
+    setError('');
+    try {
+      const q = `onCount=${encodeURIComponent(activeSession.onCount)}&ampm=${encodeURIComponent(activeSession.ampm)}&onDate=${encodeURIComponent(activeSession.onDate)}`;
+      const res = await fetch(`/api/org/${orgId}/ledger/${targetId}?${q}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to delete voucher');
+        return;
+      }
+      const deletedSrNo = editingSrNo || data.srNo;
+      setPendingTokens([]);
+      setInputValue('');
+      setAgentId('');
+      setWarnings([]);
+      setSuccessMsg(`Voucher #${deletedSrNo || ''} deleted successfully!`);
+      setEditingId(null);
+      setEditingSrNo(null);
+      if (onSaved) onSaved();
+    } catch {
+      setError(t('common.networkError'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleSave(tokensToSave) {
     setError('');
     if (!canWrite) {
@@ -744,6 +854,10 @@ export default function LedgerEntry({
       return;
     }
     if (!tokensToSave || tokensToSave.length === 0) {
+      if (editingId) {
+        await handleDeleteVoucher(editingId);
+        return;
+      }
       setError(t('ledger.noEntriesError'));
       return;
     }
@@ -753,6 +867,10 @@ export default function LedgerEntry({
     // Editing an existing voucher is a deliberate, lower-frequency action —
     // it stays a normal awaited save, unlike new-voucher creation below.
     if (editingId) {
+      if (tokensToSave.length === 0) {
+        await handleDeleteVoucher(editingId);
+        return;
+      }
       setSaving(true);
       try {
         const res = await fetch(`/api/org/${orgId}/ledger/${editingId}`, {
@@ -1239,6 +1357,12 @@ export default function LedgerEntry({
       } else if (matchesCombo(e, shortcuts.exportGrid)) {
         e.preventDefault();
         handleExportGrid();
+      } else if (matchesCombo(e, shortcuts.sale1)) {
+        e.preventDefault();
+        if (onOpenSale1) onOpenSale1();
+      } else if (matchesCombo(e, shortcuts.sale2)) {
+        e.preventDefault();
+        if (onOpenSale2) onOpenSale2();
       } else if (e.altKey && e.shiftKey) {
         if (e.code && e.code.startsWith('Digit')) {
           const digitStr = e.code.slice(5);
@@ -1251,6 +1375,12 @@ export default function LedgerEntry({
               startTokenEdit(targetToken);
             }
           }
+        }
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTokenIds.size > 0 && !editingTokenId) {
+        const activeTag = document.activeElement ? document.activeElement.tagName : '';
+        if (activeTag !== 'INPUT' && activeTag !== 'TEXTAREA' && activeTag !== 'SELECT') {
+          e.preventDefault();
+          removeSelectedTokens();
         }
       } else if (e.key === 'Escape') {
         if (checkAgentOpen || luckyOpen || rateOpen || limitOpen) {
@@ -1278,6 +1408,8 @@ export default function LedgerEntry({
     sortKey,
     sortDir,
     onOpenReports,
+    onOpenSale1,
+    onOpenSale2,
     exceedList,
     gridSortKey,
     gridSortDir,
@@ -1293,29 +1425,10 @@ export default function LedgerEntry({
   return (
     <div className="w-full h-[calc(100vh-1.5rem)] flex flex-col overflow-hidden">
       {/* Top bar */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-2 mb-3 flex flex-wrap items-center justify-between gap-2 shrink-0">
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm px-4 py-2 mb-3 flex flex-wrap items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-semibold">
-            <Link
-              href={`/org/${orgId}/2d/ledger`}
-              className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${
-                !isBuyPage ? 'bg-white text-indigo-700 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <span>📝</span> Ledger (2D)
-            </Link>
-            <Link
-              href={`/org/${orgId}/2d/buy`}
-              className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${
-                isBuyPage ? 'bg-purple-600 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <span>🛒</span> Buy Page (အဝယ်စာရင်း)
-            </Link>
-          </div>
-
           {activeSession ? (
-            <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-gray-900">
+            <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-gray-900 dark:text-slate-100">
               <span className="badge-active">{t(`session.${SLOT_LABEL_KEY[activeSession.ampm] || 'slot0900'}`)}</span>
               <span className="text-gray-400">•</span>
               <span>{activeSession.onDate}</span>
@@ -1350,6 +1463,30 @@ export default function LedgerEntry({
           )}
         </div>
         <div className="flex items-center gap-2">
+          {onOpenSale1 && (
+            <button
+              type="button"
+              onClick={onOpenSale1}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+              title="By Agent Report (F7)"
+            >
+              <span>📋</span>
+              <span>Sale 1 (F7)</span>
+            </button>
+          )}
+
+          {onOpenSale2 && (
+            <button
+              type="button"
+              onClick={onOpenSale2}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+              title="Summary Report (F10)"
+            >
+              <span>📈</span>
+              <span>Sale 2 (F10)</span>
+            </button>
+          )}
+
           <div className="relative">
             <button
               type="button"
@@ -1360,7 +1497,11 @@ export default function LedgerEntry({
               }`}
             >
               <span>🎯</span>
-              {luckyNo ? `${t('ledger.luckyPrefix', { no: luckyNo })} (${formatCombo(shortcuts.luckyNumber)})` : `${t('ledger.luckyBtn')} (${formatCombo(shortcuts.luckyNumber)})`}
+              {luckyNo ? (
+                <span>Luc<u className="underline font-semibold">k</u>y: {luckyNo}</span>
+              ) : (
+                <span>Luc<u className="underline font-semibold">k</u>y</span>
+              )}
             </button>
 
             {luckyOpen && (
@@ -1390,53 +1531,7 @@ export default function LedgerEntry({
             )}
           </div>
 
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => (rateOpen ? setRateOpen(false) : openRate())}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
-            >
-              <span>💰</span>
-              {t('ledger.ratePrefix', { n: rateValue })} ({formatCombo(shortcuts.rate)})
-            </button>
 
-            {rateOpen && (
-              <form
-                onSubmit={e => {
-                  e.preventDefault();
-                  saveRate();
-                }}
-                className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg p-3 z-10"
-              >
-                <p className="text-xs font-medium text-gray-600 mb-2">{t('ledger.rateHint')}</p>
-                <div className="flex gap-2">
-                  <input
-                    ref={rateInputRef}
-                    type="text"
-                    value={rateInput}
-                    onChange={e => setRateInput(e.target.value.replace(/[^0-9.]/g, ''))}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        saveRate();
-                      }
-                    }}
-                    placeholder="80"
-                    autoFocus
-                    className="w-20 px-2 py-1.5 text-sm font-mono text-center border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                  <button
-                    type="submit"
-                    disabled={rateSaving}
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition"
-                  >
-                    {rateSaving ? t('common.saving') : t('common.save')}
-                  </button>
-                </div>
-                {rateError && <p className="text-xs text-red-600 mt-2">{rateError}</p>}
-              </form>
-            )}
-          </div>
 
           <div className="relative">
             <button
@@ -1447,7 +1542,11 @@ export default function LedgerEntry({
               }`}
             >
               <span>🚧</span>
-              {isLimitActive ? `${t('ledger.limitPrefix', { n: Number(limitValue).toLocaleString() })} (${formatCombo(shortcuts.limit)})` : `${t('ledger.limitBtn')} (${formatCombo(shortcuts.limit)})`}
+              {isLimitActive ? (
+                <span><u className="underline font-semibold">L</u>imit: {Number(limitValue).toLocaleString()}</span>
+              ) : (
+                <span><u className="underline font-semibold">L</u>imit</span>
+              )}
             </button>
 
             {limitOpen && (
@@ -1487,7 +1586,7 @@ export default function LedgerEntry({
               className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
             >
               <span>👤</span>
-              {t('ledger.checkAgentBtn')} ({formatCombo(shortcuts.checkAgent)})
+              <span>Checkin<u className="underline font-semibold">g</u> Agent</span>
             </button>
 
             {checkAgentOpen && (
@@ -1529,7 +1628,7 @@ export default function LedgerEntry({
               className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
             >
               <span>📊</span>
-              {t('reports.title')} ({formatCombo(shortcuts.reports)})
+              <span>Re<u className="underline font-semibold">p</u>orts</span>
             </button>
           )}
 
@@ -1538,7 +1637,11 @@ export default function LedgerEntry({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1.3fr_0.6fr] gap-3 flex-1 min-h-0 items-stretch">
+      <div
+        className="flex-1 min-h-0 flex flex-col overflow-hidden"
+        style={{ zoom: parseFloat(ledgerFontSize || '100') / 100 }}
+      >
+        <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_1.3fr_0.8fr] gap-3 flex-1 min-h-0 items-stretch">
         {/* Left panel: input + voucher token list (5-cell column grid) */}
         <div className="flex flex-col h-full min-h-0 space-y-3">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 shrink-0">
@@ -1581,10 +1684,20 @@ export default function LedgerEntry({
               <button
                 type="button"
                 onClick={() => handleSave(pendingTokens)}
-                disabled={saving || !activeSession || pendingTokens.length === 0 || !canWrite}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium py-2.5 rounded-lg transition"
+                disabled={saving || !activeSession || (pendingTokens.length === 0 && !editingId) || !canWrite}
+                className={`flex-1 text-white text-sm font-medium py-2.5 rounded-lg transition ${
+                  editingId && pendingTokens.length === 0
+                    ? 'bg-red-600 hover:bg-red-700 font-bold shadow-md'
+                    : 'bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50'
+                }`}
               >
-                {saving ? t('common.saving') : editingId ? t('common.update') : `${t('common.save')} (${formatCombo(shortcuts.save)})`}
+                {saving
+                  ? t('common.saving')
+                  : editingId
+                  ? pendingTokens.length === 0
+                    ? `Delete Voucher (#${editingSrNo || ''})`
+                    : t('common.update')
+                  : `${t('common.save')} (${formatCombo(shortcuts.save)})`}
               </button>
               <button
                 type="button"
@@ -1606,11 +1719,11 @@ export default function LedgerEntry({
                 <span className="text-xs font-bold tracking-wide text-slate-100 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
                   {t('ledger.entriesHeader')}
-                  <span className="bg-purple-500/25 border border-purple-400/30 text-purple-200 px-2 py-0.5 rounded text-[11px] font-mono">
-                    {pendingTokens.length} Vouchers
+                  <span className="bg-purple-500/25 border border-purple-400/30 text-purple-200 px-2.5 py-0.5 rounded text-[11px] font-mono font-bold">
+                    Sr. {editingVoucher?.srNo ?? vouchersCount ?? 0}
                   </span>
                   <span className="bg-indigo-500/25 border border-indigo-400/30 text-indigo-200 px-2 py-0.5 rounded text-[11px] font-mono">
-                    {visibleTokens.length} items
+                    {pendingTokens.length} numbers
                   </span>
                   {search.trim() && <span className="text-slate-400 font-normal"> — {t('ledger.matchSuffix', { n: visibleTokens.length })}</span>}
                 </span>
@@ -1643,7 +1756,7 @@ export default function LedgerEntry({
                 <div className="px-4 py-8 text-center text-slate-400 text-sm font-medium">{t('ledger.noMatchEntries', { q: search })}</div>
               ) : (
                 <div className="border border-slate-200/90 rounded-lg overflow-hidden bg-white shadow-xs">
-                  <table className="w-full text-xs border-collapse table-fixed">
+                  <table className="w-full text-base border-collapse table-fixed">
                     <colgroup>
                       <col className="w-[20%]" />
                       <col className="w-[20%]" />
@@ -1655,11 +1768,13 @@ export default function LedgerEntry({
                       {entryTableRows.map((row, rIdx) => (
                         <tr key={rIdx} className="even:bg-slate-50/50 hover:bg-indigo-50/40 transition-colors duration-150">
                           {Array.from({ length: 5 }, (_, cIdx) => {
+                            const globalIdx = rIdx * 5 + cIdx;
                             const p = row[cIdx];
-                            if (!p) return <td key={cIdx} className="border border-slate-150/80 bg-slate-50/20 px-1 py-1.5" />;
+                            if (!p) return <td key={cIdx} className="border border-slate-150/80 dark:border-slate-800 bg-slate-50/20 px-1 py-1.5" />;
 
                             const isDragging = draggedTokenId === p.id;
                             const isDragOver = dragOverTokenId === p.id;
+                            const isSelected = selectedTokenIds.has(p.id);
 
                             return (
                               <td
@@ -1670,10 +1785,14 @@ export default function LedgerEntry({
                                 onDragLeave={e => handleCellDragLeave(e, p.id)}
                                 onDrop={e => handleCellDrop(e, p.id)}
                                 onDragEnd={handleCellDragEnd}
-                                className={`border border-slate-200/80 px-1.5 py-1.5 text-center font-mono font-bold text-slate-900 transition-all duration-150 cursor-grab active:cursor-grabbing ${
+                                className={`relative border px-1.5 py-1 text-left font-mono font-bold transition-all duration-150 ${
+                                  isSelected
+                                    ? 'bg-indigo-600 text-white dark:bg-indigo-600 dark:text-white ring-2 ring-indigo-400 rounded z-10'
+                                    : 'border-slate-200/80 dark:border-slate-800 hover:bg-indigo-50/60 dark:hover:bg-slate-800/60 text-slate-900 dark:text-slate-100'
+                                } ${
                                   isDragging ? 'opacity-40 bg-indigo-100 scale-95 border-dashed border-indigo-500' : ''
                                 } ${
-                                  isDragOver ? 'bg-indigo-200/90 ring-2 ring-indigo-500 scale-105 z-10 shadow-md' : 'hover:bg-indigo-100/60'
+                                  isDragOver ? 'bg-indigo-200/90 ring-2 ring-indigo-500 scale-105 z-10 shadow-md' : ''
                                 }`}
                               >
                                 {editingTokenId === p.id ? (
@@ -1692,14 +1811,32 @@ export default function LedgerEntry({
                                     }}
                                     onBlur={() => commitTokenEdit(p.id)}
                                     autoFocus
-                                    className="w-full px-1 py-0.5 font-mono text-xs border-2 border-indigo-500 rounded text-indigo-950 text-center font-bold shadow-inner ring-2 ring-indigo-200"
+                                    className="w-full px-1 py-0.5 font-mono text-base border-2 border-indigo-500 rounded text-indigo-950 dark:text-slate-100 dark:bg-slate-800 text-left font-bold shadow-inner ring-2 ring-indigo-200"
                                   />
                                 ) : (
                                   <button
                                     type="button"
-                                    onClick={() => startTokenEdit(p)}
-                                    className="w-full truncate font-mono font-bold text-slate-900 hover:text-indigo-700 text-xs text-center transition-colors select-none"
-                                    title="Click to edit, or drag & drop to reorder"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCellSelect(p, globalIdx, e);
+                                    }}
+                                    onDoubleClick={(e) => {
+                                      e.stopPropagation();
+                                      startTokenEdit(p);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Delete' || e.key === 'Backspace') {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        removeSelectedTokens();
+                                      }
+                                    }}
+                                    className={`w-full truncate font-mono font-bold text-base text-left transition-colors select-none focus:outline-none cursor-pointer ${
+                                      isSelected
+                                        ? 'text-white font-extrabold'
+                                        : 'text-slate-900 dark:text-slate-100 hover:text-indigo-700 dark:hover:text-indigo-300'
+                                    }`}
+                                    title="Click to select, Ctrl+Click / Shift+Click for multi-select, press Delete key to remove"
                                   >
                                     {p.tokenText}
                                   </button>
@@ -1755,7 +1892,7 @@ export default function LedgerEntry({
             </div>
           </div>
           <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            <table className="w-full h-full text-sm border border-collapse border-gray-200 table-fixed">
+            <table className="w-full h-full text-base border border-collapse border-gray-200 table-fixed">
               <colgroup>
                 <col className="w-[10%]" />
                 <col className="w-[15%]" />
@@ -1827,13 +1964,7 @@ export default function LedgerEntry({
             </div>
           )}
 
-          <div className="flex flex-wrap gap-x-2 gap-y-1 mt-2 text-[10px] text-gray-500">
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-green-500 inline-block" /> {t('ledger.hasAmountLegend')}</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-purple-500 inline-block" /> {t('ledger.overLimitLegend')}</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-yellow-300 inline-block" /> {t('ledger.hot')}</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-gray-300 inline-block" /> {t('ledger.notBuy')}</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-red-600 inline-block" /> {t('ledger.luckyLegend')}</span>
-          </div>
+
 
           {/* Bottom stat row */}
           <div className="grid grid-cols-3 gap-1.5 mt-2">
@@ -1851,12 +1982,20 @@ export default function LedgerEntry({
           className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 overflow-hidden flex flex-col h-full min-h-0"
         >
           <div className="flex items-center justify-between mb-2 shrink-0">
-            <h2 className="text-sm font-semibold text-gray-800">{t('ledger.exceedPanelTitle')}</h2>
+            <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+              <Link
+                href={`/org/${orgId}/2d/buy`}
+                className="hover:text-purple-700 hover:underline transition flex items-center gap-1.5"
+                title="Go to Buy Page"
+              >
+                <span>🛒</span> {t('ledger.exceedPanelTitle')}
+              </Link>
+            </h2>
             {isLimitActive && exceedList.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5">
                 <Link
                   href={`/org/${orgId}/2d/buy`}
-                  className="text-xs px-2 py-1 bg-purple-50 border border-purple-200 text-purple-700 font-medium rounded hover:bg-purple-100 transition flex items-center gap-1"
+                  className="text-xs px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition flex items-center gap-1 shadow-xs"
                   title="Go to Buy Page to enter buy vouchers"
                 >
                   <span>🛒</span> Buy
@@ -1864,8 +2003,8 @@ export default function LedgerEntry({
                 <button
                   type="button"
                   onClick={handleCopyExceedLimit}
-                  className="text-xs px-2 py-1 bg-blue-50 border border-blue-200 text-blue-700 font-medium rounded hover:bg-blue-100 transition flex items-center gap-1"
-                  title="Copy full text to clipboard"
+                  className="text-xs px-2.5 py-1 bg-blue-50 border border-blue-200 text-blue-700 font-medium rounded-lg hover:bg-blue-100 transition flex items-center gap-1"
+                  title="Copy Exceed list as CSV (Number,Exceed)"
                 >
                   <span>📋</span> Copy
                 </button>
@@ -1880,9 +2019,9 @@ export default function LedgerEntry({
                 <p className="text-xs text-gray-400 text-center py-6">{t('ledger.noExceedEntries')}</p>
               ) : (
                 <div className="flex-1 min-h-0 overflow-y-auto mb-2">
-                  <table className="w-full text-xs border border-collapse border-gray-200">
+                  <table className="w-full text-sm border border-collapse border-gray-200">
                     <thead>
-                      <tr className="bg-gray-50 text-[10px] text-gray-500 uppercase tracking-wide border-b border-gray-200 font-medium">
+                      <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide border-b border-gray-200 font-medium">
                         <th className="px-1 py-1 border border-gray-200 text-center font-medium">
                           <button
                             type="button"
@@ -1927,7 +2066,12 @@ export default function LedgerEntry({
                     </thead>
                     <tbody>
                       {exceedList.map(e => (
-                        <tr key={e.num}>
+                        <tr
+                          key={e.num}
+                          onClick={() => router.push(`/org/${orgId}/2d/buy`)}
+                          className="cursor-pointer hover:bg-purple-100/60 transition"
+                          title="Click to go to Buy Page"
+                        >
                           <td className="px-1.5 py-1 font-mono font-semibold text-center bg-purple-500 text-white border border-gray-200">
                             {e.num}
                           </td>
@@ -1947,7 +2091,7 @@ export default function LedgerEntry({
                 </div>
               )}
 
-              <div className="border-t border-gray-200 pt-2.5 space-y-1.5 text-xs font-mono">
+              <div className="border-t border-gray-200 pt-2.5 space-y-1.5 text-base font-mono">
                 <div className="flex justify-between text-gray-600 px-1 font-semibold">
                   <span>Exceed Total:</span>
                   <span className="text-purple-900">{totalExcess.toLocaleString()}</span>
@@ -2137,22 +2281,7 @@ export default function LedgerEntry({
         </div>
       )}
 
-      {isBuyModalOpen && (
-        <BuyVoucherModal
-          orgId={orgId}
-          activeSession={activeSession}
-          exceedList={exceedList}
-          canWrite={canWrite}
-          onClose={() => setIsBuyModalOpen(false)}
-          onSuccess={(buyItems) => {
-            if (onOptimisticBuySave) {
-              onOptimisticBuySave(buyItems);
-            }
-            setSuccessMsg('Buy Voucher created successfully!');
-            setTimeout(() => setSuccessMsg(''), 3000);
-          }}
-        />
-      )}
+      </div>
     </div>
   );
 }

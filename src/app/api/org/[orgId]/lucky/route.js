@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { orgSessionDoc, sessionId as buildSessionId } from '@/lib/db/firestore.js';
+import { rtdbSessionRef } from '@/lib/db/rtdb.js';
 import { getSession } from '@/lib/auth/session.js';
 import { computeOnCount, isValidSlotKey } from '@/lib/lottery/sessionSlots.js';
 import { getClientIp } from '@/lib/auth/permissions.js';
@@ -63,6 +64,12 @@ export async function POST(request, { params }) {
     { luckyNumber: lNo, luckyNumberSetAt: now },
     { merge: true }
   );
+
+  try {
+    await rtdbSessionRef(orgId, sid).child('luckyNumber').set(lNo);
+  } catch (err) {
+    console.error('Error updating luckyNumber in RTDB:', err);
+  }
 
   await logActivity({
     orgId,

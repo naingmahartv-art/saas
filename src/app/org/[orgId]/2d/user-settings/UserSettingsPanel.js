@@ -10,17 +10,216 @@ import {
   findConflicts,
 } from '@/lib/ledger/shortcuts.js';
 import { useIsMac } from '@/lib/ledger/useLedgerShortcuts.js';
+import { updateGlobalFontSize } from '@/lib/ledger/useLedgerFontSize.js';
+
+import useTheme from '@/lib/theme/useTheme.js';
 
 export default function UserSettingsPanel() {
   const { t } = useI18n();
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-gray-900">{t('account.title')}</h1>
+      <h1 className="text-xl font-semibold text-gray-900 dark:text-slate-100">{t('account.title')}</h1>
+      <ThemeSection />
+      <FontSizeSection />
       <ShortcutsSection />
       <ReplacementsSection />
       <PasswordSection />
     </div>
+  );
+}
+
+function ThemeSection() {
+  const { t } = useI18n();
+  const { isDark, toggleTheme } = useTheme();
+
+  return (
+    <section className="card">
+      <div>
+        <h2 className="font-semibold text-gray-900 dark:text-slate-100">Theme Preference (Dark / Light Mode)</h2>
+        <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
+          Choose between Dark Mode for low light environments or Light Mode for daytime view.
+        </p>
+      </div>
+
+      <div className="mt-4 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className={`flex items-center gap-2.5 px-4 py-2 rounded-xl text-sm font-semibold border transition shadow-xs cursor-pointer ${
+            isDark
+              ? 'bg-slate-800 border-slate-700 text-amber-300 hover:bg-slate-700'
+              : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
+          }`}
+        >
+          <span className="text-lg">{isDark ? '🌙' : '☀️'}</span>
+          <span>{isDark ? 'Dark Mode Active' : 'Light Mode Active'}</span>
+        </button>
+        <span className="text-xs text-gray-400 dark:text-slate-500">
+          Click button to switch theme
+        </span>
+      </div>
+    </section>
+  );
+}
+
+function FontSizeSection() {
+  const { t } = useI18n();
+  const [fontSize, setFontSize] = useState('100');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('user_font_size');
+      if (stored) {
+        setFontSize(stored);
+      }
+    } catch {}
+
+    fetch('/api/user/shortcuts')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (data?.fontSize) {
+          setFontSize(String(data.fontSize));
+          updateGlobalFontSize(String(data.fontSize));
+        }
+      })
+      .finally(() => setLoaded(true));
+  }, []);
+
+  function handleScaleChange(newSize) {
+    const sizeStr = String(newSize);
+    setFontSize(sizeStr);
+    updateGlobalFontSize(sizeStr);
+  }
+
+  async function save() {
+    setSaving(true);
+    setMessage('');
+    try {
+      const res = await fetch('/api/user/shortcuts', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fontSize }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage(t('account.fontSizeSaveFailed') || 'Failed to save font size');
+        return;
+      }
+      if (data.fontSize) {
+        handleScaleChange(data.fontSize);
+      }
+      setMessage(t('account.fontSizeSaved') || 'Font size saved successfully');
+      setTimeout(() => setMessage(''), 3000);
+    } catch {
+      setMessage(t('account.fontSizeSaveFailed') || 'Failed to save font size');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const presets = [
+    { label: t('account.fontSizeSmall') || 'Small (87.5%)', value: '87.5' },
+    { label: t('account.fontSizeNormal') || 'Normal (100%)', value: '100' },
+    { label: t('account.fontSizeLarge') || 'Large (112.5%)', value: '112.5' },
+    { label: t('account.fontSizeExtraLarge') || 'Extra Large (125%)', value: '125' },
+  ];
+
+  return (
+    <section className="card">
+      <div>
+        <h2 className="font-semibold text-gray-900">{t('account.fontSizeTitle') || 'Font Size Settings'}</h2>
+        <p className="text-sm text-gray-500 mt-1">
+          {t('account.fontSizeHint') || 'Adjust the application font size for optimal readability across all screens.'}
+        </p>
+      </div>
+
+      {/* Preset buttons */}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {presets.map(p => {
+          const active = fontSize === p.value;
+          return (
+            <button
+              key={p.value}
+              type="button"
+              onClick={() => handleScaleChange(p.value)}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition border cursor-pointer ${
+                active
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Range slider for custom fine-tuning */}
+      <div className="mt-5 max-w-md bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+        <div className="flex items-center justify-between text-xs font-medium text-gray-700">
+          <span>Fine-tune Font Size:</span>
+          <span className="font-mono bg-white px-2 py-0.5 border border-gray-200 rounded text-indigo-700 font-bold">
+            {fontSize}%
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-400 font-mono">80%</span>
+          <input
+            type="range"
+            min="80"
+            max="140"
+            step="2.5"
+            value={fontSize}
+            onChange={e => handleScaleChange(e.target.value)}
+            className="flex-1 accent-indigo-600 cursor-pointer h-2 bg-gray-200 rounded-lg"
+          />
+          <span className="text-xs text-gray-400 font-mono">140%</span>
+        </div>
+
+        {/* Live Preview Box */}
+        <div className="border border-gray-200 rounded-lg p-3 bg-white space-y-2">
+          <div className="flex items-center justify-between text-xs text-gray-500 border-b border-gray-100 pb-1 font-medium">
+            <span>Live Screen Preview:</span>
+            <span className="text-indigo-600 font-semibold">2D Ledger View</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="bg-purple-600 text-white text-xs px-2 py-0.5 rounded font-mono font-bold">01</span>
+            <span className="text-xs font-mono font-semibold text-gray-800">5,000</span>
+            <span className="text-gray-300">•</span>
+            <span className="bg-emerald-600 text-white text-xs px-2 py-0.5 rounded font-mono font-bold">34</span>
+            <span className="text-xs font-mono font-semibold text-gray-800">10,000</span>
+            <span className="text-gray-300">•</span>
+            <span className="bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded font-mono font-bold">Buy: 2,000</span>
+          </div>
+          <p className="text-xs text-gray-600 leading-relaxed">
+            The font size adjusts dynamically across the entire application including ledger grids, agent lists, and reports.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 mt-4">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving || !loaded}
+          className="btn-primary text-sm py-1.5 disabled:opacity-50"
+        >
+          {saving ? (t('common.saving') || 'Saving...') : (t('common.save') || 'Save')}
+        </button>
+        <button
+          type="button"
+          onClick={() => handleScaleChange('100')}
+          className="text-sm text-gray-500 hover:text-gray-700"
+        >
+          {t('account.reset') || 'Reset'} (100%)
+        </button>
+        {message && <span className="text-sm text-gray-600">{message}</span>}
+      </div>
+    </section>
   );
 }
 

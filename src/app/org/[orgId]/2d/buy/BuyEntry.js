@@ -7,6 +7,7 @@ import { useI18n } from '@/lib/i18n/index.js';
 import { useIsMac } from '@/lib/ledger/useLedgerShortcuts.js';
 import { formatCombo as rawFormatCombo, matchesCombo } from '@/lib/ledger/shortcuts.js';
 import SessionPicker from '../ledger/SessionPicker.js';
+import useLedgerFontSize from '@/lib/ledger/useLedgerFontSize.js';
 
 function buildNumberTable(numbersList) {
   const perCol = 34;
@@ -36,13 +37,13 @@ export default function BuyEntry({
   orgId,
   activeSession,
   agents,
-  rate,
-  limit,
+  rate = 80,
+  limit = 0,
   notBuyNumbers,
   hotNumbers,
   luckyNumber,
-  totals,
-  buyTotals,
+  totals = {},
+  buyTotals = {},
   canWrite = true,
   shortcuts,
   replaceSlash = 'P',
@@ -51,6 +52,7 @@ export default function BuyEntry({
   onOpenSessionPicker,
 }) {
   const { t } = useI18n();
+  const ledgerFontSize = useLedgerFontSize();
   const router = useRouter();
   const isMac = useIsMac();
   const formatCombo = (combo) => rawFormatCombo(combo, isMac);
@@ -63,6 +65,9 @@ export default function BuyEntry({
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [search, setSearch] = useState('');
+  const [selectedTokenIds, setSelectedTokenIds] = useState(new Set());
+  const [lastSelectedIndex, setLastSelectedIndex] = useState(null);
+  const [vouchersCount, setVouchersCount] = useState(0);
 
   const [exceedSortKey, setExceedSortKey] = useState('excess');
   const [exceedSortDir, setExceedSortDir] = useState('desc');
@@ -251,6 +256,71 @@ export default function BuyEntry({
     }
   }
 
+  function removeToken(id) {
+    setPendingTokens(prev => prev.filter(p => p.id !== id));
+    setSelectedTokenIds(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
+
+  function removeSelectedTokens() {
+    if (selectedTokenIds.size === 0) return;
+    setPendingTokens(prev => prev.filter(p => !selectedTokenIds.has(p.id)));
+    setSelectedTokenIds(new Set());
+    setLastSelectedIndex(null);
+  }
+
+  useEffect(() => {
+    if (!activeSession) return;
+    fetch(`/api/org/${orgId}/ledger/totals?onCount=${activeSession.onCount}&ampm=${activeSession.ampm}`)
+      .then(res => res.json())
+      .then(data => {
+        if (typeof data.vouchersCount === 'number') {
+          setVouchersCount(data.vouchersCount);
+        }
+      })
+      .catch(() => {});
+  }, [orgId, activeSession]);
+
+  function handleCellSelect(p, index, e) {
+    if (e.ctrlKey || e.metaKey) {
+      setSelectedTokenIds(prev => {
+        const next = new Set(prev);
+        if (next.has(p.id)) {
+          next.delete(p.id);
+        } else {
+          next.add(p.id);
+        }
+        return next;
+      });
+      setLastSelectedIndex(index);
+    } else if (e.shiftKey && lastSelectedIndex !== null) {
+      const start = Math.min(lastSelectedIndex, index);
+      const end = Math.max(lastSelectedIndex, index);
+      const rangeIds = visibleTokens.slice(start, end + 1).map(item => item.id);
+      setSelectedTokenIds(prev => new Set([...prev, ...rangeIds]));
+    } else {
+      setSelectedTokenIds(new Set([p.id]));
+      setLastSelectedIndex(index);
+    }
+  }
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTokenIds.size > 0) {
+        const activeTag = document.activeElement ? document.activeElement.tagName : '';
+        if (activeTag !== 'INPUT' && activeTag !== 'TEXTAREA' && activeTag !== 'SELECT') {
+          e.preventDefault();
+          removeSelectedTokens();
+        }
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedTokenIds]);
+
   function addInputToken() {
     setError('');
     setWarnings([]);
@@ -372,6 +442,34 @@ export default function BuyEntry({
     }
   }
 
+  async function handleCopyExceedLimit() {
+    if (exceedList.length === 0) {
+      setError('Nothing to export');
+      return;
+    }
+
+    const headers = 'Number,Exceed';
+    const lines = exceedList.map(e => `${e.num},${e.excess}`);
+    const text = [headers, ...lines].join('\n');
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setSuccessMsg('Copied to clipboard!');
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch {
+      setError('Could not copy');
+    }
+  }
+
   const visibleTokens = useMemo(() => {
     let list = pendingTokens.map(p => ({
       ...p,
@@ -394,25 +492,10 @@ export default function BuyEntry({
   return (
     <div className="w-full h-[calc(100vh-1.5rem)] flex flex-col overflow-hidden">
       {/* Top Header Navigation Bar */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-2 mb-3 flex flex-wrap items-center justify-between gap-2 shrink-0">
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm px-4 py-2 mb-3 flex flex-wrap items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-semibold">
-            <Link
-              href={`/org/${orgId}/2d/ledger`}
-              className="px-3 py-1.5 rounded-md transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900"
-            >
-              <span>📝</span> Ledger (2D)
-            </Link>
-            <Link
-              href={`/org/${orgId}/2d/buy`}
-              className="px-3 py-1.5 rounded-md transition flex items-center gap-1.5 bg-emerald-600 text-white shadow-xs font-bold"
-            >
-              <span>🛒</span> Buy Page (အဝယ်စာရင်း)
-            </Link>
-          </div>
-
           {activeSession ? (
-            <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-gray-900">
+            <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-gray-900 dark:text-slate-100">
               <span className="badge-active">{t(`session.${SLOT_LABEL_KEY[activeSession.ampm] || 'slot0900'}`)}</span>
               <span className="text-gray-400">•</span>
               <span>{activeSession.onDate}</span>
@@ -436,11 +519,15 @@ export default function BuyEntry({
         </div>
       </div>
 
-      {/* Main 3-Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 min-h-0">
+      <div
+        className="flex-1 min-h-0 flex flex-col overflow-hidden"
+        style={{ zoom: parseFloat(ledgerFontSize || '100') / 100 }}
+      >
+        {/* Main 3-Column Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 min-h-0">
         
         {/* LEFT COLUMN: Input & Voucher Entries */}
-        <div className="lg:col-span-5 flex flex-col h-full min-h-0">
+        <div className="lg:col-span-4 flex flex-col h-full min-h-0">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-full min-h-0">
             {/* Green Title Header matching legacy design */}
             <div className="bg-gradient-to-r from-emerald-800 via-emerald-700 to-teal-800 text-white px-3 py-2 flex items-center justify-between shrink-0 shadow-sm">
@@ -448,9 +535,14 @@ export default function BuyEntry({
                 <span>🛒</span>
                 <span>အဝယ်စာရင်း ထည့်သွင်းခြင်း (Buy Voucher Entry)</span>
               </h1>
-              <span className="text-[11px] bg-emerald-900/80 px-2 py-0.5 rounded font-mono text-emerald-200 border border-emerald-600/50">
-                {pendingTokens.length} Vouchers
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] bg-emerald-900/80 px-2.5 py-0.5 rounded font-mono text-emerald-200 border border-emerald-600/50 font-bold">
+                  Sr. {vouchersCount}
+                </span>
+                <span className="text-[11px] bg-teal-900/80 px-2 py-0.5 rounded font-mono text-teal-200 border border-teal-600/50">
+                  {pendingTokens.length} numbers
+                </span>
+              </div>
             </div>
 
             <div className="p-3 flex flex-col flex-1 min-h-0 space-y-2.5">
@@ -533,16 +625,18 @@ export default function BuyEntry({
               {/* Pending Items Grid Table */}
               <div className="flex-1 min-h-0 border border-gray-200 rounded-lg overflow-hidden flex flex-col bg-slate-50">
                 <div className="flex-1 overflow-y-auto">
-                  <table className="w-full text-xs border-collapse">
+                  <table className="w-full text-base border-collapse">
                     <tbody>
                       {entryTableRows.map((row, rIdx) => (
                         <tr key={rIdx} className="even:bg-slate-100/50 hover:bg-emerald-50/50 transition-colors">
                           {Array.from({ length: 5 }, (_, cIdx) => {
+                            const globalIdx = rIdx * 5 + cIdx;
                             const p = row[cIdx];
-                            if (!p) return <td key={cIdx} className="border border-slate-200/60 p-1.5" />;
+                            if (!p) return <td key={cIdx} className="border border-slate-200/60 dark:border-slate-800 p-1.5" />;
 
                             const isDragging = draggedTokenId === p.id;
                             const isDragOver = dragOverTokenId === p.id;
+                            const isSelected = selectedTokenIds.has(p.id);
 
                             return (
                               <td
@@ -553,15 +647,38 @@ export default function BuyEntry({
                                 onDragLeave={e => handleCellDragLeave(e, p.id)}
                                 onDrop={e => handleCellDrop(e, p.id)}
                                 onDragEnd={handleCellDragEnd}
-                                className={`border border-slate-200 p-1.5 text-center font-mono font-bold transition-all ${
+                                className={`relative border px-1.5 py-1 text-left font-mono font-bold transition-all ${
+                                  isSelected
+                                    ? 'bg-emerald-600 text-white dark:bg-emerald-600 dark:text-white ring-2 ring-emerald-400 rounded z-10'
+                                    : 'border-slate-200 dark:border-slate-800 hover:bg-emerald-100/60 dark:hover:bg-slate-800/60 text-slate-900 dark:text-slate-100'
+                                } ${
                                   isDragging ? 'opacity-40 bg-emerald-100 scale-95 border-dashed border-emerald-500' : ''
                                 } ${
-                                  isDragOver ? 'bg-emerald-200 ring-2 ring-emerald-500 scale-105 z-10 shadow' : 'hover:bg-emerald-100/60'
+                                  isDragOver ? 'bg-emerald-200 ring-2 ring-emerald-500 scale-105 z-10 shadow' : ''
                                 }`}
                               >
-                                <span className="truncate font-bold text-slate-900 text-xs select-none">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCellSelect(p, globalIdx, e);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Delete' || e.key === 'Backspace') {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                      removeSelectedTokens();
+                                    }
+                                  }}
+                                  className={`w-full truncate font-mono font-bold text-base text-left transition-colors select-none focus:outline-none cursor-pointer ${
+                                    isSelected
+                                      ? 'text-white font-extrabold'
+                                      : 'text-slate-900 dark:text-slate-100 hover:text-emerald-700 dark:hover:text-emerald-300'
+                                  }`}
+                                  title="Click to select, Ctrl+Click / Shift+Click for multi-select, press Delete key to remove"
+                                >
                                   {p.tokenText}
-                                </span>
+                                </button>
                               </td>
                             );
                           })}
@@ -590,23 +707,35 @@ export default function BuyEntry({
         </div>
 
         {/* MIDDLE COLUMN: Bought & Exceed List Table (Exact match to legacy screenshot layout & colors) */}
-        <div className="lg:col-span-4 flex flex-col h-full min-h-0">
+        <div className="lg:col-span-5 flex flex-col h-full min-h-0">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-full min-h-0">
             {/* Green Header Banner matching legacy image */}
             <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 text-white px-3 py-2 flex items-center justify-between shrink-0 shadow-sm">
               <h2 className="text-sm font-bold tracking-wide flex items-center gap-2">
                 <span>ဝယ်ပြီးသော ကွက်များ (Bought & Exceed List)</span>
               </h2>
-              <select
-                value={exceedSortKey}
-                onChange={e => setExceedSortKey(e.target.value)}
-                className="text-[11px] font-semibold bg-emerald-950 text-emerald-100 border border-emerald-700/80 rounded px-2 py-0.5 focus:outline-none"
-              >
-                <option value="excess">Sort By Exceed Format</option>
-                <option value="num">Sort By Number</option>
-                <option value="buy">Sort By Buy Amount</option>
-                <option value="total">Sort By Net Total</option>
-              </select>
+              <div className="flex items-center gap-2">
+                {exceedList.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleCopyExceedLimit}
+                    className="text-xs px-2 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white font-medium rounded transition flex items-center gap-1 border border-emerald-500 cursor-pointer"
+                    title="Copy Exceed list as CSV (Number,Exceed)"
+                  >
+                    <span>📋</span> Copy
+                  </button>
+                )}
+                <select
+                  value={exceedSortKey}
+                  onChange={e => setExceedSortKey(e.target.value)}
+                  className="text-[11px] font-semibold bg-emerald-950 text-emerald-100 border border-emerald-700/80 rounded px-2 py-0.5 focus:outline-none"
+                >
+                  <option value="excess">Sort By Exceed Format</option>
+                  <option value="num">Sort By Number</option>
+                  <option value="buy">Sort By Buy Amount</option>
+                  <option value="total">Sort By Net Total</option>
+                </select>
+              </div>
             </div>
 
             <div className="p-2.5 flex-1 flex flex-col min-h-0 justify-between">
@@ -614,9 +743,9 @@ export default function BuyEntry({
                 <p className="text-xs text-gray-400 text-center py-10">No over-limit or buy entries yet</p>
               ) : (
                 <div className="flex-1 min-h-0 overflow-y-auto mb-2 border border-gray-200 rounded-lg">
-                  <table className="w-full text-xs border-collapse">
+                  <table className="w-full text-sm border-collapse">
                     <thead>
-                      <tr className="bg-slate-100 text-[10px] font-bold text-slate-700 uppercase tracking-wide border-b border-gray-200">
+                      <tr className="bg-slate-100 text-xs font-bold text-slate-700 uppercase tracking-wide border-b border-gray-200">
                         <th className="px-1.5 py-1.5 border-r border-gray-200 text-center w-12 bg-emerald-700 text-white">
                           Num
                         </th>
@@ -658,7 +787,7 @@ export default function BuyEntry({
               )}
 
               {/* Summary totals at bottom of Middle Panel */}
-              <div className="border-t border-gray-200 pt-2 space-y-1 text-xs font-mono">
+              <div className="border-t border-gray-200 pt-2 space-y-1 text-base font-mono">
                 <div className="flex justify-between px-1 font-semibold text-red-600">
                   <span>Exceed Total:</span>
                   <span>{totalExcess.toLocaleString()}</span>
@@ -700,7 +829,7 @@ export default function BuyEntry({
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto border border-gray-200 rounded-lg">
-              <table className="w-full text-xs font-mono">
+              <table className="w-full text-base font-mono">
                 <tbody>
                   {numberTable.map((row, rowIdx) => (
                     <tr key={rowIdx} className="border-b border-gray-150">
@@ -815,6 +944,7 @@ export default function BuyEntry({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

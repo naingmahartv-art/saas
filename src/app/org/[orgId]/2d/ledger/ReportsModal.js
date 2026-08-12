@@ -93,9 +93,9 @@ const PDF_EN = {
   luckyNumber: 'Lucky Number',
 };
 
-export default function ReportsModal({ orgId, activeSession, agents, onClose }) {
+export default function ReportsModal({ orgId, activeSession, agents, onClose, initialTab = 'allAgent' }) {
   const { t } = useI18n();
-  const [tab, setTab] = useState('allAgent');
+  const [tab, setTab] = useState(initialTab);
   const [statusMsg, setStatusMsg] = useState('');
 
   const sessionLabel = activeSession
@@ -265,9 +265,9 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose }) 
       const comAmt = saleAmount * (comRate / 100);
 
       const lAmount = luckyNo
-        ? (s.details || [])
-            .filter(d => String(d.num1) === String(luckyNo))
-            .reduce((sum, d) => sum + (d.value || 0), 0)
+        ? getTokenItemsForSlip(s, luckyNo)
+            .filter(item => item.isWinner)
+            .reduce((sum, item) => sum + item.amount, 0)
         : 0;
 
       const rate = ag?.rate || activeSession?.rate || 80;
@@ -541,8 +541,6 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose }) 
   }
 
   const TABS = [
-    { key: 'agent', label: t('reports.tabAgent') },
-    { key: 'summary', label: t('reports.tabSummary') },
     { key: 'payout', label: t('reports.tabPayout') },
     { key: 'allAgent', label: t('reports.tabAllAgent') },
   ];
@@ -589,96 +587,211 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose }) 
 
         <div className="overflow-y-auto flex-1 p-5">
           {tab === 'agent' && (
-            <div>
-              <div className="flex flex-wrap items-center gap-2 mb-4">
-                <select
-                  value={selectedAgentId}
-                  onChange={e => setSelectedAgentId(e.target.value)}
-                  className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
-                >
-                  <option value="">{t('ledger.selectAgentPlaceholder')}</option>
-                  {agents.map(a => (
-                    <option key={a.id} value={a.id}>{a.agentName}</option>
-                  ))}
-                </select>
-                {selectedAgent && agentSlips.length > 0 && (
-                  <div className="flex items-center gap-2 ml-auto">
-                    <button type="button" onClick={exportAgentCsv} className="text-xs text-gray-500 hover:text-gray-700 font-medium px-2 py-1 rounded hover:bg-gray-100 transition">{t('ledger.exportCsv')}</button>
-                    <button type="button" onClick={exportAgentPdf} className="text-xs text-gray-500 hover:text-gray-700 font-medium px-2 py-1 rounded hover:bg-gray-100 transition">{t('reports.exportPdf')}</button>
-                    <button type="button" onClick={shareAgentPdf} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-1 rounded hover:bg-indigo-50 transition">{t('ledger.shareMessage')}</button>
+            <div className="space-y-5">
+              {/* Agent Selection Header & Quick Agent Pills */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-sm space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 flex-1 min-w-[260px]">
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap">
+                      👤 Select Agent:
+                    </label>
+                    <select
+                      value={selectedAgentId}
+                      onChange={e => setSelectedAgentId(e.target.value)}
+                      className="flex-1 max-w-md px-3.5 py-2 text-sm font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-800 shadow-sm transition"
+                    >
+                      <option value="">-- {t('ledger.selectAgentPlaceholder')} --</option>
+                      {agents.map(a => (
+                        <option key={a.id} value={a.id}>{a.agentName}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedAgent && agentSlips.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={exportAgentCsv}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 shadow-sm transition"
+                      >
+                        📥 {t('ledger.exportCsv')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={exportAgentPdf}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 shadow-sm transition"
+                      >
+                        📄 {t('reports.exportPdf')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={shareAgentPdf}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow transition"
+                      >
+                        💬 {t('ledger.shareMessage')}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Quick Agent Selection Pills */}
+                {agents.length > 0 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pt-1 pb-0.5">
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0 mr-1">Quick:</span>
+                    {agents.slice(0, 10).map(a => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => setSelectedAgentId(a.id)}
+                        className={`px-2.5 py-1 text-xs font-medium rounded-full transition whitespace-nowrap ${
+                          selectedAgentId === a.id
+                            ? 'bg-indigo-600 text-white font-semibold shadow-sm'
+                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {a.agentName}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
 
               {!selectedAgent ? (
-                <p className="text-sm text-gray-400 text-center py-10">{t('reports.selectAgentPrompt')}</p>
+                <div className="text-center py-16 bg-slate-50 border border-dashed border-slate-300 rounded-xl">
+                  <span className="text-4xl">👤</span>
+                  <p className="mt-2 text-sm font-semibold text-slate-600">{t('reports.selectAgentPrompt')}</p>
+                </div>
               ) : agentLoading ? (
-                <p className="text-sm text-gray-400 text-center py-10">{t('common.loading')}</p>
+                <div className="text-center py-16">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent"></div>
+                  <p className="mt-2 text-xs font-medium text-slate-400">{t('common.loading')}</p>
+                </div>
               ) : sortedAgentSlips.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-10">{t('reports.noVouchers')}</p>
+                <div className="text-center py-16 bg-slate-50 border border-dashed border-slate-300 rounded-xl">
+                  <span className="text-4xl">📄</span>
+                  <p className="mt-2 text-sm font-semibold text-slate-600">{t('reports.noVouchers')}</p>
+                </div>
               ) : (
-                <div className="max-w-2xl mx-auto bg-white p-5 rounded-lg border border-gray-300 font-mono text-sm space-y-6">
-                  {/* Customer Header */}
-                  <div className="flex justify-between items-center pb-2 border-b border-gray-300">
-                    <div>
-                      <span className="font-normal text-gray-600">Customer Name : </span>
-                      <span className="font-bold text-gray-900 text-base">{selectedAgent.agentName}</span>
+                <div className="space-y-6">
+                  {/* Summary Dashboard Cards for Selected Agent */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-sm">
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Vouchers</p>
+                      <p className="text-xl font-bold text-slate-900 mt-1">{sortedAgentSlips.length}</p>
                     </div>
-                    <div className="text-gray-600 font-normal">{dateLabel}</div>
+                    <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-3.5 shadow-sm">
+                      <p className="text-xs font-semibold text-indigo-600 uppercase tracking-wider">Total Sales</p>
+                      <p className="text-xl font-bold text-indigo-950 mt-1">{agentGrandTotal.toLocaleString()} <span className="text-xs text-indigo-500 font-normal">MMK</span></p>
+                    </div>
+                    <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-3.5 shadow-sm">
+                      <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Commission ({selectedAgent?.commission ?? 0}%)</p>
+                      <p className="text-xl font-bold text-amber-950 mt-1">
+                        {(agentGrandTotal * ((selectedAgent?.commission ?? 0) / 100)).toLocaleString()} <span className="text-xs text-amber-600 font-normal">MMK</span>
+                      </p>
+                    </div>
+                    <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-3.5 shadow-sm">
+                      <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">Lucky Number</p>
+                      <p className="text-xl font-bold text-emerald-950 mt-1">
+                        {luckyNo ? (
+                          <span className="inline-flex items-center gap-1 bg-emerald-600 text-white px-2 py-0.5 rounded text-base font-mono">
+                            🎯 {luckyNo}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400 font-normal italic">Not Set</span>
+                        )}
+                      </p>
+                    </div>
                   </div>
 
-                  {/* Slips List */}
-                  <div className="space-y-6">
-                    {sortedAgentSlips.map(slip => {
-                      const tokenItems = getTokenItemsForSlip(slip, luckyNo);
-                      return (
-                        <div key={slip.id} className="space-y-1">
-                          {/* Accept SrNo Header */}
-                          <div className="flex items-center justify-between text-xs text-gray-700 font-semibold py-1">
-                            <div>
-                              <span>Accept SrNo# : </span>
-                              <span className="text-sm font-bold text-gray-900">{slip.srNo}</span>
-                            </div>
-                            <div className="text-gray-500">
-                              {new Date(slip.createdAt).toLocaleDateString()} / {new Date(slip.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                            </div>
-                          </div>
+                  {/* Printable Thermal Receipt Container */}
+                  <div className="max-w-2xl mx-auto bg-white p-6 rounded-xl border border-slate-300 shadow-md font-mono text-sm space-y-6">
+                    {/* Customer Header Banner */}
+                    <div className="flex flex-wrap justify-between items-center pb-3 border-b-2 border-slate-900 gap-2">
+                      <div>
+                        <span className="text-xs text-slate-500 font-sans font-semibold uppercase tracking-wider block">Customer / Agent:</span>
+                        <span className="font-extrabold text-slate-900 text-lg">{selectedAgent.agentName}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xs text-slate-500 font-sans font-semibold uppercase tracking-wider block">Date:</span>
+                        <span className="font-bold text-slate-800">{dateLabel}</span>
+                      </div>
+                    </div>
 
-                          {/* Token Table */}
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="border-b border-gray-400 text-xs text-gray-700">
-                                <th className="text-left py-1 font-bold underline">Num#</th>
-                                <th className="text-right py-1 font-bold underline">Amount</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                              {tokenItems.map((item, idx) => (
-                                <tr key={idx}>
-                                  <td className={`py-1 font-bold ${item.isWinner ? 'text-red-600 font-extrabold' : 'text-gray-900'}`}>
-                                    {item.tokText}
-                                  </td>
-                                  <td className="py-1 text-right text-gray-900 font-bold">
-                                    {item.amount.toLocaleString()}
-                                  </td>
+                    {/* Vouchers List */}
+                    <div className="space-y-6">
+                      {sortedAgentSlips.map(slip => {
+                        const tokenItems = getTokenItemsForSlip(slip, luckyNo);
+                        const hasWinner = tokenItems.some(i => i.isWinner);
+                        return (
+                          <div
+                            key={slip.id}
+                            className={`rounded-lg p-3 border transition ${
+                              hasWinner ? 'bg-amber-50/30 border-amber-300 shadow-sm' : 'bg-slate-50/50 border-slate-200'
+                            }`}
+                          >
+                            {/* Accept SrNo Header */}
+                            <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-200 mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="bg-slate-800 text-white font-bold px-2 py-0.5 rounded text-xs">
+                                  SrNo# {slip.srNo}
+                                </span>
+                                {hasWinner && (
+                                  <span className="bg-red-600 text-white font-bold px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider animate-pulse">
+                                    🏆 WINNER
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-slate-500 font-sans text-[11px]">
+                                {new Date(slip.createdAt).toLocaleDateString()} · {new Date(slip.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </div>
+                            </div>
+
+                            {/* Token Table */}
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="border-b border-slate-300 text-xs text-slate-600 font-bold uppercase tracking-wider">
+                                  <th className="text-left py-1">Num#</th>
+                                  <th className="text-right py-1">Amount</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {tokenItems.map((item, idx) => (
+                                  <tr key={idx} className={item.isWinner ? 'bg-amber-100/70 font-black text-red-700' : ''}>
+                                    <td className="py-1.5 font-bold flex items-center gap-1.5">
+                                      {item.tokText}
+                                      {item.isWinner && <span className="text-xs">🏆</span>}
+                                    </td>
+                                    <td className="py-1.5 text-right font-bold">
+                                      {item.amount.toLocaleString()}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
 
-                          {/* Subtotal */}
-                          <div className="text-right font-extrabold text-sm pt-1 border-t border-gray-300 text-gray-900">
-                            {slip.amount.toLocaleString()}
+                            {/* Subtotal */}
+                            <div className="flex justify-between items-center text-xs font-extrabold pt-2 mt-1 border-t border-slate-300 text-slate-900">
+                              <span className="font-sans text-slate-500">Subtotal:</span>
+                              <span className="text-sm font-bold">{slip.amount.toLocaleString()} MMK</span>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
 
-                  {/* Grand Total Box */}
-                  <div className="flex justify-between items-center p-3 border-2 border-gray-900 font-extrabold text-base bg-gray-50 mt-4">
-                    <span>Grand Total Amount</span>
-                    <span className="text-lg">{agentGrandTotal.toLocaleString()}</span>
+                    {/* Grand Total Box */}
+                    <div className="border-2 border-slate-900 rounded-lg p-4 bg-slate-900 text-white space-y-2">
+                      <div className="flex justify-between items-center text-base font-extrabold">
+                        <span>GRAND TOTAL AMOUNT:</span>
+                        <span className="text-xl text-amber-400 font-mono">{agentGrandTotal.toLocaleString()} MMK</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs text-slate-300 pt-2 border-t border-slate-700 font-sans">
+                        <span>Commission ({selectedAgent?.commission ?? 0}%):</span>
+                        <span className="font-mono text-slate-200">
+                          - {(agentGrandTotal * ((selectedAgent?.commission ?? 0) / 100)).toLocaleString()} MMK
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}

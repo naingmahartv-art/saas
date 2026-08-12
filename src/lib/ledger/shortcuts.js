@@ -21,6 +21,8 @@ export const DEFAULT_SHORTCUTS = {
   sortGridNum: 'alt+4',
   sortGridAmount: 'alt+5',
   exportGrid: 'alt+y',
+  sale1: 'f7',
+  sale2: 'f10',
 };
 
 export const SHORTCUT_ACTIONS = Object.keys(DEFAULT_SHORTCUTS);

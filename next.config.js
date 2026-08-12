@@ -4,6 +4,7 @@ import path from 'path';
 const nextConfig = {
   output: 'standalone',
   outputFileTracingRoot: path.join(process.cwd()),
+  serverExternalPackages: ['@opentelemetry/api'],
 };
 
 export default nextConfig;

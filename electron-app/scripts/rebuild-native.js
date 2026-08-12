@@ -19,7 +19,7 @@ const buildPath = path.join(__dirname, '..', 'app-bundle');
 
 console.log(`Rebuilding native modules in ${buildPath} for electron@${electronVersion} (${platform}/${arch})`);
 
-rebuild({ buildPath, electronVersion, arch, platform, force: true, buildFromSource: true })
+rebuild({ buildPath, electronVersion, arch, platform, onlyModules: ['better-sqlite3'] })
   .then(() => {
     console.log('Native rebuild complete.');
   })

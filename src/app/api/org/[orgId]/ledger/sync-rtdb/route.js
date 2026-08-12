@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
-import { orgSessionVouchersCol, sessionId as buildSessionId } from '@/lib/db/firestore.js';
+import { orgSessionDoc, orgSessionVouchersCol, sessionId as buildSessionId } from '@/lib/db/firestore.js';
 import { rtdbSessionRef } from '@/lib/db/rtdb.js';
 import { getSession } from '@/lib/auth';
+import { getActiveSession } from '@/lib/auth/permissions.js';
 import { parseNumberExpression } from '@/lib/lottery/numberParser.js';
 
 function expandTokens(tokens) {
   const expanded = [];
   for (const tokenText of tokens || []) {
-    const { entries, error } = parseNumberExpression(tokenText);
+    const { entries, error } = parseNumberExpression(tokenText, { maxEntries: 10000 });
     if (!error && entries) {
       expanded.push(...entries);
     }
@@ -25,12 +26,21 @@ export async function POST(request, { params }) {
   }
 
   const { searchParams } = new URL(request.url);
-  const onCount = searchParams.get('onCount');
-  const ampm = searchParams.get('ampm');
-  const onDate = searchParams.get('onDate');
+  let onCount = searchParams.get('onCount');
+  let ampm = searchParams.get('ampm');
+  let onDate = searchParams.get('onDate');
 
   if (!onCount || !ampm || !onDate) {
-    return NextResponse.json({ error: 'onCount, ampm, and onDate are required' }, { status: 400 });
+    const active = await getActiveSession(orgId);
+    if (active) {
+      onCount = active.onCount;
+      ampm = active.ampm;
+      onDate = active.onDate || active.date || new Date().toISOString().slice(0, 10);
+    }
+  }
+
+  if (!onCount || !ampm || !onDate) {
+    return NextResponse.json({ error: 'No active session found' }, { status: 400 });
   }
 
   const sid = buildSessionId(onDate, ampm, onCount);
@@ -74,16 +84,27 @@ export async function POST(request, { params }) {
     if (Object.keys(agentTotals[agentId]).length === 0) delete agentTotals[agentId];
   }
 
-  const sessionRef = rtdbSessionRef(orgId, sid);
-  await sessionRef.child('totals').set(totals);
-  await sessionRef.child('agentTotals').set(agentTotals);
-  await sessionRef.child('voucherCount').set(maxSrNo);
+  const rtdbRef = rtdbSessionRef(orgId, sid);
+  await rtdbRef.child('totals').set(totals);
+  await rtdbRef.child('agentTotals').set(agentTotals);
+  await rtdbRef.child('voucherCount').set(maxSrNo);
+
+  const sessionRef = orgSessionDoc(orgId, sid);
+  const sessionSnap = await sessionRef.get();
+  const sData = sessionSnap.exists ? sessionSnap.data() || {} : {};
+  const luckyNo = sData.luckyNumber || sData.luckyNo || sData.winningNumber || sData.lucky || null;
+  if (luckyNo) {
+    await rtdbRef.child('luckyNumber').set(luckyNo);
+  }
+
+  await sessionRef.set({ totals, vouchersCount: snap.docs.length }, { merge: true });
 
   return NextResponse.json({
     success: true,
     sessionId: sid,
     totalNumbersCount: Object.keys(totals).length,
     vouchersCount: snap.docs.length,
+    luckyNumber: luckyNo,
     totals,
   });
 }

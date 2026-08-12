@@ -43,7 +43,7 @@ export async function getLegacyLedgerSlips(orgId, { onCount, ampm, onDate, agent
   );
 
   return agentName
-    ? withDetails.filter(s => s.agentName?.toLowerCase().includes(agentName.toLowerCase()))
+    ? withDetails.filter(s => s.agentName?.trim().toLowerCase() === agentName.trim().toLowerCase())
     : withDetails;
 }
 
