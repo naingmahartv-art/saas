@@ -297,22 +297,22 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
               const res = await fetch(`/api/org/${orgId}/ledger/sync-rtdb`, { method: 'POST' });
               const data = await res.json();
               if (data.success) {
-                alert('Successfully synced & recalculated old ledger data to RTDB!');
+                alert(`Successfully recalculated ledger by voucher!\nSynced ${data.vouchersCount || 0} vouchers and ${data.totalNumbersCount || 0} number totals to RTDB.`);
                 window.location.reload();
               } else {
-                alert(data.error || 'Failed to sync ledger');
+                alert(data.error || 'Failed to recalculate ledger');
               }
             } catch {
-              alert('Error syncing old ledger');
+              alert('Error recalculating ledger by voucher');
             }
           }}
-          title={collapsed ? 'Fix Old Ledger' : 'Recalculate and populate old/legacy Firestore vouchers into RTDB'}
+          title={collapsed ? 'Recalculate Ledger by Voucher' : 'Recalculate and populate all Firestore vouchers into RTDB totals'}
           className={`w-full flex items-center gap-2.5 text-sm py-1.5 font-medium border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition rounded-lg cursor-pointer ${
             collapsed ? 'justify-center px-0' : 'px-3'
           }`}
         >
           <span className="text-amber-600 dark:text-amber-400">🔄</span>
-          {!collapsed && <span>Fix Old Ledger</span>}
+          {!collapsed && <span>Recalculate Ledger by Voucher</span>}
         </button>
         <button
           type="button"

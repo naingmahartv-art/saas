@@ -1487,6 +1487,30 @@ export default function LedgerEntry({
             </button>
           )}
 
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const res = await fetch(`/api/org/${orgId}/ledger/sync-rtdb`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                  setSuccessMsg(`Recalculated! ${data.vouchersCount || 0} vouchers & ${data.totalNumbersCount || 0} numbers synced.`);
+                  setTimeout(() => setSuccessMsg(''), 4000);
+                  if (onSaved) onSaved();
+                } else {
+                  setError(data.error || 'Failed to recalculate ledger');
+                }
+              } catch {
+                setError('Error recalculating ledger');
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 transition"
+            title="Recalculate Ledger by Voucher"
+          >
+            <span>🔄</span>
+            <span>Recalculate</span>
+          </button>
+
           <div className="relative">
             <button
               type="button"

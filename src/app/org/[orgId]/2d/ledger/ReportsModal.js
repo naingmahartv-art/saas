@@ -154,7 +154,7 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
   const loadSummary = useCallback(async () => {
     setSummaryLoading(true);
     try {
-      const res = await fetch(`/api/org/${orgId}/ledger`);
+      const res = await fetch(`/api/org/${orgId}/ledger?sort=asc`);
       const data = await res.json();
       setSummarySlips(data.slips || []);
     } catch {
@@ -169,8 +169,11 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
   }, [tab, loadSummary]);
 
   const summaryByAgent = useMemo(() => {
+    const parseSr = s => parseInt(String(s?.srNo ?? '').replace(/[^0-9]/g, ''), 10) || 0;
     const map = new Map();
-    for (const s of summarySlips) {
+
+    const sortedSlips = [...summarySlips].sort((a, b) => parseSr(a) - parseSr(b));
+    for (const s of sortedSlips) {
       const list = map.get(s.agentName) || [];
       list.push(s);
       map.set(s.agentName, list);
@@ -178,7 +181,7 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
     return [...map.entries()]
       .map(([agentName, slips]) => ({
         agentName,
-        slips,
+        slips: [...slips].sort((a, b) => parseSr(a) - parseSr(b)),
         subtotal: slips.reduce((sum, s) => sum + (s.amount || 0), 0),
       }))
       .sort((a, b) => a.agentName.localeCompare(b.agentName));
@@ -362,7 +365,8 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
     if (summaryByAgent.length === 0) return;
     const rows = [[t('reports.agentCol'), t('reports.srNoCol'), t('reports.amountCol')]];
     for (const group of summaryByAgent) {
-      for (const s of group.slips) rows.push([group.agentName, s.srNo, s.amount]);
+      const sorted = [...group.slips].sort((a, b) => (Number(a.srNo) || 0) - (Number(b.srNo) || 0));
+      for (const s of sorted) rows.push([group.agentName, s.srNo, s.amount]);
       rows.push([group.agentName, t('reports.subtotalLabel'), group.subtotal]);
     }
     rows.push(['', t('reports.grandTotalLabel'), summaryGrandTotal]);
@@ -370,14 +374,17 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
   }
 
   function buildSummaryPdfBlob() {
-    const sections = summaryByAgent.map(group => ({
-      heading: group.agentName,
-      head: [[PDF_EN.srNo, PDF_EN.amount]],
-      rows: [
-        ...group.slips.map(s => [s.srNo, s.amount.toLocaleString()]),
-        [PDF_EN.subtotal, group.subtotal.toLocaleString()],
-      ],
-    }));
+    const sections = summaryByAgent.map(group => {
+      const sorted = [...group.slips].sort((a, b) => (Number(a.srNo) || 0) - (Number(b.srNo) || 0));
+      return {
+        heading: group.agentName,
+        head: [[PDF_EN.srNo, PDF_EN.amount]],
+        rows: [
+          ...sorted.map(s => [s.srNo, s.amount.toLocaleString()]),
+          [PDF_EN.subtotal, group.subtotal.toLocaleString()],
+        ],
+      };
+    });
     sections.push({ head: [[PDF_EN.grandTotal]], rows: [[summaryGrandTotal.toLocaleString()]] });
     return buildReportPdf({ title: PDF_EN.summaryReport, subtitle: sessionLabel, sections });
   }
@@ -827,7 +834,7 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
-                          {group.slips.map(s => (
+                          {[...group.slips].sort((a, b) => (parseInt(String(a?.srNo ?? '').replace(/[^0-9]/g, ''), 10) || 0) - (parseInt(String(b?.srNo ?? '').replace(/[^0-9]/g, ''), 10) || 0)).map(s => (
                             <tr key={s.id}>
                               <td className="px-3 py-1 font-mono">{s.srNo}</td>
                               <td className="px-3 py-1 text-right font-mono">{s.amount.toLocaleString()}</td>

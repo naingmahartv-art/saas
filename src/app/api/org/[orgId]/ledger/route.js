@@ -42,7 +42,8 @@ export async function GET(request, { params }) {
     sid = active.id;
   }
 
-  const snap = await orgSessionVouchersCol(orgId, sid).orderBy('srNo', 'desc').get();
+  const sortDir = searchParams.get('sort') === 'desc' ? 'desc' : 'asc';
+  const snap = await orgSessionVouchersCol(orgId, sid).orderBy('srNo', sortDir).get();
 
   let slips = snap.docs.map(d => d.data());
   if (agentName) {
