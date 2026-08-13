@@ -6,11 +6,6 @@ export default async function ReportsPage({ params }) {
   const { orgId } = await params;
   const session = await getSession();
 
-  const isElectron = process.env.NEXT_PUBLIC_APP_MODE === 'electron' || process.env.APP_MODE === 'electron';
-  if (isElectron) {
-    redirect(`/org/${orgId}/2d/ledger`);
-  }
-
   let agentsList = [];
   try {
     const agentsSnap = await orgAgentsCol(orgId).orderBy('agentName').get();

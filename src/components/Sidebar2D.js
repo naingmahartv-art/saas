@@ -165,10 +165,7 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
 
   const showAdminLink = canAccessAdmin && !isElectron;
 
-  const navSegments = NAV_SEGMENTS.filter(s => {
-    if (isElectron && s.key === 'reports') return false;
-    return true;
-  });
+  const navSegments = NAV_SEGMENTS;
 
   return (
     <aside className={`${collapsed ? 'w-14' : 'w-60'} shrink-0 h-screen sticky top-0 flex flex-col bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 transition-[width] duration-200 overflow-hidden`}>
