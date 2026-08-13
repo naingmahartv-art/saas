@@ -328,8 +328,8 @@ export default function BuyEntry({
     if (!raw) return;
 
     const { entries: parsed, error: parseError } = parseNumberExpression(raw, { maxEntries: MAX_ENTRIES });
-    if (parseError) {
-      setError(parseError);
+    if (parseError || !parsed || parsed.length === 0) {
+      setError(parseError || `'${raw}' is not allowed.`);
       return;
     }
 

@@ -412,6 +412,62 @@ function parseToken(token, expand) {
 }
 
 /**
+ * Validate syntax of an individual token (e.g. "32P100", "3R100", "AP300").
+ * Returns an error string if the token is invalid, or null if valid.
+ */
+function validateTokenSyntax(token) {
+  const t = token.toUpperCase().trim();
+  if (!t) return null;
+
+  // 1. Check AP / PA combined (e.g. AP300)
+  if (/AP|PA/i.test(t)) {
+    return `'${t}' is not allowed. Cannot combine 'A' (Apoo) and 'P' (Part). Use 'A300' for Apoo or '3P300' for Part.`;
+  }
+
+  // 2. Check 2 digits before P (e.g. 32P100)
+  const twoDigitPMatch = t.match(/^(\d{2,})P/i);
+  if (twoDigitPMatch) {
+    return `'${t}' is not allowed. 'P' (Part) requires a single-digit seed (e.g. 2P100 or 3P100), not multiple digits like '${twoDigitPMatch[1]}P'.`;
+  }
+
+  // 3. Check 1 digit before R (e.g. 3R100)
+  const singleDigitRMatch = t.match(/^(\d{1})R/i);
+  if (singleDigitRMatch) {
+    return `'${t}' is not allowed. 'R' (Reverse) requires a 2-digit number (e.g. 03R100), not 1 digit like '${singleDigitRMatch[1]}R'.`;
+  }
+
+  // 4. Check 2 digits before F (e.g. 12F100)
+  const twoDigitFMatch = t.match(/^(\d{2,})F/i);
+  if (twoDigitFMatch) {
+    return `'${t}' is not allowed. 'F' (Series) requires a single-digit seed (e.g. 1F100), not multiple digits like '${twoDigitFMatch[1]}F'.`;
+  }
+
+  // 5. Check B (Brade) weight
+  const bMatch = t.match(/^(\d*)B/i);
+  if (bMatch) {
+    const rawWeight = bMatch[1];
+    if (!rawWeight) {
+      return `'${t}' is not allowed. 'B' (Brade) requires a weight digit (e.g. 1B100 or 5B100).`;
+    }
+    const weightNum = parseInt(rawWeight, 10);
+    if (weightNum > 10) {
+      return `'${t}' is not allowed. 'B' (Brade) weight must be 0 to 10, not '${rawWeight}'.`;
+    }
+  }
+
+  // 6. Check unknown modifier letters
+  const ALLOWED_LETTERS = new Set(['A','R','W','N','B','P','F','X','T','S','Z','D','G','M']);
+  const letters = t.replace(/[^A-Z]/g, '');
+  for (const char of letters) {
+    if (!ALLOWED_LETTERS.has(char)) {
+      return `'${t}' contains invalid modifier letter '${char}'.`;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Parse a number expression string into an array of { num, amount } bets.
  *
  * @param {string} expression - e.g. "20300R200 45500 A100"
@@ -442,7 +498,14 @@ export function parseNumberExpression(expression, config = {}) {
     // Parity-flag groups (++/--/+-/-+/SS/MM/SM/MS) and +A/-A shortcodes are single tokens —
     // don't split them on '+'/'*' below (parseToken handles them directly).
     if (PARITY_FLAG_RE.test(group.toUpperCase()) || /^(\+|-)?A/i.test(group)) {
-      allEntries.push(...parseToken(group, expand));
+      const syntaxErr = validateTokenSyntax(group);
+      if (syntaxErr) return { entries: [], error: syntaxErr };
+
+      const expanded = parseToken(group, expand);
+      if (expanded.length === 0) {
+        return { entries: [], error: `'${group}' is not allowed. Invalid expression or missing bet amount.` };
+      }
+      allEntries.push(...expanded);
       continue;
     }
 
@@ -451,8 +514,16 @@ export function parseNumberExpression(expression, config = {}) {
     const tokens = group.split(/[+*]/);
 
     for (const token of tokens) {
-      if (!token.trim()) continue;
-      const expanded = parseToken(token.trim(), expand);
+      const trimmed = token.trim();
+      if (!trimmed) continue;
+
+      const syntaxErr = validateTokenSyntax(trimmed);
+      if (syntaxErr) return { entries: [], error: syntaxErr };
+
+      const expanded = parseToken(trimmed, expand);
+      if (expanded.length === 0) {
+        return { entries: [], error: `'${trimmed}' is not allowed. Invalid expression or missing bet amount.` };
+      }
       allEntries.push(...expanded);
     }
   }
