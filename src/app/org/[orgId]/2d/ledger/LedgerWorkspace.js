@@ -91,7 +91,8 @@ export default function LedgerWorkspace({
     setLuckyNumber(live.luckyNumber ?? null);
     setHotNumbers(live.hotNumbers || []);
     setNotBuyNumbers(live.notBuyNumbers || []);
-    if (typeof live.voucherCount === 'number') setVouchersCount(live.voucherCount);
+    const count = typeof live.vouchersCount === 'number' ? live.vouchersCount : live.voucherCount;
+    if (typeof count === 'number') setVouchersCount(count);
   }, [live]);
 
   // Bumps the totals grid the instant a voucher is queued (see

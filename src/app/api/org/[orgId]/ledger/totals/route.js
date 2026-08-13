@@ -22,13 +22,16 @@ export async function GET(request, { params }) {
   }
 
   const { searchParams } = new URL(request.url);
+  const sessionIdParam = searchParams.get('sessionId');
   const onCount = searchParams.get('onCount');
   const ampm = searchParams.get('ampm');
   const onDate = searchParams.get('onDate');
   const num = searchParams.get('num');
 
   let sid;
-  if (onCount && ampm && onDate) {
+  if (sessionIdParam) {
+    sid = sessionIdParam;
+  } else if (onCount && ampm && onDate) {
     sid = buildSessionId(onDate, ampm, onCount);
   } else {
     const active = await getActiveSession(orgId);
