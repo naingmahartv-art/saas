@@ -67,7 +67,7 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
   const [periodType, setPeriodType] = useState('weekly'); // 'weekly' | 'monthly' | 'custom'
   const [dates, setDates] = useState(() => getPredefinedDates('weekly'));
   const [selectedAgent, setSelectedAgent] = useState('');
-  const [activeTab, setActiveTab] = useState('matrix'); // 'matrix' | 'byAgent' | 'details'
+  const [activeTab, setActiveTab] = useState('summary'); // 'summary' | 'matrix' | 'byAgent' | 'details'
 
   const [loading, setLoading] = useState(false);
   const [reportSlips, setReportSlips] = useState([]);
@@ -183,7 +183,7 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
 
       const dayEntry = dateMap.get(date);
       const rawAmpm = String(r.ampm || '').toLowerCase();
-      // Map 12:00 vs 04:00 (09:00 removed per request)
+      // Map 12:00 vs 04:00 (09:00 removed)
       const slot = rawAmpm.includes('12') || rawAmpm.includes('am') ? 'm12' : 'm04';
 
       dayEntry[slot].amount += r.saleAmount;
@@ -248,6 +248,35 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
     return [...map.values()].sort((a, b) => a.agentName.localeCompare(b.agentName));
   }, [detailedRows]);
 
+  // --- Condensed Period Summary Table Data (Matching 2nd Screenshot) ---
+  const summaryTableData = useMemo(() => {
+    const rows = [];
+    let grandAmount = 0;
+    let grandLucky = 0;
+    let grandTotalNet = 0;
+
+    for (const g of byAgentGroups) {
+      const type = g.balanceTotal < 0 ? 'P' : 'S';
+      rows.push({
+        agentName: g.agentName,
+        amount: g.saleAmount,
+        lucky: g.lAmount,
+        totalNet: g.balanceTotal,
+        type,
+      });
+      grandAmount += g.saleAmount;
+      grandLucky += g.lAmount;
+      grandTotalNet += g.balanceTotal;
+    }
+
+    return {
+      rows,
+      grandAmount,
+      grandLucky,
+      grandTotalNet,
+    };
+  }, [byAgentGroups]);
+
   const totals = useMemo(() => {
     return detailedRows.reduce(
       (acc, r) => ({
@@ -266,7 +295,13 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
   // --- Exports ---
   function exportCsv(tabName) {
     let rows = [];
-    if (tabName === 'matrix') {
+    if (tabName === 'summary') {
+      rows.push(['Name', 'Amount', 'Lucky', 'Total', 'Type']);
+      for (const r of summaryTableData.rows) {
+        rows.push([r.agentName, fmt2(r.amount), r.lucky, fmt2(r.totalNet), r.type]);
+      }
+      rows.push(['Total', fmt2(summaryTableData.grandAmount), summaryTableData.grandLucky, fmt2(summaryTableData.grandTotalNet), '']);
+    } else if (tabName === 'matrix') {
       rows.push(['Date', 'Agent', '12:00 Amount', '12:00 Lucky', '12:00 Net', '04:00 Amount', '04:00 Lucky', '04:00 Net', 'Total Net', 'Type']);
       for (const ag of matrixData) {
         for (const d of ag.dates) {
@@ -308,7 +343,12 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
     let head = [];
     let bodyRows = [];
 
-    if (tabName === 'matrix') {
+    if (tabName === 'summary') {
+      title = 'Period Summary Report';
+      head = [['Name', 'Amount', 'Lucky', 'Total', 'Type']];
+      bodyRows = summaryTableData.rows.map((r) => [r.agentName, fmt2(r.amount), String(r.lucky), fmt2(r.totalNet), r.type]);
+      bodyRows.push(['Total', fmt2(summaryTableData.grandAmount), String(summaryTableData.grandLucky), fmt2(summaryTableData.grandTotalNet), '']);
+    } else if (tabName === 'matrix') {
       title = 'Period Matrix Report (12:00 & 04:00)';
       head = [['Date', 'Agent', '12:00 Amount', '12:00 Net', '04:00 Amount', '04:00 Net', 'Total Net', 'Type']];
       for (const ag of matrixData) {
@@ -480,6 +520,17 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
         <div className="flex border-b border-slate-200 bg-slate-50 px-4 pt-3 gap-2">
           <button
             type="button"
+            onClick={() => setActiveTab('summary')}
+            className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition ${
+              activeTab === 'summary'
+                ? 'border-indigo-600 text-indigo-600 bg-white rounded-t-xl shadow-sm'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            📈 Period Summary Table
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab('matrix')}
             className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition ${
               activeTab === 'matrix'
@@ -498,7 +549,7 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            👤 Agent Summary
+            👤 Agent Breakdown
           </button>
           <button
             type="button"
@@ -520,7 +571,70 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
             <p className="text-center text-sm text-slate-400 py-12">No vouchers found in selected date range.</p>
           ) : (
             <>
-              {/* TAB 1: MODERN DATE RANGE MATRIX REPORT (Matching Sample Screenshot) */}
+              {/* TAB 1: CONDENSED PERIOD SUMMARY TABLE (Matching 2nd Screenshot) */}
+              {activeTab === 'summary' && (
+                <div className="max-w-4xl mx-auto space-y-6 font-mono">
+                  <div className="bg-white border border-slate-300 rounded-xl overflow-hidden shadow-sm">
+                    <table className="w-full text-xs text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-900 font-extrabold text-xs uppercase border-b-2 border-slate-300 font-sans">
+                          <th className="px-4 py-3 border-r border-slate-300">Name</th>
+                          <th className="px-4 py-3 border-r border-slate-300 text-right">Amount</th>
+                          <th className="px-4 py-3 border-r border-slate-300 text-right">Lucky</th>
+                          <th className="px-4 py-3 border-r border-slate-300 text-right">Total</th>
+                          <th className="px-3 py-3 text-center font-sans">Tag</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 text-xs">
+                        {summaryTableData.rows.map((row) => (
+                          <tr key={row.agentName} className="hover:bg-slate-50 transition">
+                            <td className="px-4 py-2.5 font-sans font-bold text-slate-900 border-r border-slate-200">
+                              {row.agentName}
+                            </td>
+                            <td className={`px-4 py-2.5 text-right font-extrabold border-r border-slate-200 ${row.amount < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+                              {fmt2(row.amount)}
+                            </td>
+                            <td className="px-4 py-2.5 text-right border-r border-slate-200 text-slate-700">
+                              {row.lucky > 0 ? row.lucky : '0'}
+                            </td>
+                            <td className={`px-4 py-2.5 text-right font-black border-r border-slate-200 ${row.totalNet < 0 ? 'text-rose-600 font-sans' : 'text-slate-900 font-sans'}`}>
+                              {fmt2(row.totalNet)}
+                            </td>
+                            <td className="px-3 py-2.5 text-center font-sans">
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded text-[10px] uppercase font-bold ${
+                                  row.type === 'P' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
+                                }`}
+                              >
+                                {row.type}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-100 border-t-2 border-slate-900 font-extrabold text-sm font-sans text-slate-900">
+                          <td className="px-4 py-3 border-r border-slate-300">TOTALS</td>
+                          <td className="px-4 py-3 border-r border-slate-300 text-right font-mono text-slate-900">
+                            {fmt2(summaryTableData.grandAmount)}
+                          </td>
+                          <td className="px-4 py-3 border-r border-slate-300 text-right font-mono text-slate-800">
+                            {summaryTableData.grandLucky}
+                          </td>
+                          <td className="px-4 py-3 border-r border-slate-300 text-right font-mono">
+                            <span className={`underline decoration-double text-base font-black ${summaryTableData.grandTotalNet < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                              {fmt2(summaryTableData.grandTotalNet)}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3"></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: MODERN DATE RANGE MATRIX REPORT */}
               {activeTab === 'matrix' && (
                 <div className="space-y-8">
                   {matrixData.map((agentGroup) => (
@@ -543,7 +657,6 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
                       <div className="overflow-x-auto">
                         <table className="w-full text-xs text-center border-collapse border-b border-slate-200">
                           <thead>
-                            {/* Session Header Row */}
                             <tr className="bg-slate-200 text-slate-800 font-bold border-b border-slate-300">
                               <th className="px-3 py-2 border-r border-slate-300 text-left font-sans font-extrabold text-xs">
                                 Date
@@ -558,7 +671,6 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
                                 Total / Type
                               </th>
                             </tr>
-                            {/* Columns Header Row */}
                             <tr className="bg-slate-50 text-slate-600 text-[11px] font-semibold border-b border-slate-300 uppercase">
                               <th className="px-3 py-1.5 border-r border-slate-300 text-left font-sans">Date</th>
                               <th className="px-3 py-1.5 border-r border-slate-200 text-right bg-amber-50/50">Amount</th>
@@ -577,7 +689,6 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
                                 <td className="px-3 py-2 text-left font-sans font-medium text-slate-900 border-r border-slate-200">
                                   {row.date}
                                 </td>
-                                {/* 12:00 Session */}
                                 <td className="px-3 py-2 text-right border-r border-slate-200 text-slate-800">
                                   {row.m12.hasData ? fmt2(row.m12.amount) : ''}
                                 </td>
@@ -588,7 +699,6 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
                                   {row.m12.hasData ? fmt2(row.m12.net) : ''}
                                 </td>
 
-                                {/* 04:00 Session */}
                                 <td className="px-3 py-2 text-right border-r border-slate-200 text-slate-800">
                                   {row.m04.hasData ? fmt2(row.m04.amount) : ''}
                                 </td>
@@ -599,11 +709,9 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
                                   {row.m04.hasData ? fmt2(row.m04.net) : ''}
                                 </td>
 
-                                {/* Day Net Total */}
                                 <td className={`px-4 py-2 text-right border-r border-slate-300 font-extrabold ${row.totalNet < 0 ? 'text-rose-600 font-sans' : 'text-slate-900 font-sans'}`}>
                                   {fmt2(row.totalNet)}
                                 </td>
-                                {/* Type Tag (S = Sale, P = Payout) */}
                                 <td className="px-2 py-2 text-center font-sans font-bold">
                                   <span
                                     className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-bold ${
@@ -644,10 +752,10 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
                 </div>
               )}
 
-              {/* TAB 2: AGENT SUMMARY */}
+              {/* TAB 3: AGENT BREAKDOWN */}
               {activeTab === 'byAgent' && (
-                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                  <table className="w-full text-xs text-left border-collapse font-mono">
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm font-mono">
+                  <table className="w-full text-xs text-left border-collapse">
                     <thead>
                       <tr className="bg-slate-100 text-slate-800 font-semibold border-b border-slate-300 font-sans">
                         <th className="px-3 py-2.5 border-r border-slate-200">{t('reports.agentCol')}</th>
@@ -696,10 +804,10 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
                 </div>
               )}
 
-              {/* TAB 3: SLIP LOGS */}
+              {/* TAB 4: SLIP LOGS */}
               {activeTab === 'details' && (
-                <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-sm">
-                  <table className="w-full text-xs text-left border-collapse font-mono min-w-[850px]">
+                <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-sm font-mono">
+                  <table className="w-full text-xs text-left border-collapse min-w-[850px]">
                     <thead>
                       <tr className="bg-slate-100 text-slate-800 font-semibold border-b border-slate-300 font-sans">
                         <th className="px-2.5 py-2 border-r border-slate-200 text-center">{t('reports.srNoCol')}</th>
