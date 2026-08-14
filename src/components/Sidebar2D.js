@@ -101,9 +101,6 @@ function Icon({ name, className = 'w-[18px] h-[18px]' }) {
   );
 }
 
-// Full app-level nav — every role (org_admin, supervisor, cashier,
-// super_admin) gets all of these; org/user management lives in the separate
-// admin panel now, not here.
 const ROLE_LABEL = {
   super_admin: 'Project Owner',
   org_admin: 'Org Admin',
@@ -188,8 +185,28 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
   }
 
   const showAdminLink = canAccessAdmin && !isElectron;
-
   const navSegments = NAV_SEGMENTS;
+
+  const getFormattedMessage = (info) => {
+    if (!info) return 'Checking for updates...';
+    if (info.status === 'checking') return '🔍 Checking for new version on GitHub...';
+    if (info.status === 'latest') return '✅ Your application is up to date!';
+    if (info.status === 'dev') return '🛠️ Development mode - updates disabled.';
+    if (info.status === 'available') return `🎉 New Version ${info.version || ''} Available! Downloading...`;
+    if (info.status === 'downloading') return `📥 Downloading Update... ${info.percent || 0}%`;
+    if (info.status === 'ready') return `🎉 Version ${info.version || ''} Ready to Install!`;
+    if (info.status === 'error') {
+      const msg = String(info.message || '');
+      if (msg.includes('404') || msg.includes('latest.yml') || msg.includes('HttpError')) {
+        return 'ℹ️ No update package found on GitHub Releases yet. (No new version available)';
+      }
+      if (msg.includes('net::ERR') || msg.includes('ENOTFOUND') || msg.includes('offline')) {
+        return '⚠️ Network offline. Please check your internet connection.';
+      }
+      return 'ℹ️ Unable to check for updates at this time. Please try again later.';
+    }
+    return info.message || 'Processing update...';
+  };
 
   return (
     <>
@@ -347,8 +364,8 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
             App Update Check
           </h3>
 
-          <p className="text-sm text-gray-600 dark:text-slate-300 font-medium">
-            {updateInfo?.message || 'Checking for updates on GitHub...'}
+          <p className="text-sm text-gray-600 dark:text-slate-300 font-medium leading-relaxed px-2">
+            {getFormattedMessage(updateInfo)}
           </p>
 
           {updateInfo?.status === 'downloading' && (
