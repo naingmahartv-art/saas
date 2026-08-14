@@ -136,11 +136,6 @@ export async function PUT(request, { params }) {
     return NextResponse.json({ error: 'Ledger entry not found' }, { status: 404 });
   }
 
-  // Update Realtime DB
-  if (Object.keys(deltaMap).length > 0 || updatedAgentId !== slip.agentId) {
-    await applyRtdbDelta(orgId, sid, updatedAgentId || slip.agentId, deltaMap, 0);
-  }
-
   await logActivity({
     orgId,
     userId: session.id,
@@ -214,11 +209,6 @@ export async function DELETE(request, { params }) {
 
   if (!slip) {
     return NextResponse.json({ error: 'Ledger entry not found' }, { status: 404 });
-  }
-
-  // Update Realtime DB (decrements totals and removes zero keys)
-  if (Object.keys(deltaMap).length > 0) {
-    await applyRtdbDelta(orgId, sid, slip.agentId, deltaMap, -1);
   }
 
   await logActivity({

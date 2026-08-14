@@ -122,13 +122,5 @@ export async function GET(request, { params }) {
     }
   }
 
-  // Auto-sync calculated totals to RTDB for future fast loads
-  try {
-    const rtdbRef = rtdbSessionRef(orgId, sid);
-    await rtdbRef.child('totals').set(totals);
-    await rtdbRef.child('voucherCount').set(vouchersCount);
-    if (luckyNumber) await rtdbRef.child('luckyNumber').set(luckyNumber);
-  } catch (err) {}
-
   return NextResponse.json({ totals, buyTotals, luckyNumber, vouchersCount });
 }

@@ -165,7 +165,7 @@ export default function LedgerEntry({
       );
       const data = await res.json();
       if (data.success) {
-        setSuccessMsg('Successfully synced & recalculated old ledger data to RTDB!');
+        setSuccessMsg('Successfully synced & recalculated ledger totals!');
         window.location.reload();
       } else {
         setError(data.error || 'Failed to sync ledger');

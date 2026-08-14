@@ -1,5 +1,4 @@
 import { orgSessionDoc } from '@/lib/db/firestore.js';
-import { rtdbSessionRef } from '@/lib/db/rtdb.js';
 import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -13,7 +12,7 @@ function sseFrame(payload) {
 }
 
 // GET /api/org/[orgId]/ledger/session-stream?sessionId=... — SSE stream relaying live
-// Realtime DB totals, hot numbers, not-buy numbers, lucky numbers, and voucher counts with 0 Firestore read costs!
+// Firestore session updates (totals, lucky numbers, voucher counts)
 export async function GET(request, { params }) {
   const { orgId } = await params;
   const session = await getSession();
@@ -27,33 +26,13 @@ export async function GET(request, { params }) {
     return new Response('sessionId is required', { status: 400 });
   }
 
-  let rtdbRef = null;
-  let rtdbCallback = null;
+  let unsubscribe = null;
   let heartbeat = null;
 
   const stream = new ReadableStream({
     start(controller) {
       try {
-        rtdbRef = rtdbSessionRef(orgId, sessionId);
-        rtdbCallback = (snap) => {
-          const val = snap.val() || {};
-          controller.enqueue(
-            sseFrame({
-              totals: val.totals || {},
-              buyTotals: val.buyTotals || {},
-              luckyNumber: val.luckyNumber || null,
-              hotNumbers: val.hotNumbers || [],
-              notBuyNumbers: val.notBuyNumbers || [],
-              voucherCount: val.voucherCount || 0,
-            })
-          );
-        };
-
-        rtdbRef.on('value', rtdbCallback);
-      } catch (err) {
-        console.error('RTDB stream subscription error, fallback to Firestore:', err);
-        // Fallback to Firestore listener
-        const unsubscribe = orgSessionDoc(orgId, sessionId).onSnapshot((snap) => {
+        unsubscribe = orgSessionDoc(orgId, sessionId).onSnapshot((snap) => {
           if (!snap.exists) return;
           const data = snap.data();
           controller.enqueue(
@@ -67,7 +46,8 @@ export async function GET(request, { params }) {
             })
           );
         });
-        rtdbRef = { off: () => unsubscribe() };
+      } catch (err) {
+        console.error('Firestore stream subscription error:', err);
       }
 
       heartbeat = setInterval(() => {
@@ -77,15 +57,13 @@ export async function GET(request, { params }) {
       }, HEARTBEAT_MS);
     },
     cancel() {
-      if (rtdbRef && rtdbCallback) rtdbRef.off('value', rtdbCallback);
-      else if (rtdbRef && rtdbRef.off) rtdbRef.off();
+      if (unsubscribe) unsubscribe();
       if (heartbeat) clearInterval(heartbeat);
     },
   });
 
   request.signal.addEventListener('abort', () => {
-    if (rtdbRef && rtdbCallback) rtdbRef.off('value', rtdbCallback);
-    else if (rtdbRef && rtdbRef.off) rtdbRef.off();
+    if (unsubscribe) unsubscribe();
     if (heartbeat) clearInterval(heartbeat);
   });
 

@@ -152,9 +152,6 @@ export async function POST(request, { params }) {
   });
 
   if (created) {
-    // Also apply live updates to Realtime DB
-    await applyRtdbDelta(orgId, sid, agentId, perNumber, 1);
-
     await logActivity({
       orgId,
       userId: session.id,

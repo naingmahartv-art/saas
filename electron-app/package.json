@@ -1,6 +1,6 @@
 {
   "name": "saas-platform-desktop",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "Electron desktop shell for saas-platform — runs the existing Next.js app locally and opens it in a native window. Fully isolated from the web app's own package.json and node_modules.",
   "main": "main.js",

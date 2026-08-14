@@ -84,18 +84,10 @@ export async function POST(request, { params }) {
     if (Object.keys(agentTotals[agentId]).length === 0) delete agentTotals[agentId];
   }
 
-  const rtdbRef = rtdbSessionRef(orgId, sid);
-  await rtdbRef.child('totals').set(totals);
-  await rtdbRef.child('agentTotals').set(agentTotals);
-  await rtdbRef.child('voucherCount').set(maxSrNo);
-
   const sessionRef = orgSessionDoc(orgId, sid);
   const sessionSnap = await sessionRef.get();
   const sData = sessionSnap.exists ? sessionSnap.data() || {} : {};
   const luckyNo = sData.luckyNumber || sData.luckyNo || sData.winningNumber || sData.lucky || null;
-  if (luckyNo) {
-    await rtdbRef.child('luckyNumber').set(luckyNo);
-  }
 
   await sessionRef.set({ totals, vouchersCount: snap.docs.length }, { merge: true });
 

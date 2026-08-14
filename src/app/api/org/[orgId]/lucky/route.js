@@ -65,12 +65,6 @@ export async function POST(request, { params }) {
     { merge: true }
   );
 
-  try {
-    await rtdbSessionRef(orgId, sid).child('luckyNumber').set(lNo);
-  } catch (err) {
-    console.error('Error updating luckyNumber in RTDB:', err);
-  }
-
   await logActivity({
     orgId,
     userId: session.id,

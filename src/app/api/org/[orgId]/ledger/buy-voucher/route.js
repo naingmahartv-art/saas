@@ -91,9 +91,6 @@ export async function POST(request, { params }) {
     return { srNo: nextSrNo };
   });
 
-  // Apply buyTotals delta to Realtime Database so live SSE streams update buyTotals in real-time
-  await applyRtdbBuyDelta(orgId, sid, perNumber);
-
   await logActivity({
     orgId,
     userId: session.id,
