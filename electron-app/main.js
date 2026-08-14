@@ -243,7 +243,11 @@ function setupAutoUpdater() {
 
     autoUpdater.on('error', (err) => {
       console.error('Auto-updater error:', err);
-      mainWindow?.webContents.send('update-status', { status: 'error', message: err?.message || 'Update check failed' });
+      let errMsg = err?.message || 'Update check failed';
+      if (errMsg.includes('404') || errMsg.includes('latest.yml')) {
+        errMsg = 'No release file (latest.yml) found on GitHub Release. Please upload latest.yml and the installer .exe to your GitHub Release page.';
+      }
+      mainWindow?.webContents.send('update-status', { status: 'error', message: errMsg });
     });
 
     if (app.isPackaged) {
