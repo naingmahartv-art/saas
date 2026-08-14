@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, shell } = require('electron');
+const { app, BrowserWindow, dialog, shell, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { spawn } = require('child_process');
 const path = require('path');
@@ -181,16 +181,54 @@ function createWindow() {
 }
 
 function setupAutoUpdater() {
-  if (!app.isPackaged) return;
   try {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
 
+    ipcMain.on('check-for-updates', () => {
+      if (!app.isPackaged) {
+        mainWindow?.webContents.send('update-status', { status: 'dev', message: 'Development mode - updates disabled' });
+        return;
+      }
+      mainWindow?.webContents.send('update-status', { status: 'checking', message: 'Checking for updates on GitHub...' });
+      autoUpdater.checkForUpdates().catch(err => {
+        mainWindow?.webContents.send('update-status', { status: 'error', message: err.message });
+      });
+    });
+
+    ipcMain.on('quit-and-install', () => {
+      autoUpdater.quitAndInstall();
+    });
+
+    autoUpdater.on('checking-for-update', () => {
+      mainWindow?.webContents.send('update-status', { status: 'checking', message: 'Checking for updates on GitHub...' });
+    });
+
     autoUpdater.on('update-available', (info) => {
       console.log('Update available:', info.version);
+      mainWindow?.webContents.send('update-status', { status: 'available', version: info.version, message: `Version ${info.version} available! Downloading...` });
+    });
+
+    autoUpdater.on('update-not-available', (info) => {
+      console.log('Update not available');
+      mainWindow?.webContents.send('update-status', { status: 'latest', message: 'App is already up to date!' });
+    });
+
+    autoUpdater.on('download-progress', (progressObj) => {
+      mainWindow?.webContents.send('update-status', {
+        status: 'downloading',
+        percent: Math.floor(progressObj.percent),
+        message: `Downloading update... ${Math.floor(progressObj.percent)}%`
+      });
     });
 
     autoUpdater.on('update-downloaded', (info) => {
+      mainWindow?.webContents.send('update-status', {
+        status: 'ready',
+        version: info.version,
+        message: `Version ${info.version} ready to install!`
+      });
+
       dialog.showMessageBox({
         type: 'info',
         title: 'Update Ready',
@@ -205,11 +243,14 @@ function setupAutoUpdater() {
 
     autoUpdater.on('error', (err) => {
       console.error('Auto-updater error:', err);
+      mainWindow?.webContents.send('update-status', { status: 'error', message: err?.message || 'Update check failed' });
     });
 
-    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
-      console.error('Failed to check for updates:', err);
-    });
+    if (app.isPackaged) {
+      autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+        console.error('Failed to check for updates:', err);
+      });
+    }
   } catch (err) {
     console.error('Auto updater setup failed:', err);
   }

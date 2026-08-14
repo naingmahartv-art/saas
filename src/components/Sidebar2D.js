@@ -127,6 +127,8 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
   const [collapsed, setCollapsed] = useState(false);
 
   const [isElectron, setIsElectron] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -141,7 +143,29 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
     ) {
       setIsElectron(true);
     }
+
+    if (typeof window !== 'undefined' && window.electronAPI?.onUpdateStatus) {
+      const unsub = window.electronAPI.onUpdateStatus((info) => {
+        setUpdateInfo(info);
+        setUpdateModalOpen(true);
+      });
+      return () => {
+        if (typeof unsub === 'function') unsub();
+      };
+    }
   }, []);
+
+  function handleCheckUpdates() {
+    setUpdateModalOpen(true);
+    setUpdateInfo({ status: 'checking', message: 'Checking for updates on GitHub...' });
+    if (window.electronAPI?.checkForUpdates) {
+      window.electronAPI.checkForUpdates();
+    } else {
+      setTimeout(() => {
+        setUpdateInfo({ status: 'dev', message: 'Update check is only available in Desktop App.' });
+      }, 1000);
+    }
+  }
 
   function toggleCollapsed() {
     setCollapsed((prev) => {
@@ -168,7 +192,8 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
   const navSegments = NAV_SEGMENTS;
 
   return (
-    <aside className={`${collapsed ? 'w-14' : 'w-60'} shrink-0 h-screen sticky top-0 flex flex-col bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 transition-[width] duration-200 overflow-hidden`}>
+    <>
+      <aside className={`${collapsed ? 'w-14' : 'w-60'} shrink-0 h-screen sticky top-0 flex flex-col bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 transition-[width] duration-200 overflow-hidden`}>
       <div className={`px-2.5 py-3.5 border-b border-gray-100 dark:border-slate-800 flex items-center ${collapsed ? 'justify-center' : 'justify-between gap-2'}`}>
         {collapsed ? (
           <button
@@ -218,41 +243,50 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
               href={href}
               title={collapsed ? t(`nav.${key}`) : undefined}
               className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition ${
-                collapsed ? 'justify-center' : ''
-              } ${active ? 'bg-indigo-50 dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 font-semibold' : 'text-gray-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800/60 dark:hover:text-slate-200'}`}
+                active
+                  ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300 font-semibold'
+                  : 'text-gray-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-slate-200'
+              } ${collapsed ? 'justify-center px-0' : ''}`}
             >
-              <Icon name={key} />
+              <Icon name={key} className={active ? 'text-brand-600 dark:text-brand-400' : 'text-gray-400 dark:text-slate-500'} />
               {!collapsed && <span>{t(`nav.${key}`)}</span>}
             </Link>
           );
         })}
-      </nav>
 
-      <div className="px-2 py-4 border-t border-gray-100 dark:border-slate-800 space-y-2">
-        <ThemeToggle collapsed={collapsed} />
-        {!collapsed && (
-          <div className="px-1 pb-1">
-            <LanguageSwitcher />
-          </div>
-        )}
         {showAdminLink && (
           <Link
-            href={`/org/${orgId}/admin/dashboard`}
-            title={collapsed ? t('nav.adminPanel') : undefined}
-            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 ${
-              collapsed ? 'justify-center' : ''
+            href={`/org/${orgId}/admin/users`}
+            title={collapsed ? t('nav.adminConsole') : undefined}
+            className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-slate-200 ${
+              collapsed ? 'justify-center px-0' : ''
             }`}
           >
-            <Icon name="users" />
-            {!collapsed && <span>{t('nav.adminPanel')}</span>}
+            <Icon name="adminConsole" className="text-gray-400 dark:text-slate-500" />
+            {!collapsed && <span>{t('nav.adminConsole')}</span>}
           </Link>
         )}
+      </nav>
+
+      <div className="p-2 border-t border-gray-100 dark:border-slate-800 space-y-1">
+        <button
+          type="button"
+          onClick={handleCheckUpdates}
+          title={collapsed ? "Check for Updates" : undefined}
+          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 hover:bg-emerald-100 transition ${
+            collapsed ? 'justify-center px-0' : ''
+          }`}
+        >
+          <span className="text-base">🚀</span>
+          {!collapsed && <span>Check for Updates</span>}
+        </button>
+
         <Link
           href="/tutorial"
           target="_blank"
           title={collapsed ? "Tutorials & Website" : undefined}
           className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800 transition ${
-            collapsed ? 'justify-center' : ''
+            collapsed ? 'justify-center px-0' : ''
           }`}
         >
           <span className="text-base">📚</span>
@@ -262,14 +296,14 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
           href={`/org/${orgId}/select-app`}
           title={collapsed ? t('nav.switchApp') : undefined}
           className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 ${
-            collapsed ? 'justify-center' : ''
+            collapsed ? 'justify-center px-0' : ''
           }`}
         >
           <Icon name="switchApp" />
           {!collapsed && <span>{t('nav.switchApp')}</span>}
         </Link>
         {!collapsed && (
-          <div className="px-3">
+          <div className="px-3 py-2">
             <p className="text-sm font-medium text-gray-900 dark:text-slate-200 truncate">{userName}</p>
             <p className="text-xs text-gray-400 dark:text-slate-500">{ROLE_LABEL[role] || role}</p>
           </div>
@@ -289,40 +323,65 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
         </button>
         <button
           type="button"
-          onClick={async () => {
-            try {
-              const res = await fetch(`/api/org/${orgId}/ledger/sync-rtdb`, { method: 'POST' });
-              const data = await res.json();
-              if (data.success) {
-                alert(`Successfully recalculated ledger by voucher!\nSynced ${data.vouchersCount || 0} vouchers and ${data.totalNumbersCount || 0} number totals to RTDB.`);
-                window.location.reload();
-              } else {
-                alert(data.error || 'Failed to recalculate ledger');
-              }
-            } catch {
-              alert('Error recalculating ledger by voucher');
-            }
-          }}
-          title={collapsed ? 'Recalculate Ledger by Voucher' : 'Recalculate and populate all Firestore vouchers into RTDB totals'}
-          className={`w-full flex items-center gap-2.5 text-sm py-1.5 font-medium border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition rounded-lg cursor-pointer ${
-            collapsed ? 'justify-center px-0' : 'px-3'
-          }`}
-        >
-          <span className="text-amber-600 dark:text-amber-400">🔄</span>
-          {!collapsed && <span>Recalculate Ledger by Voucher</span>}
-        </button>
-        <button
-          type="button"
           onClick={logout}
           title={collapsed ? t('nav.signOut') : undefined}
           className={`w-full flex items-center gap-2.5 text-sm py-1.5 font-medium border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition rounded-lg ${
             collapsed ? 'justify-center px-0' : 'px-3'
           }`}
         >
-          <Icon name="logout" className="w-[18px] h-[18px] text-red-600 dark:text-red-400 shrink-0" />
+          <Icon name="signOut" />
           {!collapsed && <span>{t('nav.signOut')}</span>}
         </button>
       </div>
     </aside>
+
+    {/* App Update Status Modal */}
+    {updateModalOpen && (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-200 dark:border-slate-800 text-center space-y-4">
+          <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400 flex items-center justify-center mx-auto text-2xl">
+            🚀
+          </div>
+          
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+            App Update Check
+          </h3>
+
+          <p className="text-sm text-gray-600 dark:text-slate-300 font-medium">
+            {updateInfo?.message || 'Checking for updates on GitHub...'}
+          </p>
+
+          {updateInfo?.status === 'downloading' && (
+            <div className="w-full bg-gray-200 dark:bg-slate-800 rounded-full h-3 overflow-hidden border border-gray-300 dark:border-slate-700">
+              <div
+                className="bg-emerald-500 h-3 rounded-full transition-all duration-300"
+                style={{ width: `${updateInfo?.percent || 0}%` }}
+              />
+            </div>
+          )}
+
+          <div className="flex items-center justify-center gap-3 pt-2">
+            {updateInfo?.status === 'ready' ? (
+              <button
+                type="button"
+                onClick={() => window.electronAPI?.quitAndInstall()}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl transition shadow-lg animate-bounce"
+              >
+                🎉 Restart & Install Now
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setUpdateModalOpen(false)}
+                className="px-4 py-2 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-300 font-semibold text-xs rounded-lg transition"
+              >
+                Close
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
