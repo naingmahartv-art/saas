@@ -147,6 +147,7 @@ export default function LedgerEntry({
   const [checkAgentResults, setCheckAgentResults] = useState(null);
   const [checkAgentLoading, setCheckAgentLoading] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importJsonText, setImportJsonText] = useState('');
   const [exceedSortKey, setExceedSortKey] = useState('excess');
   const [exceedSortDir, setExceedSortDir] = useState('desc');
   const [syncLoading, setSyncLoading] = useState(false);
