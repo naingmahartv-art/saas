@@ -547,9 +547,10 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
     shareOrDownload(buildAllAgentPdfBlob(), reportFileName('all-agent', dateLabel, 'pdf'), t, setStatusMsg);
   }
 
+  const isSaleModal = tab === 'agent' || tab === 'summary' || initialTab === 'agent' || initialTab === 'summary';
   const TABS = [
     { key: 'payout', label: t('reports.tabPayout') },
-    { key: 'allAgent', label: t('reports.tabAllAgent') },
+    ...(isSaleModal ? [] : [{ key: 'allAgent', label: t('reports.tabAllAgent') }]),
   ];
 
   return (
@@ -640,6 +641,27 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
                     </div>
                   )}
                 </div>
+
+                {/* Quick Agent Selection Pills */}
+                {agents.length > 0 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pt-1 pb-0.5">
+                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0 mr-1">Quick:</span>
+                    {agents.slice(0, 10).map(a => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => setSelectedAgentId(a.id)}
+                        className={`px-2.5 py-1 text-xs font-medium rounded-full transition whitespace-nowrap ${
+                          selectedAgentId === a.id
+                            ? 'bg-indigo-600 text-white font-semibold shadow-sm'
+                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {a.agentName}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {!selectedAgent ? (
@@ -694,7 +716,8 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
                     {/* Customer Header Banner */}
                     <div className="flex flex-wrap justify-between items-center pb-3 border-b-2 border-slate-900 gap-2">
                       <div>
-                        <span className="font-extrabold text-slate-900 text-lg">{dateLabel} Receipt</span>
+                        <span className="text-xs text-slate-500 font-sans font-semibold uppercase tracking-wider block">Customer / Agent:</span>
+                        <span className="font-extrabold text-slate-900 text-lg">{selectedAgent.agentName}</span>
                       </div>
                       <div className="text-right">
                         <span className="text-xs text-slate-500 font-sans font-semibold uppercase tracking-wider block">Date:</span>
@@ -797,34 +820,37 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
 
               {summaryLoading ? (
                 <p className="text-sm text-gray-400 text-center py-10">{t('common.loading')}</p>
-              ) : summarySlips.length === 0 ? (
+              ) : summaryByAgent.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-10">{t('reports.noVouchers')}</p>
               ) : (
-                <div className="border border-gray-200 rounded-lg overflow-hidden font-mono">
-                  <table className="w-full text-sm border-collapse">
-                    <thead>
-                      <tr className="bg-gray-100 text-xs text-gray-700 uppercase tracking-wide border-b border-gray-200 font-sans font-bold">
-                        <th className="text-left px-4 py-2 border-r border-gray-200">{t('reports.srNoCol')}</th>
-                        <th className="text-right px-4 py-2">{t('reports.amountCol')}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 bg-white">
-                      {[...summarySlips]
-                        .sort((a, b) => (parseInt(String(a?.srNo ?? '').replace(/[^0-9]/g, ''), 10) || 0) - (parseInt(String(b?.srNo ?? '').replace(/[^0-9]/g, ''), 10) || 0))
-                        .map(s => (
-                          <tr key={s.id} className="hover:bg-gray-50 transition">
-                            <td className="px-4 py-1.5 font-mono border-r border-gray-100">{s.srNo}</td>
-                            <td className="px-4 py-1.5 text-right font-mono font-bold">{s.amount.toLocaleString()}</td>
+                <div className="space-y-4">
+                  {summaryByAgent.map(group => (
+                    <div key={group.agentName} className="border border-gray-200 rounded-lg overflow-hidden">
+                      <div className="bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-800">{group.agentName}</div>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-gray-100">
+                            <th className="text-left px-3 py-1.5 font-medium">{t('reports.srNoCol')}</th>
+                            <th className="text-right px-3 py-1.5 font-medium">{t('reports.amountCol')}</th>
                           </tr>
-                        ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-gray-100 border-t-2 border-gray-300 font-extrabold text-sm text-gray-900 font-sans">
-                        <td className="px-4 py-2.5 border-r border-gray-200">{t('reports.grandTotalLabel')}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-indigo-700">{summaryGrandTotal.toLocaleString()} MMK</td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                          {[...group.slips].sort((a, b) => (parseInt(String(a?.srNo ?? '').replace(/[^0-9]/g, ''), 10) || 0) - (parseInt(String(b?.srNo ?? '').replace(/[^0-9]/g, ''), 10) || 0)).map(s => (
+                            <tr key={s.id}>
+                              <td className="px-3 py-1 font-mono">{s.srNo}</td>
+                              <td className="px-3 py-1 text-right font-mono">{s.amount.toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <div className="px-3 py-1.5 bg-gray-50 text-right text-sm font-semibold text-gray-800">
+                        {t('reports.subtotalLabel')}: {group.subtotal.toLocaleString()}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="text-right text-base font-bold text-indigo-700 pt-2">
+                    {t('reports.grandTotalLabel')}: {summaryGrandTotal.toLocaleString()}
+                  </div>
                 </div>
               )}
             </div>

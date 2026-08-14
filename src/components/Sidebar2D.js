@@ -93,9 +93,9 @@ const ICONS = {
   ),
 };
 
-function Icon({ name, className = 'w-[18px] h-[18px]' }) {
+function Icon({ name, className = '' }) {
   return (
-    <svg className={`${className} shrink-0`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <svg className={`w-4 h-4 shrink-0 ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
       {ICONS[name]}
     </svg>
   );
@@ -294,7 +294,7 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
             collapsed ? 'justify-center px-0' : ''
           }`}
         >
-          <span className="text-base">🚀</span>
+          <span className="text-sm">🚀</span>
           {!collapsed && <span>Check for Updates</span>}
         </button>
 
@@ -306,7 +306,7 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
             collapsed ? 'justify-center px-0' : ''
           }`}
         >
-          <span className="text-base">📚</span>
+          <span className="text-sm">📚</span>
           {!collapsed && <span>Tutorials / App Info</span>}
         </Link>
         <Link
@@ -333,7 +333,7 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
             collapsed ? 'justify-center px-0' : 'px-3'
           }`}
         >
-          <svg className="w-[18px] h-[18px] text-gray-600 dark:text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <svg className="w-4 h-4 text-gray-600 dark:text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
           {!collapsed && <span>{t('ledger.refreshBtn')} (Alt+R)</span>}
