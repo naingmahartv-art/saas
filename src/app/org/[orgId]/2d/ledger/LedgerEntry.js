@@ -1958,22 +1958,19 @@ export default function LedgerEntry({
             </table>
           </div>
 
-          {/* Orange best-seller liability bar */}
-          {bestSeller && bestSeller.amount > 0 && (
-            <div className="bg-orange-500 text-white rounded-lg px-3 py-1.5 mt-2 font-mono text-xs font-semibold">
-              [{bestSeller.num}] {bestSeller.amount.toLocaleString()} × {rateValue || 0} = {orangeLiability.toLocaleString()}
+          {/* Bottom stat row (2/4, 1/4, 1/4 width ratio) */}
+          <div className="grid grid-cols-4 gap-1.5 mt-2">
+            <div className="col-span-2 bg-orange-500 text-white rounded-lg px-2 py-1.5 text-center font-mono font-semibold text-xs truncate" title={bestSeller && bestSeller.amount > 0 ? `[${bestSeller.num}] ${bestSeller.amount.toLocaleString()} × ${rateValue || 0} = ${orangeLiability.toLocaleString()}` : ''}>
+              {bestSeller && bestSeller.amount > 0 ? (
+                `[${bestSeller.num}] ${bestSeller.amount.toLocaleString()} × ${rateValue || 0} = ${orangeLiability.toLocaleString()}`
+              ) : (
+                '—'
+              )}
             </div>
-          )}
-
-
-
-          {/* Bottom stat row */}
-          <div className="grid grid-cols-3 gap-1.5 mt-2">
-            <div className="bg-green-100 text-green-900 rounded-lg px-2 py-1.5 text-center font-mono font-semibold text-xs">—</div>
-            <div className="bg-pink-100 text-pink-900 rounded-lg px-2 py-1.5 text-center font-mono font-semibold text-xs">
+            <div className="col-span-1 bg-pink-100 text-pink-900 rounded-lg px-2 py-1.5 text-center font-mono font-semibold text-xs truncate">
               {pinkStat ? pinkStat.toFixed(2) : '—'}
             </div>
-            <div className="bg-purple-100 text-purple-900 rounded-lg px-2 py-1.5 text-center font-mono font-semibold text-xs">
+            <div className="col-span-1 bg-purple-100 text-purple-900 rounded-lg px-2 py-1.5 text-center font-mono font-semibold text-xs truncate">
               {grandTotal.toLocaleString()}
             </div>
           </div>
