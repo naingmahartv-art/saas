@@ -198,7 +198,7 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
     if (info.status === 'error') {
       const msg = String(info.message || '');
       if (msg.includes('404') || msg.includes('latest.yml') || msg.includes('HttpError')) {
-        return 'ℹ️ No update package found on GitHub Releases yet. (No new version available)';
+        return 'ℹ️ Release found on GitHub, but installer files (latest.yml & .exe) are not uploaded to GitHub Release assets yet.';
       }
       if (msg.includes('net::ERR') || msg.includes('ENOTFOUND') || msg.includes('offline')) {
         return '⚠️ Network offline. Please check your internet connection.';
