@@ -15,6 +15,7 @@ export async function GET(request, { params }) {
   const startDate = searchParams.get('startDate');
   const endDate = searchParams.get('endDate');
   const agentName = searchParams.get('agentName');
+  const ampmFilter = searchParams.get('ampm');
 
   if (!startDate || !endDate) {
     return NextResponse.json({ error: 'startDate and endDate are required' }, { status: 400 });
@@ -29,8 +30,18 @@ export async function GET(request, { params }) {
   const allSlips = [];
   const sessionList = [];
 
+  function matchesSlot(sData, filter) {
+    if (!filter) return true;
+    if (sData.ampm === filter) return true;
+    if (filter === '12:00' && (sData.ampm === 'AM' || (typeof sData.onCount === 'number' && sData.onCount % 10 === 2))) return true;
+    if (filter === '04:00' && (sData.ampm === 'PM' || (typeof sData.onCount === 'number' && sData.onCount % 10 === 3))) return true;
+    if (filter === '09:00' && (typeof sData.onCount === 'number' && sData.onCount % 10 === 1)) return true;
+    return false;
+  }
+
   for (const doc of sessionsSnap.docs) {
     const sData = doc.data();
+    if (!matchesSlot(sData, ampmFilter)) continue;
     sessionList.push({ id: doc.id, ...sData });
 
     const vouchersSnap = await orgSessionVouchersCol(orgId, doc.id)

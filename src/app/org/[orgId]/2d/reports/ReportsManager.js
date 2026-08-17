@@ -69,6 +69,7 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
   const [periodType, setPeriodType] = useState('weekly'); // 'weekly' | 'monthly' | 'custom'
   const [dates, setDates] = useState(() => getPredefinedDates('weekly'));
   const [selectedAgent, setSelectedAgent] = useState('');
+  const [selectedSlot, setSelectedSlot] = useState(''); // '' | '12:00' | '04:00' | '09:00'
   const [activeTab, setActiveTab] = useState('summary'); // 'summary' | 'matrix' | 'byAgent' | 'details'
 
   const [loading, setLoading] = useState(false);
@@ -85,11 +86,12 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
   }, [initialAgents]);
 
   const loadReportData = useCallback(
-    async (fromDate, toDate, agent) => {
+    async (fromDate, toDate, agent, slot) => {
       setLoading(true);
       try {
         let url = `/api/org/${orgId}/reports/range?startDate=${fromDate}&endDate=${toDate}`;
         if (agent) url += `&agentName=${encodeURIComponent(agent)}`;
+        if (slot) url += `&ampm=${encodeURIComponent(slot)}`;
         const res = await fetch(url);
         const text = await res.text();
         let data = {};
@@ -108,16 +110,16 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
     if (periodType !== 'custom') {
       const pDates = getPredefinedDates(periodType);
       setDates(pDates);
-      loadReportData(pDates.from, pDates.to, selectedAgent);
+      loadReportData(pDates.from, pDates.to, selectedAgent, selectedSlot);
     } else {
-      loadReportData(dates.from, dates.to, selectedAgent);
+      loadReportData(dates.from, dates.to, selectedAgent, selectedSlot);
     }
-  }, [periodType, selectedAgent, loadReportData]);
+  }, [periodType, selectedAgent, selectedSlot, loadReportData]);
 
   function handleCustomDateChange(field, val) {
     const next = { ...dates, [field]: val };
     setDates(next);
-    loadReportData(next.from, next.to, selectedAgent);
+    loadReportData(next.from, next.to, selectedAgent, selectedSlot);
   }
 
   // --- Processed Data ---
@@ -483,8 +485,8 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
             />
           </div>
 
-          {/* Agent Dropdown Filter & Weekly Commission Editor */}
-          <div className="flex items-center gap-2.5 ml-auto">
+          {/* Agent Dropdown Filter, Session Slot Filter & Weekly Commission Editor */}
+          <div className="flex flex-wrap items-center gap-2.5 ml-auto">
             <button
               type="button"
               onClick={() => setIsCommissionModalOpen(true)}
@@ -494,19 +496,39 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
               <span>⚙️ Edit Weekly Commissions</span>
             </button>
 
-            <span className="text-xs font-medium text-slate-400">Filter Agent:</span>
-            <select
-              value={selectedAgent}
-              onChange={(e) => setSelectedAgent(e.target.value)}
-              className="px-3 py-1.5 text-xs border border-slate-700 bg-slate-800 text-white rounded-xl focus:outline-none focus:border-indigo-500"
-            >
-              <option value="">All Agents</option>
-              {initialAgents.map((a) => (
-                <option key={a.id || a.agentName} value={a.agentName}>
-                  {a.agentName}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-medium text-slate-400">Session Slot:</span>
+              <select
+                value={selectedSlot}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedSlot(val);
+                  loadReportData(dates.from, dates.to, selectedAgent, val);
+                }}
+                className="px-3 py-1.5 text-xs border border-slate-700 bg-slate-800 text-white rounded-xl focus:outline-none focus:border-indigo-500 font-semibold"
+              >
+                <option value="">🌅 All Sessions</option>
+                <option value="12:00">☀️ Morning Session (12:00 PM)</option>
+                <option value="04:00">🌆 Evening Session (04:30 PM)</option>
+                <option value="09:00">🌅 Early Morning (09:30 AM)</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-medium text-slate-400">Filter Agent:</span>
+              <select
+                value={selectedAgent}
+                onChange={(e) => setSelectedAgent(e.target.value)}
+                className="px-3 py-1.5 text-xs border border-slate-700 bg-slate-800 text-white rounded-xl focus:outline-none focus:border-indigo-500"
+              >
+                <option value="">All Agents</option>
+                {initialAgents.map((a) => (
+                  <option key={a.id || a.agentName} value={a.agentName}>
+                    {a.agentName}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
