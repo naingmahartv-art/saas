@@ -23,6 +23,17 @@ function getSlotDisplayLabel(s) {
   return slotKey || '12:00 PM';
 }
 
+function formatShortDate(dateStr) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length === 3) return `${parts[1]}/${parts[2]}`;
+  return dateStr;
+}
+
+function formatShortSlot(slotStr) {
+  return slotStr.replace(' AM', '').replace(' PM', '');
+}
+
 export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onSaved }) {
   const { t } = useI18n();
 
@@ -165,7 +176,7 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
 
   return (
     <div
-      className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex flex-col p-2 sm:p-4"
+      className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex flex-col p-2 sm:p-3"
       onClick={onClose}
     >
       <div
@@ -173,50 +184,50 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between gap-4 shrink-0">
+        <div className="px-4 py-2.5 bg-slate-900 text-white flex items-center justify-between gap-4 shrink-0">
           <div>
-            <h2 className="text-lg font-bold flex items-center gap-2">
+            <h2 className="text-base font-bold flex items-center gap-2">
               <span>⚙️ Weekly Agent Commission Matrix Editor</span>
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-[11px] text-slate-400 mt-0.5">
               Set or adjust per-session agent commission percentages for weekly Friday settlements.
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-white text-lg font-bold px-2 py-1 hover:bg-slate-800 rounded transition"
+            className="text-slate-400 hover:text-white text-base font-bold px-2 py-0.5 hover:bg-slate-800 rounded transition"
           >
             ✕
           </button>
         </div>
 
         {/* Top Controls Bar */}
-        <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
+        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <label className="text-xs font-bold uppercase tracking-wider text-slate-600">📅 Date Range:</label>
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                className="px-2.5 py-1 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
               />
               <span className="text-xs font-bold text-slate-400">to</span>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="px-3 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                className="px-2.5 py-1 text-xs font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
               />
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handleApplyAllDefaults}
-              className="px-3.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition shadow-xs"
+              className="px-3 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition shadow-xs"
               title="Copy base profile rates to all session cells"
             >
               🔄 Reset All to Base Rates
@@ -226,18 +237,18 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
 
         {/* Alerts Banner */}
         {statusMsg && (
-          <div className="px-6 py-2 bg-emerald-50 border-b border-emerald-200 text-xs font-semibold text-emerald-800">
+          <div className="px-4 py-1.5 bg-emerald-50 border-b border-emerald-200 text-xs font-semibold text-emerald-800">
             {statusMsg}
           </div>
         )}
         {errorMsg && (
-          <div className="px-6 py-2 bg-rose-50 border-b border-rose-200 text-xs font-semibold text-rose-700">
+          <div className="px-4 py-1.5 bg-rose-50 border-b border-rose-200 text-xs font-semibold text-rose-700">
             ⚠️ {errorMsg}
           </div>
         )}
 
-        {/* Matrix Content Body with Explicit Horizontal & Vertical Scrollbars */}
-        <div className="flex-1 p-5 overflow-hidden flex flex-col">
+        {/* Matrix Content Body with Compact Cells to Fit 7 Days on Screen */}
+        <div className="flex-1 p-3 overflow-hidden flex flex-col">
           {loading ? (
             <div className="py-16 text-center">
               <div className="inline-block animate-spin text-2xl text-indigo-600 mb-2">⏳</div>
@@ -256,25 +267,25 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
               <p className="text-xs text-slate-400 mt-1">Add agents in Agent Management first.</p>
             </div>
           ) : (
-            <div className="w-full flex-1 overflow-x-auto overflow-y-auto border border-slate-200 rounded-xl shadow-sm bg-white h-full">
-              <table className="min-w-max w-full text-left text-xs border-collapse">
+            <div className="w-full flex-1 overflow-x-auto overflow-y-auto border border-slate-200 rounded-lg shadow-xs bg-white h-full">
+              <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider">
-                    <th className="px-4 py-3 sticky left-0 bg-slate-100 z-20 border-r border-slate-200 min-w-[160px] shadow-sm">
+                  <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
+                    <th className="px-2.5 py-2 sticky left-0 bg-slate-100 z-20 border-r border-slate-200 min-w-[100px] shadow-xs">
                       Agent Name
                     </th>
-                    <th className="px-3 py-3 border-r border-slate-200 text-center min-w-[90px] bg-slate-100">
-                      Base Rate
+                    <th className="px-1.5 py-2 border-r border-slate-200 text-center min-w-[50px] bg-slate-100">
+                      Base
                     </th>
                     {sessions.map((s) => (
-                      <th key={s.id} className="px-3 py-3 text-center border-r border-slate-200 min-w-[130px] bg-slate-100">
-                        <div className="font-bold text-slate-800">{s.onDate}</div>
+                      <th key={s.id} className="px-1 py-1.5 text-center border-r border-slate-200 min-w-[58px] bg-slate-100">
+                        <div className="font-bold text-slate-800 text-[11px]">{formatShortDate(s.onDate)}</div>
                         <div className="text-[10px] font-bold text-indigo-600 mt-0.5">
-                          {getSlotDisplayLabel(s)}
+                          {formatShortSlot(getSlotDisplayLabel(s))}
                         </div>
                       </th>
                     ))}
-                    <th className="px-4 py-3 text-center min-w-[190px] bg-slate-100">
+                    <th className="px-2 py-2 text-center min-w-[125px] bg-slate-100">
                       Quick Fill Row
                     </th>
                   </tr>
@@ -284,10 +295,10 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
                     const baseRate = ag.commission ?? 0;
                     return (
                       <tr key={ag.id} className="hover:bg-slate-50 transition">
-                        <td className="px-4 py-3 font-bold text-slate-800 sticky left-0 bg-white hover:bg-slate-50 border-r border-slate-200 shadow-sm z-10">
+                        <td className="px-2.5 py-1.5 font-bold text-slate-800 sticky left-0 bg-white hover:bg-slate-50 border-r border-slate-200 shadow-xs z-10 text-[12px] truncate max-w-[120px]">
                           {ag.agentName}
                         </td>
-                        <td className="px-3 py-3 text-center font-bold text-slate-500 border-r border-slate-200 bg-slate-50/50">
+                        <td className="px-1.5 py-1.5 text-center font-bold text-slate-500 border-r border-slate-200 bg-slate-50/50 text-[11px]">
                           {baseRate}%
                         </td>
                         {sessions.map((s) => {
@@ -296,35 +307,34 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
                           const isCustom = displayVal !== '' && parseFloat(displayVal) !== baseRate;
 
                           return (
-                            <td key={s.id} className="px-2.5 py-2 text-center border-r border-slate-200">
-                              <div className="relative flex items-center justify-center">
+                            <td key={s.id} className="px-1 py-1 text-center border-r border-slate-200 min-w-[58px]">
+                              <div className="flex items-center justify-center">
                                 <input
                                   type="number"
                                   step="0.5"
                                   min="0"
                                   max="100"
-                                  placeholder={`${baseRate}%`}
+                                  placeholder={`${baseRate}`}
                                   value={displayVal}
                                   onChange={(e) => handleCellChange(s.id, ag.id, e.target.value)}
-                                  className={`w-20 px-2 py-1.5 text-center text-xs font-bold rounded border transition focus:outline-none focus:ring-2 ${
+                                  className={`w-11 px-1 py-0.5 text-center text-xs font-bold rounded border transition focus:outline-none focus:ring-1 ${
                                     isCustom
                                       ? 'bg-amber-50 border-amber-400 text-amber-900 focus:ring-amber-500 font-extrabold shadow-xs'
                                       : 'bg-white border-slate-300 text-slate-800 focus:ring-indigo-500'
                                   }`}
                                 />
-                                <span className="ml-1 text-[11px] font-bold text-slate-400">%</span>
                               </div>
                             </td>
                           );
                         })}
-                        <td className="px-3 py-2 text-center min-w-[190px]">
-                          <div className="flex items-center justify-center gap-1 bg-slate-50 p-1 rounded-lg border border-slate-200">
+                        <td className="px-1.5 py-1 text-center min-w-[125px]">
+                          <div className="flex items-center justify-center gap-1 bg-slate-50 p-0.5 rounded border border-slate-200">
                             <input
                               type="number"
                               step="0.5"
                               min="0"
                               max="100"
-                              placeholder={`${baseRate}%`}
+                              placeholder={`${baseRate}`}
                               value={agentQuickAmounts[ag.id] ?? ''}
                               onChange={(e) =>
                                 setAgentQuickAmounts((prev) => ({
@@ -332,13 +342,12 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
                                   [ag.id]: e.target.value,
                                 }))
                               }
-                              className="w-14 px-1.5 py-1 text-xs font-bold text-center border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                              className="w-10 px-1 py-0.5 text-xs font-bold text-center border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
                             />
-                            <span className="text-xs font-bold text-slate-400">%</span>
                             <button
                               type="button"
                               onClick={() => handleApplyAgentCustom(ag)}
-                              className="px-2.5 py-1 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded transition shadow-xs whitespace-nowrap"
+                              className="px-2 py-0.5 text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded transition shadow-xs whitespace-nowrap"
                               title={`Apply specified % across all sessions for ${ag.agentName}`}
                             >
                               Set All
@@ -355,7 +364,7 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
         </div>
 
         {/* Footer Actions */}
-        <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+        <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
           <p className="text-xs text-slate-500 font-medium">
             💡 Highlighted amber inputs indicate custom per-session commission overrides. Blank boxes default to the base rate.
           </p>
@@ -364,7 +373,7 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition"
+              className="px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition"
             >
               Cancel
             </button>
@@ -372,7 +381,7 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
               type="button"
               disabled={saving || loading || sessions.length === 0}
               onClick={handleSave}
-              className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg shadow-md transition flex items-center gap-1.5"
+              className="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg shadow-md transition flex items-center gap-1.5"
             >
               {saving ? '⏳ Saving...' : '💾 Save Commissions'}
             </button>
