@@ -76,7 +76,7 @@ export async function PUT(request, { params }) {
       if (!sessionId || !agentCommissions) continue;
 
       const ref = orgSessionDoc(orgId, sessionId);
-      batch.set(ref, { agentCommissions, updatedAt: new Date() }, { merge: true });
+      batch.set(ref, { agentCommissions, updatedAt: Date.now() }, { merge: true });
     }
 
     await batch.commit();

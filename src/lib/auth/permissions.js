@@ -22,7 +22,16 @@ export function canManageOrgUsers(role) {
 export async function getActiveSession(orgId) {
   const snap = await orgSessionsCol(orgId).where('isActive', '==', true).limit(1).get();
   if (snap.empty) return null;
-  return { id: snap.docs[0].id, ...snap.docs[0].data() };
+  const data = snap.docs[0].data() || {};
+  const plainData = JSON.parse(
+    JSON.stringify(data, (key, value) => {
+      if (value && typeof value === 'object' && ('_seconds' in value || typeof value.toDate === 'function')) {
+        return value._seconds ? value._seconds * 1000 : String(value);
+      }
+      return value;
+    })
+  );
+  return { id: snap.docs[0].id, ...plainData };
 }
 
 /** True while the org has a currently-open lottery session. */
