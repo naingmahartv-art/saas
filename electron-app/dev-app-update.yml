@@ -2,3 +2,4 @@ provider: github
 owner: naingmahartv-art
 repo: saas
 vPrefixedTagName: true
+updaterCacheDirName: saas-platform-desktop-updater
