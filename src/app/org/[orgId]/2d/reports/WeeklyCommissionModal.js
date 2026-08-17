@@ -165,11 +165,11 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex flex-col p-2 sm:p-4"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl max-w-7xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-200"
+        className="bg-white rounded-xl shadow-2xl w-full h-full flex flex-col overflow-hidden border border-slate-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
@@ -256,7 +256,7 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
               <p className="text-xs text-slate-400 mt-1">Add agents in Agent Management first.</p>
             </div>
           ) : (
-            <div className="w-full flex-1 overflow-x-auto overflow-y-auto max-h-[60vh] border border-slate-200 rounded-xl shadow-sm bg-white">
+            <div className="w-full flex-1 overflow-x-auto overflow-y-auto border border-slate-200 rounded-xl shadow-sm bg-white h-full">
               <table className="min-w-max w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider">
