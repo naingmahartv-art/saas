@@ -2,9 +2,25 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useI18n } from '@/lib/i18n';
 
-function formatSessionTitle(s) {
-  const timeLabel = s.ampm === 'AM' ? '09:00 AM' : '12:00 PM';
-  return `${s.onDate} (${timeLabel})`;
+const SLOT_TIME_LABELS = {
+  '09:00': '09:30 AM',
+  '12:00': '12:00 PM',
+  '04:00': '04:30 PM',
+  'AM': '09:30 AM',
+  'PM': '12:00 PM',
+};
+
+function getSlotDisplayLabel(s) {
+  const slotKey = String(s.ampm || s.slot || '').trim();
+  if (SLOT_TIME_LABELS[slotKey]) return SLOT_TIME_LABELS[slotKey];
+
+  if (typeof s.onCount === 'number') {
+    const idx = s.onCount % 10;
+    if (idx === 1) return '09:30 AM';
+    if (idx === 2) return '12:00 PM';
+    if (idx === 3) return '04:30 PM';
+  }
+  return slotKey || '12:00 PM';
 }
 
 export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onSaved }) {
@@ -29,6 +45,7 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [bulkCustomAmount, setBulkCustomAmount] = useState('');
 
   // Local state grid: { [sessionId]: { [agentId]: commissionNumber } }
   const [matrix, setMatrix] = useState({});
@@ -105,6 +122,23 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
     setStatusMsg('Applied default profile commissions to all agents across all sessions');
   }
 
+  function handleApplyCustomToAll() {
+    if (bulkCustomAmount === '' || isNaN(parseFloat(bulkCustomAmount))) return;
+    const val = parseFloat(bulkCustomAmount);
+    setMatrix((prev) => {
+      const next = { ...prev };
+      for (const s of sessions) {
+        const sComms = { ...(next[s.id] || {}) };
+        for (const ag of agents) {
+          sComms[ag.id] = val;
+        }
+        next[s.id] = sComms;
+      }
+      return next;
+    });
+    setStatusMsg(`⚡ Applied ${val}% commission to ALL agents across ALL sessions`);
+  }
+
   async function handleSave() {
     setSaving(true);
     setStatusMsg('');
@@ -145,7 +179,7 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-200"
+        className="bg-white rounded-2xl shadow-2xl max-w-7xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-slate-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
@@ -168,7 +202,7 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
         </div>
 
         {/* Top Controls Bar */}
-        <div className="px-6 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
               <label className="text-xs font-bold uppercase tracking-wider text-slate-600">📅 Date Range:</label>
@@ -188,32 +222,56 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Quick Apply Global Controls */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1 shadow-xs">
+              <span className="text-xs font-bold text-slate-700">Set All:</span>
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                max="100"
+                placeholder="15"
+                value={bulkCustomAmount}
+                onChange={(e) => setBulkCustomAmount(e.target.value)}
+                className="w-14 px-1.5 py-0.5 text-xs font-bold text-center border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+              <span className="text-xs font-bold text-slate-500">%</span>
+              <button
+                type="button"
+                onClick={handleApplyCustomToAll}
+                className="px-2.5 py-1 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded transition shadow-xs ml-1"
+                title="Apply custom percentage to all cells in range"
+              >
+                ⚡ Apply All
+              </button>
+            </div>
+
             <button
               type="button"
               onClick={handleApplyAllDefaults}
-              className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition shadow-sm"
+              className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition shadow-xs"
               title="Copy base profile rates to all session cells"
             >
-              ⚡ Reset All to Profile Base Rates
+              🔄 Reset to Base Rates
             </button>
           </div>
         </div>
 
         {/* Alerts Banner */}
         {statusMsg && (
-          <div className="px-6 py-2.5 bg-emerald-50 border-b border-emerald-200 text-xs font-semibold text-emerald-800">
+          <div className="px-6 py-2 bg-emerald-50 border-b border-emerald-200 text-xs font-semibold text-emerald-800">
             {statusMsg}
           </div>
         )}
         {errorMsg && (
-          <div className="px-6 py-2.5 bg-rose-50 border-b border-rose-200 text-xs font-semibold text-rose-700">
+          <div className="px-6 py-2 bg-rose-50 border-b border-rose-200 text-xs font-semibold text-rose-700">
             ⚠️ {errorMsg}
           </div>
         )}
 
-        {/* Matrix Content Body */}
-        <div className="flex-1 overflow-auto p-6">
+        {/* Matrix Content Body with Explicit Horizontal & Vertical Scrollbars */}
+        <div className="flex-1 p-5 overflow-hidden flex flex-col">
           {loading ? (
             <div className="py-16 text-center">
               <div className="inline-block animate-spin text-2xl text-indigo-600 mb-2">⏳</div>
@@ -232,25 +290,25 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
               <p className="text-xs text-slate-400 mt-1">Add agents in Agent Management first.</p>
             </div>
           ) : (
-            <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white">
-              <table className="w-full text-left text-xs border-collapse">
+            <div className="w-full flex-1 overflow-x-auto overflow-y-auto max-h-[60vh] border border-slate-200 rounded-xl shadow-sm bg-white">
+              <table className="min-w-max w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider">
-                    <th className="px-4 py-3 sticky left-0 bg-slate-100 z-10 border-r border-slate-200 min-w-[160px]">
+                    <th className="px-4 py-3 sticky left-0 bg-slate-100 z-20 border-r border-slate-200 min-w-[160px] shadow-sm">
                       Agent Name
                     </th>
                     <th className="px-3 py-3 border-r border-slate-200 text-center min-w-[90px] bg-slate-100">
                       Base Rate
                     </th>
                     {sessions.map((s) => (
-                      <th key={s.id} className="px-3 py-3 text-center border-r border-slate-200 min-w-[120px]">
+                      <th key={s.id} className="px-3 py-3 text-center border-r border-slate-200 min-w-[130px] bg-slate-100">
                         <div className="font-bold text-slate-800">{s.onDate}</div>
-                        <div className="text-[10px] font-semibold text-indigo-600">
-                          {s.ampm === 'AM' ? '09:00 AM' : '12:00 PM'}
+                        <div className="text-[10px] font-bold text-indigo-600 mt-0.5">
+                          {getSlotDisplayLabel(s)}
                         </div>
                       </th>
                     ))}
-                    <th className="px-4 py-3 text-center min-w-[120px]">Quick Fill</th>
+                    <th className="px-4 py-3 text-center min-w-[120px] bg-slate-100">Quick Fill</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -258,7 +316,7 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
                     const baseRate = ag.commission ?? 0;
                     return (
                       <tr key={ag.id} className="hover:bg-slate-50 transition">
-                        <td className="px-4 py-3 font-bold text-slate-800 sticky left-0 bg-white hover:bg-slate-50 border-r border-slate-200 shadow-sm">
+                        <td className="px-4 py-3 font-bold text-slate-800 sticky left-0 bg-white hover:bg-slate-50 border-r border-slate-200 shadow-sm z-10">
                           {ag.agentName}
                         </td>
                         <td className="px-3 py-3 text-center font-bold text-slate-500 border-r border-slate-200 bg-slate-50/50">
@@ -270,7 +328,7 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
                           const isCustom = displayVal !== '' && parseFloat(displayVal) !== baseRate;
 
                           return (
-                            <td key={s.id} className="px-2 py-2 text-center border-r border-slate-200">
+                            <td key={s.id} className="px-2.5 py-2 text-center border-r border-slate-200">
                               <div className="relative flex items-center justify-center">
                                 <input
                                   type="number"
@@ -282,7 +340,7 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
                                   onChange={(e) => handleCellChange(s.id, ag.id, e.target.value)}
                                   className={`w-20 px-2 py-1.5 text-center text-xs font-bold rounded border transition focus:outline-none focus:ring-2 ${
                                     isCustom
-                                      ? 'bg-amber-50 border-amber-400 text-amber-900 focus:ring-amber-500 font-extrabold'
+                                      ? 'bg-amber-50 border-amber-400 text-amber-900 focus:ring-amber-500 font-extrabold shadow-xs'
                                       : 'bg-white border-slate-300 text-slate-800 focus:ring-indigo-500'
                                   }`}
                                 />
@@ -311,9 +369,9 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
         </div>
 
         {/* Footer Actions */}
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+        <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
           <p className="text-xs text-slate-500 font-medium">
-            💡 Highlighted amber inputs indicate custom per-session commission overrides.
+            💡 Highlighted amber inputs indicate custom per-session commission overrides. Blank boxes default to the base rate ({`%`}).
           </p>
 
           <div className="flex items-center gap-3">
