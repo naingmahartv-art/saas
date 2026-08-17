@@ -6,6 +6,9 @@ const fs = require('fs');
 const http = require('http');
 const net = require('net');
 
+// Disable Chromium disk cache to prevent backend_impl.cc cache error logs
+app.commandLine.appendSwitch('disable-http-cache');
+
 // The bundled production build of the Next.js app (see scripts/prepare-bundle.js
 // and README.md). Packaged apps read it from Resources/app-bundle; running
 // unpacked via `yarn start` reads the local app-bundle/ folder instead.
