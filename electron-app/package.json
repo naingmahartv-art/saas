@@ -49,7 +49,7 @@
     "updaterCacheDirName": "saas-platform-desktop-updater",
     "win": {
       "target": "nsis",
-      "artifactName": "SaaS-Platform-Setup-${version}.${ext}"
+      "artifactName": "SaaS.Platform.Setup.${version}.${ext}"
     },
     "mac": {
       "target": "dmg"
