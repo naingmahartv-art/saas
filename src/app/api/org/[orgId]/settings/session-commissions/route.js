@@ -20,21 +20,26 @@ export async function GET(request, { params }) {
   }
 
   try {
-    const snap = await orgSessionsCol(orgId)
-      .where('onDate', '>=', startDate)
-      .where('onDate', '<=', endDate)
-      .get();
+    const snap = await orgSessionsCol(orgId).get();
 
-    const sessions = snap.docs.map((docSnap) => {
+    const sessions = [];
+    for (const docSnap of snap.docs) {
       const d = docSnap.data() || {};
-      return {
+      const sessionDate = d.onDate || (docSnap.id.includes('_') ? docSnap.id.split('_')[0] : '');
+
+      if (!sessionDate || sessionDate < startDate || sessionDate > endDate) continue;
+
+      const resolvedAmpm = d.ampm || (docSnap.id.includes('_') ? docSnap.id.split('_')[1] : '12:00');
+      const resolvedOnCount = d.onCount || (docSnap.id.includes('_') ? parseInt(docSnap.id.split('_')[2], 10) : 1);
+
+      sessions.push({
         id: docSnap.id,
-        onDate: d.onDate,
-        ampm: d.ampm || 'AM',
-        onCount: d.onCount || 1,
+        onDate: sessionDate,
+        ampm: resolvedAmpm,
+        onCount: resolvedOnCount,
         agentCommissions: d.agentCommissions || {},
-      };
-    });
+      });
+    }
 
     // Sort by onDate asc, onCount asc, ampm asc
     sessions.sort((a, b) => {

@@ -114,6 +114,7 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
     } else {
       loadReportData(dates.from, dates.to, selectedAgent, selectedSlot);
     }
+    console.log('Loading report data for periodType:', periodType, 'dates:', dates, 'agent:', selectedAgent, 'slot:', selectedSlot);  
   }, [periodType, selectedAgent, selectedSlot, loadReportData]);
 
   function handleCustomDateChange(field, val) {
