@@ -45,7 +45,9 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
-  const [bulkCustomAmount, setBulkCustomAmount] = useState('');
+
+  // Per-agent Quick Fill inputs: { [agentId]: string }
+  const [agentQuickAmounts, setAgentQuickAmounts] = useState({});
 
   // Local state grid: { [sessionId]: { [agentId]: commissionNumber } }
   const [matrix, setMatrix] = useState({});
@@ -92,19 +94,24 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
     }));
   }
 
-  function handleApplyAgentDefault(agent) {
-    const defCom = agent.commission ?? 0;
+  function handleApplyAgentCustom(agent) {
+    const valStr = agentQuickAmounts[agent.id];
+    const val =
+      valStr !== undefined && valStr !== '' && !isNaN(parseFloat(valStr))
+        ? parseFloat(valStr)
+        : agent.commission ?? 0;
+
     setMatrix((prev) => {
       const next = { ...prev };
       for (const s of sessions) {
         next[s.id] = {
           ...(next[s.id] || {}),
-          [agent.id]: defCom,
+          [agent.id]: val,
         };
       }
       return next;
     });
-    setStatusMsg(`Applied ${defCom}% base commission across all sessions for ${agent.agentName}`);
+    setStatusMsg(`Applied ${val}% across all sessions for ${agent.agentName}`);
   }
 
   function handleApplyAllDefaults() {
@@ -120,23 +127,6 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
       return next;
     });
     setStatusMsg('Applied default profile commissions to all agents across all sessions');
-  }
-
-  function handleApplyCustomToAll() {
-    if (bulkCustomAmount === '' || isNaN(parseFloat(bulkCustomAmount))) return;
-    const val = parseFloat(bulkCustomAmount);
-    setMatrix((prev) => {
-      const next = { ...prev };
-      for (const s of sessions) {
-        const sComms = { ...(next[s.id] || {}) };
-        for (const ag of agents) {
-          sComms[ag.id] = val;
-        }
-        next[s.id] = sComms;
-      }
-      return next;
-    });
-    setStatusMsg(`⚡ Applied ${val}% commission to ALL agents across ALL sessions`);
   }
 
   async function handleSave() {
@@ -222,38 +212,14 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
             </div>
           </div>
 
-          {/* Quick Apply Global Controls */}
           <div className="flex flex-wrap items-center gap-2.5">
-            <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1 shadow-xs">
-              <span className="text-xs font-bold text-slate-700">Set All:</span>
-              <input
-                type="number"
-                step="0.5"
-                min="0"
-                max="100"
-                placeholder="15"
-                value={bulkCustomAmount}
-                onChange={(e) => setBulkCustomAmount(e.target.value)}
-                className="w-14 px-1.5 py-0.5 text-xs font-bold text-center border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-              <span className="text-xs font-bold text-slate-500">%</span>
-              <button
-                type="button"
-                onClick={handleApplyCustomToAll}
-                className="px-2.5 py-1 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded transition shadow-xs ml-1"
-                title="Apply custom percentage to all cells in range"
-              >
-                ⚡ Apply All
-              </button>
-            </div>
-
             <button
               type="button"
               onClick={handleApplyAllDefaults}
-              className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition shadow-xs"
+              className="px-3.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition shadow-xs"
               title="Copy base profile rates to all session cells"
             >
-              🔄 Reset to Base Rates
+              🔄 Reset All to Base Rates
             </button>
           </div>
         </div>
@@ -308,7 +274,9 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
                         </div>
                       </th>
                     ))}
-                    <th className="px-4 py-3 text-center min-w-[120px] bg-slate-100">Quick Fill</th>
+                    <th className="px-4 py-3 text-center min-w-[190px] bg-slate-100">
+                      Quick Fill Row
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -349,15 +317,33 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
                             </td>
                           );
                         })}
-                        <td className="px-3 py-2 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleApplyAgentDefault(ag)}
-                            className="px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded transition"
-                            title={`Fill ${baseRate}% for all sessions of ${ag.agentName}`}
-                          >
-                            Set All {baseRate}%
-                          </button>
+                        <td className="px-3 py-2 text-center min-w-[190px]">
+                          <div className="flex items-center justify-center gap-1 bg-slate-50 p-1 rounded-lg border border-slate-200">
+                            <input
+                              type="number"
+                              step="0.5"
+                              min="0"
+                              max="100"
+                              placeholder={`${baseRate}%`}
+                              value={agentQuickAmounts[ag.id] ?? ''}
+                              onChange={(e) =>
+                                setAgentQuickAmounts((prev) => ({
+                                  ...prev,
+                                  [ag.id]: e.target.value,
+                                }))
+                              }
+                              className="w-14 px-1.5 py-1 text-xs font-bold text-center border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                            />
+                            <span className="text-xs font-bold text-slate-400">%</span>
+                            <button
+                              type="button"
+                              onClick={() => handleApplyAgentCustom(ag)}
+                              className="px-2.5 py-1 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded transition shadow-xs whitespace-nowrap"
+                              title={`Apply specified % across all sessions for ${ag.agentName}`}
+                            >
+                              Set All
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -371,7 +357,7 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
         {/* Footer Actions */}
         <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
           <p className="text-xs text-slate-500 font-medium">
-            💡 Highlighted amber inputs indicate custom per-session commission overrides. Blank boxes default to the base rate ({`%`}).
+            💡 Highlighted amber inputs indicate custom per-session commission overrides. Blank boxes default to the base rate.
           </p>
 
           <div className="flex items-center gap-3">
