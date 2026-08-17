@@ -29,18 +29,21 @@ function getTokenItemsForSlip(slip, luckyNo) {
     return slip.tokens.map(tokText => {
       const { entries } = parseNumberExpression(tokText, { maxEntries: MAX_ENTRIES });
       const amount = entries ? entries.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0) : 0;
-      const isWinner = Boolean(
-        luckyNo &&
-          entries?.some(e => String(e.num).padStart(2, '0') === String(luckyNo).padStart(2, '0'))
-      );
-      return { tokText, amount, isWinner };
+      const matchingEntries = (luckyNo && entries)
+        ? entries.filter(e => String(e.num).padStart(2, '0') === String(luckyNo).padStart(2, '0'))
+        : [];
+      const winAmount = matchingEntries.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+      const isWinner = winAmount > 0;
+      return { tokText, amount, winAmount, isWinner };
     });
   }
   if (slip.details && slip.details.length > 0) {
     return slip.details.map(d => {
       const num = String(d.num1).padStart(2, '0');
       const isWinner = Boolean(luckyNo && num === String(luckyNo).padStart(2, '0'));
-      return { tokText: num, amount: d.value, isWinner };
+      const val = parseFloat(d.value) || 0;
+      const winAmount = isWinner ? val : 0;
+      return { tokText: num, amount: val, winAmount, isWinner };
     });
   }
   return [];
@@ -282,7 +285,7 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
       const lAmount = luckyNo
         ? getTokenItemsForSlip(s, luckyNo)
             .filter(item => item.isWinner)
-            .reduce((sum, item) => sum + item.amount, 0)
+            .reduce((sum, item) => sum + item.winAmount, 0)
         : 0;
 
       const rate = ag?.rate || activeSession?.rate || 80;
