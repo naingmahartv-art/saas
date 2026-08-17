@@ -184,12 +184,10 @@ function setupAutoUpdater() {
   try {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.allowPrerelease = true;
+    autoUpdater.forceDevUpdateConfig = true;
 
     ipcMain.on('check-for-updates', () => {
-      if (!app.isPackaged) {
-        mainWindow?.webContents.send('update-status', { status: 'dev', message: 'Development mode - updates disabled' });
-        return;
-      }
       mainWindow?.webContents.send('update-status', { status: 'checking', message: 'Checking for updates on GitHub...' });
       autoUpdater.checkForUpdates().catch(err => {
         mainWindow?.webContents.send('update-status', { status: 'error', message: err.message });

@@ -191,7 +191,7 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
     if (!info) return 'Checking for updates...';
     if (info.status === 'checking') return '🔍 Checking for new version on GitHub...';
     if (info.status === 'latest') return '✅ Your application is up to date!';
-    if (info.status === 'dev') return '🛠️ Development mode - updates disabled.';
+    if (info.status === 'dev') return '🛠️ Dev Mode: Checking GitHub updates...';
     if (info.status === 'available') return `🎉 New Version ${info.version || ''} Available! Downloading...`;
     if (info.status === 'downloading') return `📥 Downloading Update... ${info.percent || 0}%`;
     if (info.status === 'ready') return `🎉 Version ${info.version || ''} Ready to Install!`;
