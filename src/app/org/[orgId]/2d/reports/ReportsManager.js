@@ -4,6 +4,8 @@ import { useI18n } from '@/lib/i18n/index.js';
 import { buildReportPdf, reportFileName } from '@/lib/reports/buildPdf.js';
 import { parseNumberExpression, MAX_ENTRIES } from '@/lib/lottery/numberParser.js';
 
+import WeeklyCommissionModal from './WeeklyCommissionModal.js';
+
 function getTokenItemsForSlip(slip, luckyNo) {
   if (slip.tokens && slip.tokens.length > 0) {
     return slip.tokens.map((tokText) => {
@@ -71,6 +73,7 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
 
   const [loading, setLoading] = useState(false);
   const [reportSlips, setReportSlips] = useState([]);
+  const [isCommissionModalOpen, setIsCommissionModalOpen] = useState(false);
 
   const agentMapLookup = useMemo(() => {
     const map = new Map();
@@ -121,7 +124,11 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
       .map((s) => {
         const saleAmount = s.amount || 0;
         const ag = agentMapLookup.get(s.agentName) || agentMapLookup.get(s.agentId);
-        const comRate = ag?.commission ?? 0;
+        const sComms = s.agentCommissions || {};
+        const comRate =
+          ag && sComms[ag.id] !== undefined && sComms[ag.id] !== null && sComms[ag.id] !== ''
+            ? parseFloat(sComms[ag.id])
+            : ag?.commission ?? 0;
         const comAmt = saleAmount * (comRate / 100);
 
         const lAmount = s.luckyNo
@@ -474,8 +481,17 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
             />
           </div>
 
-          {/* Agent Dropdown Filter */}
-          <div className="flex items-center gap-2 ml-auto">
+          {/* Agent Dropdown Filter & Weekly Commission Editor */}
+          <div className="flex items-center gap-2.5 ml-auto">
+            <button
+              type="button"
+              onClick={() => setIsCommissionModalOpen(true)}
+              className="px-3.5 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition shadow-md flex items-center gap-1.5"
+              title="Edit per-session agent commissions for Friday settlements"
+            >
+              <span>⚙️ Edit Weekly Commissions</span>
+            </button>
+
             <span className="text-xs font-medium text-slate-400">Filter Agent:</span>
             <select
               value={selectedAgent}
@@ -851,6 +867,15 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
           )}
         </div>
       </div>
+
+      {isCommissionModalOpen && (
+        <WeeklyCommissionModal
+          orgId={orgId}
+          agents={initialAgents}
+          onClose={() => setIsCommissionModalOpen(false)}
+          onSaved={() => loadReportData(dates.from, dates.to, selectedAgent)}
+        />
+      )}
     </div>
   );
 }

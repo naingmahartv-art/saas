@@ -108,6 +108,14 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
   const [agentSlips, setAgentSlips] = useState([]);
   const [agentLoading, setAgentLoading] = useState(false);
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
+  const selectedAgentCommission = useMemo(() => {
+    if (!selectedAgent) return 0;
+    const sComms = activeSession?.agentCommissions || {};
+    if (sComms[selectedAgent.id] !== undefined && sComms[selectedAgent.id] !== null && sComms[selectedAgent.id] !== '') {
+      return parseFloat(sComms[selectedAgent.id]);
+    }
+    return selectedAgent.commission ?? 0;
+  }, [selectedAgent, activeSession]);
 
   const loadAgentReport = useCallback(async (agentName) => {
     if (!agentName) { setAgentSlips([]); return; }
@@ -264,7 +272,11 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
     return allAgentSlips.map(s => {
       const saleAmount = s.amount || 0;
       const ag = agentMap.get(s.agentName) || agentMap.get(s.agentId);
-      const comRate = ag?.commission ?? 0;
+      const sComms = activeSession?.agentCommissions || {};
+      const comRate =
+        ag && sComms[ag.id] !== undefined && sComms[ag.id] !== null && sComms[ag.id] !== ''
+          ? parseFloat(sComms[ag.id])
+          : ag?.commission ?? 0;
       const comAmt = saleAmount * (comRate / 100);
 
       const lAmount = luckyNo
@@ -692,9 +704,9 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
                       <p className="text-xl font-bold text-indigo-950 mt-1">{agentGrandTotal.toLocaleString()} <span className="text-xs text-indigo-500 font-normal">MMK</span></p>
                     </div>
                     <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-3.5 shadow-sm">
-                      <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Commission ({selectedAgent?.commission ?? 0}%)</p>
+                      <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Commission ({selectedAgentCommission}%)</p>
                       <p className="text-xl font-bold text-amber-950 mt-1">
-                        {(agentGrandTotal * ((selectedAgent?.commission ?? 0) / 100)).toLocaleString()} <span className="text-xs text-amber-600 font-normal">MMK</span>
+                        {(agentGrandTotal * (selectedAgentCommission / 100)).toLocaleString()} <span className="text-xs text-amber-600 font-normal">MMK</span>
                       </p>
                     </div>
                     <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-3.5 shadow-sm">
@@ -794,9 +806,9 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
                         <span className="text-xl text-amber-400 font-mono">{agentGrandTotal.toLocaleString()} MMK</span>
                       </div>
                       <div className="flex justify-between items-center text-xs text-slate-300 pt-2 border-t border-slate-700 font-sans">
-                        <span>Commission ({selectedAgent?.commission ?? 0}%):</span>
+                        <span>Commission ({selectedAgentCommission}%):</span>
                         <span className="font-mono text-slate-200">
-                          - {(agentGrandTotal * ((selectedAgent?.commission ?? 0) / 100)).toLocaleString()} MMK
+                          - {(agentGrandTotal * (selectedAgentCommission / 100)).toLocaleString()} MMK
                         </span>
                       </div>
                     </div>

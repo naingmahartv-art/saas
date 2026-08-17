@@ -47,6 +47,7 @@ export async function GET(request, { params }) {
           onCount: sData.onCount,
           luckyNo: sData.luckyNumber || sData.luckyNo || sData.winningNumber || null,
           rate: sData.rate || 80,
+          agentCommissions: sData.agentCommissions || {},
         });
       }
     }
