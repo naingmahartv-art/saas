@@ -91,7 +91,9 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
         let url = `/api/org/${orgId}/reports/range?startDate=${fromDate}&endDate=${toDate}`;
         if (agent) url += `&agentName=${encodeURIComponent(agent)}`;
         const res = await fetch(url);
-        const data = await res.json();
+        const text = await res.text();
+        let data = {};
+        try { data = JSON.parse(text); } catch { data = { slips: [] }; }
         setReportSlips(data.slips || []);
       } catch {
         setReportSlips([]);

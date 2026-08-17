@@ -39,7 +39,9 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
     setErrorMsg('');
     try {
       const res = await fetch(`/api/org/${orgId}/settings/session-commissions?startDate=${startDate}&endDate=${endDate}`);
-      const data = await res.json();
+      const text = await res.text();
+      let data = {};
+      try { data = JSON.parse(text); } catch { throw new Error(`Server returned HTML error (${res.status})`); }
       if (!res.ok) throw new Error(data.error || 'Failed to fetch sessions');
 
       const sessList = data.sessions || [];
@@ -120,7 +122,9 @@ export default function WeeklyCommissionModal({ orgId, agents = [], onClose, onS
         body: JSON.stringify({ updates }),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data = {};
+      try { data = JSON.parse(text); } catch { throw new Error(`Server returned HTML error (${res.status})`); }
       if (!res.ok) throw new Error(data.error || 'Failed to save commissions');
 
       setStatusMsg('🎉 Successfully saved weekly agent commissions!');
