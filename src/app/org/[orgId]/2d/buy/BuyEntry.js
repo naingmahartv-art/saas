@@ -49,6 +49,8 @@ export default function BuyEntry({
   replaceSlash = 'P',
   replaceAsterisk = 'R',
   onOptimisticBuySave,
+  onOpenHistory,
+  onOpenReports,
   onOpenSessionPicker,
 }) {
   const { t } = useI18n();
@@ -68,6 +70,7 @@ export default function BuyEntry({
   const [selectedTokenIds, setSelectedTokenIds] = useState(new Set());
   const [lastSelectedIndex, setLastSelectedIndex] = useState(null);
   const [vouchersCount, setVouchersCount] = useState(0);
+  const [exceededModalOpen, setExceededModalOpen] = useState(false);
 
   const [exceedSortKey, setExceedSortKey] = useState('excess');
   const [exceedSortDir, setExceedSortDir] = useState('desc');
@@ -307,9 +310,41 @@ export default function BuyEntry({
     }
   }
 
+  function handleExit() {
+    router.push(`/org/${orgId}/2d/ledger`);
+  }
+
+  function handleSelectBuy1() {
+    if (agents && agents.length > 0) {
+      setAgentId(agents[0].id);
+    } else {
+      setAgentId('buy_offload');
+    }
+    inputRef.current?.focus();
+  }
+
+  function handleSelectBuy2() {
+    if (agents && agents.length > 1) {
+      setAgentId(agents[1].id);
+    } else if (agents && agents.length > 0) {
+      setAgentId(agents[0].id);
+    } else {
+      setAgentId('buy_offload');
+    }
+    inputRef.current?.focus();
+  }
+
   useEffect(() => {
     function onKeyDown(e) {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTokenIds.size > 0) {
+      if (e.key === 'F4') {
+        e.preventDefault();
+        handleExit();
+      } else if (e.key === 'F12') {
+        e.preventDefault();
+        setExceededModalOpen(prev => !prev);
+      } else if (e.key === 'Escape' && exceededModalOpen) {
+        setExceededModalOpen(false);
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTokenIds.size > 0) {
         const activeTag = document.activeElement ? document.activeElement.tagName : '';
         if (activeTag !== 'INPUT' && activeTag !== 'TEXTAREA' && activeTag !== 'SELECT') {
           e.preventDefault();
@@ -319,7 +354,7 @@ export default function BuyEntry({
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedTokenIds]);
+  }, [orgId, selectedTokenIds, router, exceededModalOpen]);
 
   function addInputToken() {
     setError('');
@@ -889,6 +924,177 @@ export default function BuyEntry({
         </div>
 
       </div>
+
+      {/* Bottom Classic Action Buttons Bar matching user screenshot layout & fonts */}
+      <div className="bg-slate-100 dark:bg-slate-900 border border-gray-300 dark:border-slate-800 rounded-xl px-3 py-2 mt-2 flex flex-wrap items-center justify-between gap-2 shadow-xs shrink-0">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Button 1: Exit ( F4 ) / ထွက်မည် */}
+          <button
+            type="button"
+            onClick={handleExit}
+            className="px-3.5 py-1.5 bg-gray-200 hover:bg-gray-300 active:bg-gray-400 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-900 dark:text-slate-100 font-bold text-xs rounded-lg border border-gray-400 dark:border-slate-700 shadow-xs flex flex-col items-center justify-center transition cursor-pointer min-w-[95px]"
+            title="Exit to 2D Ledger (F4)"
+          >
+            <span className="font-mono text-xs font-bold text-gray-800 dark:text-gray-200">Exit ( F4 )</span>
+            <span className="text-[10px] text-gray-600 dark:text-gray-400 font-normal">ထွက်မည်</span>
+          </button>
+
+          {/* Button 2: t0,f 1 / အဝယ် ၁ (Buy 1) */}
+          <button
+            type="button"
+            onClick={handleSelectBuy1}
+            className={`px-3.5 py-1.5 font-bold text-xs rounded-lg border shadow-xs flex flex-col items-center justify-center transition cursor-pointer min-w-[95px] ${
+              agentId === (agents?.[0]?.id || 'buy_offload')
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 shadow-sm'
+                : 'bg-gray-200 hover:bg-gray-300 active:bg-gray-400 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-900 dark:text-slate-100 border-gray-400 dark:border-slate-700'
+            }`}
+            title="Select Buy 1 Agent (t0,f 1)"
+          >
+            <span className="font-mono text-xs">t0,f 1</span>
+            <span className="text-[10px] opacity-90 font-normal">အဝယ် ၁</span>
+          </button>
+
+          {/* Button 3: t0,f 2 / အဝယ် ၂ (Buy 2) */}
+          <button
+            type="button"
+            onClick={handleSelectBuy2}
+            className={`px-3.5 py-1.5 font-bold text-xs rounded-lg border shadow-xs flex flex-col items-center justify-center transition cursor-pointer min-w-[95px] ${
+              agentId === (agents?.[1]?.id || (agents?.length === 1 ? agents[0]?.id : 'buy_offload'))
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 shadow-sm'
+                : 'bg-gray-200 hover:bg-gray-300 active:bg-gray-400 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-900 dark:text-slate-100 border-gray-400 dark:border-slate-700'
+            }`}
+            title="Select Buy 2 Agent (t0,f 2)"
+          >
+            <span className="font-mono text-xs">t0,f 2</span>
+            <span className="text-[10px] opacity-90 font-normal">အဝယ် ၂</span>
+          </button>
+
+          {/* Button 4: uRH*Pef; tcsKyf / ကျန်ငွေ / စာရင်း အချုပ် */}
+          <button
+            type="button"
+            onClick={onOpenReports}
+            className="px-4 py-1.5 bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-950/80 dark:hover:bg-indigo-900/80 text-indigo-900 dark:text-indigo-100 font-bold text-xs rounded-lg border border-indigo-400 dark:border-indigo-800 shadow-xs flex flex-col items-center justify-center transition cursor-pointer min-w-[135px]"
+            title="Open Total / Ledger Summary Reports (uRH*Pef; tcsKyf)"
+          >
+            <span className="font-mono text-xs font-bold">uRH*Pef; tcsKyf</span>
+            <span className="text-[10px] text-indigo-700 dark:text-indigo-300 font-normal">ကျန်ငွေ / စာရင်း အချုပ်</span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Button 5: ausmraeaom eHvgwfrsm; (F12) / ကျော်နေသော နံပါတ်များ */}
+          <button
+            type="button"
+            onClick={() => setExceededModalOpen(prev => !prev)}
+            className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg border border-amber-600 shadow-sm flex flex-col items-center justify-center transition cursor-pointer min-w-[170px]"
+            title="Exceeded / Overflow Numbers Modal (F12)"
+          >
+            <span className="font-mono text-xs font-bold">ausmraeaom eHvgwfrsm; (F12)</span>
+            <span className="text-[10px] text-amber-100 font-normal">ကျော်နေသော နံပါတ်များ</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Exceeded / Overflow Numbers Modal (F12) */}
+      {exceededModalOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setExceededModalOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col border border-gray-200 dark:border-slate-800 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-amber-600 to-amber-700 text-white px-4 py-3 flex items-center justify-between shrink-0 shadow-sm">
+              <h3 className="text-sm font-bold tracking-wide flex items-center gap-2">
+                <span>⚠️</span>
+                <span>ausmraeaom eHvgwfrsm; (ကျော်နေသော နံပါတ်များ - F12)</span>
+              </h3>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyExceedLimit}
+                  className="text-xs px-2.5 py-1 bg-amber-800 hover:bg-amber-900 text-white font-medium rounded transition flex items-center gap-1 border border-amber-500 cursor-pointer"
+                >
+                  <span>📋</span> Copy List
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExceededModalOpen(false)}
+                  className="text-white hover:bg-amber-800/80 rounded px-2 py-0.5 font-bold transition cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Summary Cards */}
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-900/50 grid grid-cols-3 gap-3 text-center shrink-0">
+              <div className="bg-white dark:bg-slate-800 p-2 rounded-lg border border-amber-200 dark:border-amber-900/50 shadow-xs">
+                <span className="block text-[11px] font-semibold text-gray-500 dark:text-slate-400">Total Exceed Count</span>
+                <span className="text-base font-mono font-bold text-amber-700 dark:text-amber-400">{exceedList.length} numbers</span>
+              </div>
+              <div className="bg-white dark:bg-slate-800 p-2 rounded-lg border border-amber-200 dark:border-amber-900/50 shadow-xs">
+                <span className="block text-[11px] font-semibold text-gray-500 dark:text-slate-400">Total Exceed Amount</span>
+                <span className="text-base font-mono font-bold text-red-600">{totalExcess.toLocaleString()}</span>
+              </div>
+              <div className="bg-white dark:bg-slate-800 p-2 rounded-lg border border-amber-200 dark:border-amber-900/50 shadow-xs">
+                <span className="block text-[11px] font-semibold text-gray-500 dark:text-slate-400">Net Total (Exceed - Buy)</span>
+                <span className="text-base font-mono font-bold text-purple-700 dark:text-purple-400">{totalRemaining.toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* Modal Table Content */}
+            <div className="p-4 flex-1 overflow-y-auto min-h-0">
+              {exceedList.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-12">No over-limit or exceeded numbers yet.</p>
+              ) : (
+                <table className="w-full text-sm border-collapse border border-gray-200 dark:border-slate-800">
+                  <thead>
+                    <tr className="bg-slate-100 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 border-b border-gray-200 dark:border-slate-700">
+                      <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-center bg-emerald-700 text-white w-20">Number</th>
+                      <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-right text-red-600 bg-red-50 dark:bg-red-950/40">Exceed Amount</th>
+                      <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-right bg-white dark:bg-slate-900">Buy Offload</th>
+                      <th className="px-3 py-2 text-right bg-purple-700 text-white font-bold">Net Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {exceedList.map(e => (
+                      <tr key={e.num} className="border-b border-gray-200 dark:border-slate-800 hover:bg-amber-50/50 dark:hover:bg-amber-950/20">
+                        <td className="px-3 py-1.5 font-mono font-bold text-center bg-emerald-600 text-white border-r border-gray-200 dark:border-slate-800 text-base">
+                          {e.num}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-mono font-bold text-red-600 dark:text-red-400 border-r border-gray-200 dark:border-slate-800">
+                          {e.excess.toLocaleString()}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-mono font-semibold text-slate-800 dark:text-slate-200 border-r border-gray-200 dark:border-slate-800">
+                          {e.buy > 0 ? e.buy.toLocaleString() : '0'}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-mono font-bold text-white bg-purple-700">
+                          {e.total.toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-4 py-3 bg-slate-50 dark:bg-slate-850 border-t border-gray-200 dark:border-slate-800 flex justify-between items-center shrink-0">
+              <span className="text-xs text-gray-500">Press F12 or Esc to close</span>
+              <button
+                type="button"
+                onClick={() => setExceededModalOpen(false)}
+                className="px-4 py-1.5 bg-slate-700 hover:bg-slate-800 text-white font-bold text-xs rounded-lg transition cursor-pointer"
+              >
+                Close (Esc)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quick Entry Modal */}
       {quickEntryOpen && (
