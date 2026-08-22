@@ -95,7 +95,7 @@ export default function BuyEntry({
   const notBuySet = useMemo(() => new Set(notBuyNumbers || []), [notBuyNumbers]);
   const hotSet = useMemo(() => new Set(hotNumbers || []), [hotNumbers]);
 
-  const limitValue = limit?.num1Limit || 0;
+  const limitValue = typeof limit?.limitValue === 'number' ? limit.limitValue : (limit?.num1Limit || limit?.limit || 0);
   const isLimitActive = limitValue > 0;
 
   useEffect(() => {
