@@ -616,20 +616,16 @@ export default function BuyEntry({
             title="Exceeded / Overflow Numbers Modal (F12)"
           >
             <span>⚠️</span>
-            <span>ကျော်နေသော နံပါတ်များ (F12)</span>
+          <span>ကျော်နေသော နံပါတ်များ (F12)</span>
           </button>
         </div>
       </div>
 
-      <div
-        className="flex-1 min-h-0 flex flex-col overflow-hidden"
-        style={{ zoom: parseFloat(ledgerFontSize || '100') / 100 }}
-      >
-        {/* Main 3-Column Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 min-h-0">
+        {/* Main 3-Column Layout matching Sale Ledger UI Proportions */}
+        <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_1.3fr_0.8fr] gap-3 flex-1 min-h-0 items-stretch">
         
         {/* LEFT COLUMN: Input & Voucher Entries */}
-        <div className="lg:col-span-4 flex flex-col h-full min-h-0">
+        <div className="flex flex-col h-full min-h-0">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-full min-h-0">
             {/* Green Title Header matching legacy design */}
             <div className="bg-gradient-to-r from-emerald-800 via-emerald-700 to-teal-800 text-white px-3 py-2 flex items-center justify-between shrink-0 shadow-sm">
@@ -648,181 +644,195 @@ export default function BuyEntry({
             </div>
 
             <div className="p-3 flex flex-col flex-1 min-h-0 space-y-2.5">
-              {/* Agent & Controls */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-600 mb-1">
-                    ကိုယ်စားလှယ် (Agent)
-                  </label>
+              {/* Agent Selector & Inputs */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="w-full">
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1">Select Buy Agent</label>
                   <select
-                    ref={agentSelectRef}
                     value={agentId}
                     onChange={e => setAgentId(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs font-semibold border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                    className="w-full px-2.5 py-1.5 text-xs font-semibold bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-xs"
                   >
-                    <option value="buy_offload">Buy Offload (အဝယ်စာရင်း)</option>
+                    <option value="buy_offload">Default (Buy Offload / အဝယ်)</option>
                     {agents.map(a => (
-                      <option key={a.id} value={a.id}>
-                        {a.agentName}
-                      </option>
+                      <option key={a.id} value={a.id}>{a.agentName || a.id}</option>
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-600 mb-1">
-                    ရှာဖွေရန် (Search Tokens)
-                  </label>
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    placeholder="Search..."
-                    className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
+
+                <div className="w-full">
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1">Buy Numbers & Amount</label>
+                  <div className="relative">
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={inputValue}
+                      onChange={handleChange}
+                      onKeyDown={handleKeyDown}
+                      placeholder="e.g. 12.14R100 or 12100"
+                      className="w-full px-3 py-1.5 text-sm font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    {inputValue && (
+                      <button
+                        type="button"
+                        onClick={() => setInputValue('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600 font-bold"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* Number Input Box & Action Buttons */}
-              <div>
-                <div className="flex gap-2">
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={inputValue}
-                    onChange={e => setInputValue(e.target.value)}
-                    onKeyDown={handleInputKeyDown}
-                    placeholder="Enter expression (e.g. 12R100)"
-                    className="flex-1 px-3 py-2 text-sm font-mono font-bold border-2 border-emerald-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-300 shadow-inner"
-                  />
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={handleSaveBuyVoucher}
-                    disabled={saving || pendingTokens.length === 0}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition shadow flex items-center gap-1"
+                    onClick={addInputToken}
+                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm transition flex items-center gap-1 cursor-pointer"
                   >
-                    <span>💾</span> Save (F1)
+                    <span>➕</span> Add (Enter)
                   </button>
                   <button
                     type="button"
-                    onClick={() => setPendingTokens([])}
-                    className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium text-xs rounded-lg transition border border-gray-300"
+                    onClick={() => {
+                      setInputValue('');
+                      setPendingTokens([]);
+                      setError('');
+                      setWarnings([]);
+                    }}
+                    className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs rounded-lg border border-gray-300 transition cursor-pointer"
                   >
                     Clear
                   </button>
                 </div>
-                <p className="text-[10px] text-gray-400 mt-1">Press Spacebar for Quick Entry modal</p>
+
+                <button
+                  type="button"
+                  onClick={handleSaveVoucher}
+                  disabled={saving || pendingTokens.length === 0}
+                  className="px-4 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs rounded-lg shadow-sm disabled:opacity-50 transition flex items-center gap-1 cursor-pointer"
+                >
+                  {saving ? 'Saving...' : '💾 Save Voucher'}
+                </button>
               </div>
 
+              {/* Error & Warning Messages */}
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-2.5 py-1.5 rounded-lg font-medium">
-                  {error}
+                <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium shrink-0">
+                  ⚠️ {error}
                 </div>
               )}
               {successMsg && (
-                <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs px-2.5 py-1.5 rounded-lg font-medium">
-                  {successMsg}
+                <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-700 font-bold shrink-0">
+                  ✅ {successMsg}
                 </div>
               )}
 
-              {/* Pending Items Grid Table */}
-              <div className="flex-1 min-h-0 border border-gray-200 rounded-lg overflow-hidden flex flex-col bg-slate-50">
-                <div className="flex-1 overflow-y-auto">
-                  <table className="w-full text-base border-collapse">
-                    <tbody>
-                      {entryTableRows.map((row, rIdx) => (
-                        <tr key={rIdx} className="even:bg-slate-100/50 hover:bg-emerald-50/50 transition-colors">
-                          {Array.from({ length: 5 }, (_, cIdx) => {
-                            const globalIdx = rIdx * 5 + cIdx;
-                            const p = row[cIdx];
-                            if (!p) return <td key={cIdx} className="border border-slate-200/60 dark:border-slate-800 p-1.5" />;
-
-                            const isDragging = draggedTokenId === p.id;
-                            const isDragOver = dragOverTokenId === p.id;
-                            const isSelected = selectedTokenIds.has(p.id);
-
-                            return (
-                              <td
-                                key={p.id}
-                                draggable={true}
-                                onDragStart={e => handleCellDragStart(e, p.id)}
-                                onDragOver={e => handleCellDragOver(e, p.id)}
-                                onDragLeave={e => handleCellDragLeave(e, p.id)}
-                                onDrop={e => handleCellDrop(e, p.id)}
-                                onDragEnd={handleCellDragEnd}
-                                className={`relative border px-1.5 py-1 text-left font-mono font-bold transition-all ${
-                                  isSelected
-                                    ? 'bg-emerald-600 text-white dark:bg-emerald-600 dark:text-white ring-2 ring-emerald-400 rounded z-10'
-                                    : 'border-slate-200 dark:border-slate-800 hover:bg-emerald-100/60 dark:hover:bg-slate-800/60 text-slate-900 dark:text-slate-100'
-                                } ${
-                                  isDragging ? 'opacity-40 bg-emerald-100 scale-95 border-dashed border-emerald-500' : ''
-                                } ${
-                                  isDragOver ? 'bg-emerald-200 ring-2 ring-emerald-500 scale-105 z-10 shadow' : ''
-                                }`}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleCellSelect(p, globalIdx, e);
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Delete' || e.key === 'Backspace') {
-                                      e.stopPropagation();
-                                      e.preventDefault();
-                                      removeSelectedTokens();
-                                    }
-                                  }}
-                                  className={`w-full truncate font-mono font-bold text-base text-left transition-colors select-none focus:outline-none cursor-pointer ${
-                                    isSelected
-                                      ? 'text-white font-extrabold'
-                                      : 'text-slate-900 dark:text-slate-100 hover:text-emerald-700 dark:hover:text-emerald-300'
-                                  }`}
-                                  title="Click to select, Ctrl+Click / Shift+Click for multi-select, press Delete key to remove"
-                                >
-                                  {p.tokenText}
-                                </button>
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              {/* Search & Selection Controls for Pending Tokens */}
+              <div className="flex items-center justify-between gap-2 shrink-0 pt-1">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Filter items..."
+                  className="px-2.5 py-1 text-xs border border-gray-300 rounded-md w-36 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                />
+                <div className="flex items-center gap-2 text-xs">
+                  {selectedTokenIds.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={removeSelectedTokens}
+                      className="px-2 py-0.5 bg-red-600 text-white font-bold text-[11px] rounded hover:bg-red-700 transition"
+                    >
+                      Delete Selected ({selectedTokenIds.size})
+                    </button>
+                  )}
+                  <span className="text-gray-500 text-[11px]">
+                    Total Pending: <strong className="text-emerald-700">{pendingTokens.length}</strong>
+                  </span>
                 </div>
               </div>
 
-              {/* Bottom Buttons */}
-              <div className="flex justify-between items-center pt-1 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => router.push(`/org/${orgId}/2d/ledger`)}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg transition border border-slate-300 flex items-center gap-1"
-                >
-                  <span>⬅️</span> Exit (F4)
-                </button>
-                <div className="text-xs font-mono font-bold text-emerald-800">
-                  Total Pending: {pendingTokens.reduce((s, p) => s + p.entries.reduce((a, e) => a + e.amount, 0), 0).toLocaleString()}
-                </div>
+              {/* Pending Tokens Table */}
+              <div className="flex-1 min-h-0 overflow-y-auto border border-gray-200 rounded-lg bg-gray-50/50">
+                {visibleTokens.length === 0 ? (
+                  <p className="text-xs text-gray-400 text-center py-10">No pending buy entries</p>
+                ) : (
+                  <div className="p-1">
+                    <table className="w-full border-collapse text-sm">
+                      <tbody>
+                        {entryTableRows.map((row, rIdx) => (
+                          <tr key={rIdx}>
+                            {row.map((p, cIdx) => {
+                              const globalIdx = rIdx * 5 + cIdx;
+                              const isSelected = selectedTokenIds.has(p.id);
+                              const isDragging = draggingIndex === globalIdx;
+                              const isDragOver = dragOverIndex === globalIdx;
+
+                              return (
+                                <td
+                                  key={p.id}
+                                  draggable
+                                  onDragStart={(e) => handleCellDragStart(e, globalIdx)}
+                                  onDragOver={(e) => handleCellDragOver(e, globalIdx)}
+                                  onDrop={(e) => handleCellDrop(e, p.id)}
+                                  onDragEnd={handleCellDragEnd}
+                                  className={`relative border px-1.5 py-1 text-left font-mono font-bold transition-all ${
+                                    isSelected
+                                      ? 'bg-emerald-600 text-white rounded z-10'
+                                      : 'border-slate-200 hover:bg-emerald-100/60 text-slate-900'
+                                  }`}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleCellSelect(p, globalIdx, e)}
+                                    className={`w-full truncate font-mono font-bold text-sm text-left select-none cursor-pointer ${
+                                      isSelected ? 'text-white' : 'text-slate-900 hover:text-emerald-700'
+                                    }`}
+                                  >
+                                    {p.tokenText}
+                                  </button>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom Total Bar */}
+              <div className="flex justify-between items-center pt-1 border-t border-gray-100 text-xs font-mono">
+                <span className="text-gray-500 font-semibold">Buy Voucher Total:</span>
+                <span className="font-bold text-emerald-800 text-sm">
+                  {pendingTokens.reduce((s, p) => s + p.entries.reduce((a, e) => a + e.amount, 0), 0).toLocaleString()}
+                </span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* MIDDLE COLUMN: Bought & Exceed List Table (Exact match to legacy screenshot layout & colors) */}
-        <div className="lg:col-span-5 flex flex-col h-full min-h-0">
+        {/* CENTER COLUMN: Buy Ledger List (Centered in Middle, UI Layout Matching Sale Ledger) */}
+        <div className="flex flex-col h-full min-h-0">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-full min-h-0">
-            {/* Green Header Banner matching legacy image */}
+            {/* Green Header Banner matching Sale Ledger */}
             <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 text-white px-3 py-2 flex items-center justify-between shrink-0 shadow-sm">
               <h2 className="text-sm font-bold tracking-wide flex items-center gap-2">
-                <span>ဝယ်ပြီးသော ကွက်များ (Bought & Exceed List)</span>
+                <span>📋</span>
+                <span>ဝယ်ယူထားသော စာရင်း (Buy Ledger)</span>
               </h2>
               <div className="flex items-center gap-2">
                 {exceedList.length > 0 && (
                   <button
                     type="button"
                     onClick={handleCopyExceedLimit}
-                    className="text-xs px-2 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white font-medium rounded transition flex items-center gap-1 border border-emerald-500 cursor-pointer"
-                    title="Copy Exceed list as CSV (Number,Exceed)"
+                    className="text-xs px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white font-medium rounded transition flex items-center gap-1 border border-emerald-500 cursor-pointer"
+                    title="Copy Buy List as CSV"
                   >
                     <span>📋</span> Copy
                   </button>
@@ -832,33 +842,28 @@ export default function BuyEntry({
                   onChange={e => setExceedSortKey(e.target.value)}
                   className="text-[11px] font-semibold bg-emerald-950 text-emerald-100 border border-emerald-700/80 rounded px-2 py-0.5 focus:outline-none"
                 >
-                  <option value="excess">Sort By Exceed Format</option>
-                  <option value="num">Sort By Number</option>
                   <option value="buy">Sort By Buy Amount</option>
-                  <option value="total">Sort By Net Total</option>
+                  <option value="num">Sort By Number</option>
                 </select>
               </div>
             </div>
 
             <div className="p-2.5 flex-1 flex flex-col min-h-0 justify-between">
               {exceedList.length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-10">No over-limit or buy entries yet</p>
+                <p className="text-xs text-gray-400 text-center py-16">No buy entries recorded yet for this session</p>
               ) : (
                 <div className="flex-1 min-h-0 overflow-y-auto mb-2 border border-gray-200 rounded-lg">
                   <table className="w-full text-sm border-collapse">
                     <thead>
                       <tr className="bg-slate-100 text-xs font-bold text-slate-700 uppercase tracking-wide border-b border-gray-200">
-                        <th className="px-1.5 py-1.5 border-r border-gray-200 text-center w-12 bg-emerald-700 text-white">
+                        <th className="px-2 py-2 border-r border-gray-200 text-center w-16 bg-emerald-700 text-white">
                           Num
                         </th>
-                        <th className="px-1.5 py-1.5 border-r border-gray-200 text-right text-red-600 bg-red-50">
-                          Exceed
+                        <th className="px-3 py-2 border-r border-gray-200 text-right bg-emerald-50 font-bold text-emerald-900">
+                          Buy Amount
                         </th>
-                        <th className="px-1.5 py-1.5 border-r border-gray-200 text-right bg-white text-slate-800">
-                          Buy
-                        </th>
-                        <th className="px-1.5 py-1.5 text-right bg-purple-700 text-white font-bold">
-                          Net Total
+                        <th className="px-3 py-2 text-center bg-slate-50 text-slate-700">
+                          Status / Note
                         </th>
                       </tr>
                     </thead>
@@ -866,20 +871,20 @@ export default function BuyEntry({
                       {exceedList.map(e => (
                         <tr key={e.num} className="border-b border-gray-200 hover:bg-emerald-50/50">
                           {/* Col 1: Bright Green Number Badge */}
-                          <td className="px-1.5 py-1 font-mono font-bold text-center bg-emerald-600 text-white border-r border-gray-200">
+                          <td className="px-2 py-1.5 font-mono font-extrabold text-center bg-emerald-600 text-white border-r border-gray-200 text-base">
                             {e.num}
                           </td>
-                          {/* Col 2: Red font Exceed Amount */}
-                          <td className="px-1.5 py-1 text-right font-mono font-bold text-red-600 bg-white border-r border-gray-200">
-                            {e.excess.toLocaleString()}
+                          {/* Col 2: Buy Amount */}
+                          <td className="px-3 py-1.5 text-right font-mono font-bold text-emerald-800 bg-white border-r border-gray-200 text-base">
+                            {e.buy > 0 ? e.buy.toLocaleString() : (e.excess > 0 ? e.excess.toLocaleString() : '0')}
                           </td>
-                          {/* Col 3: White cell Buy Amount */}
-                          <td className="px-1.5 py-1 text-right font-mono font-semibold text-slate-900 bg-white border-r border-gray-200">
-                            {e.buy > 0 ? e.buy.toLocaleString() : '0'}
-                          </td>
-                          {/* Col 4: Deep Purple background Net Total */}
-                          <td className="px-1.5 py-1 text-right font-mono font-bold text-white bg-purple-700">
-                            {e.total.toLocaleString()}
+                          {/* Col 3: Status Badge */}
+                          <td className="px-3 py-1.5 text-center font-semibold text-xs text-slate-600 bg-slate-50">
+                            {e.buy > 0 ? (
+                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold">Bought</span>
+                            ) : (
+                              <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded font-bold">Over Limit</span>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -888,19 +893,15 @@ export default function BuyEntry({
                 </div>
               )}
 
-              {/* Summary totals at bottom of Middle Panel */}
-              <div className="border-t border-gray-200 pt-2 space-y-1 text-base font-mono">
-                <div className="flex justify-between px-1 font-semibold text-red-600">
-                  <span>Exceed Total:</span>
-                  <span>{totalExcess.toLocaleString()}</span>
+              {/* Summary totals at bottom of Center Panel */}
+              <div className="border border-emerald-200 bg-emerald-50/60 rounded-lg p-2 space-y-1 text-sm font-mono shrink-0">
+                <div className="flex justify-between items-center px-1 font-bold text-emerald-900">
+                  <span>Total Buy Count:</span>
+                  <span className="text-base text-emerald-700 font-extrabold">{exceedList.length} numbers</span>
                 </div>
-                <div className="flex justify-between px-1 font-semibold text-amber-700">
-                  <span>Buy Total:</span>
-                  <span>{totalBuy.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between font-bold border-t border-gray-200 pt-1.5 px-1 text-sm bg-purple-50 rounded p-1 text-purple-900">
-                  <span>Net Total (Exceed - Buy):</span>
-                  <span className="text-purple-950 font-extrabold">{totalRemaining.toLocaleString()}</span>
+                <div className="flex justify-between items-center border-t border-emerald-200 pt-1 px-1 text-base font-extrabold text-emerald-950">
+                  <span>Total Buy Amount:</span>
+                  <span className="text-lg text-emerald-700">{totalBuy > 0 ? totalBuy.toLocaleString() : totalExcess.toLocaleString()}</span>
                 </div>
               </div>
             </div>
