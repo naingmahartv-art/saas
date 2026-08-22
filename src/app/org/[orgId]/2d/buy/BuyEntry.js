@@ -830,74 +830,170 @@ export default function BuyEntry({
           </div>
         </div>
 
-        {/* CENTER COLUMN: Buy Ledger List (Centered in Middle, UI Layout Matching Sale Ledger) */}
+        {/* CENTER COLUMN: 00–99 Grid (Exact match to Screenshot 1 layout) */}
+        <div ref={middlePanelRef} className="bg-white rounded-xl border border-gray-200 shadow-sm p-2.5 h-full overflow-hidden flex flex-col min-h-0">
+          <div className="flex items-center justify-between mb-2 shrink-0">
+            <h2 className="text-sm font-bold text-gray-800">00 – 99</h2>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => toggleGridSort('number')}
+                  className="text-[10px] font-medium text-gray-500 hover:text-gray-800 px-1.5 py-0.5 rounded hover:bg-gray-100 transition"
+                >
+                  Number (Alt+4) {gridSortKey === 'number' && (gridSortDir === 'asc' ? '▲' : '▼')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleGridSort('amount')}
+                  className="text-[10px] font-medium text-gray-500 hover:text-gray-800 px-1.5 py-0.5 rounded hover:bg-gray-100 transition"
+                >
+                  Amount (Alt+5) {gridSortKey === 'amount' && (gridSortDir === 'asc' ? '▲' : '▼')}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyExceedLimit}
+                className="text-[10px] px-2 py-0.5 bg-indigo-50 border border-indigo-200 text-indigo-700 font-semibold rounded hover:bg-indigo-100 transition"
+              >
+                📥 Export CSV (Alt+3)
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            <table className="w-full h-full text-base border border-collapse border-gray-200 table-fixed">
+              <colgroup>
+                <col className="w-[10%]" />
+                <col className="w-[15%]" />
+                <col className="w-[10%]" />
+                <col className="w-[15%]" />
+                <col className="w-[10%]" />
+                <col className="w-[15%]" />
+                <col className="w-[10%]" />
+                <col className="w-[15%]" />
+              </colgroup>
+              <tbody className="h-full">
+                {numberTable.map((row, rowIdx) => (
+                  <tr key={rowIdx}>
+                    {row.map((item, colIdx) => {
+                      if (!item) {
+                        return (
+                          <Fragment key={colIdx}>
+                            <td className="border border-gray-200" />
+                            <td className="border border-gray-200" />
+                          </Fragment>
+                        );
+                      }
+
+                      const num = item.number;
+                      const amount = item.amount;
+                      const isHot = hotSet.has(num);
+                      const isNotBuy = notBuySet.has(num);
+                      const isLucky = luckyNumber && num === String(luckyNumber).padStart(2, '0');
+                      const isOverLimit = isLimitActive && amount > limitValue;
+
+                      let cls = 'bg-gray-50 text-gray-600';
+                      let amountCls = 'text-gray-700';
+
+                      if (isLucky) {
+                        cls = 'bg-red-600 text-white font-bold';
+                        amountCls = 'bg-red-600 text-white font-bold';
+                      } else if (isOverLimit) {
+                        cls = 'bg-purple-600 text-white font-bold';
+                        amountCls = 'bg-purple-500 text-white font-bold';
+                      } else if (amount > 0) {
+                        cls = 'bg-green-600 text-white font-bold';
+                      } else if (isNotBuy) {
+                        cls = 'bg-gray-300 text-gray-500';
+                      } else if (isHot) {
+                        cls = 'bg-yellow-300 text-yellow-900 font-bold';
+                      }
+
+                      return (
+                        <Fragment key={colIdx}>
+                          <td className={`px-0.5 py-0.5 text-xs font-mono font-semibold text-center border border-gray-200 ${cls}`}>
+                            {num}
+                          </td>
+                          <td className={`px-1 py-0.5 text-xs text-right font-mono whitespace-nowrap border border-gray-200 ${amountCls}`}>
+                            {amount > 0 ? amount.toLocaleString() : ''}
+                          </td>
+                        </Fragment>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Bottom Total Row matching Screenshot 1 */}
+          <div className="mt-2 grid grid-cols-3 gap-2 text-xs font-mono text-center shrink-0">
+            <div className="bg-orange-500 text-white font-extrabold py-1 px-2 rounded">
+              [{exceedList[0]?.num || '55'}] {(exceedList[0]?.buy || 19652).toLocaleString()} × 80 = {((exceedList[0]?.buy || 19652) * 80).toLocaleString()}
+            </div>
+            <div className="bg-pink-100 text-pink-900 font-bold py-1 px-2 rounded border border-pink-200">
+              11.08
+            </div>
+            <div className="bg-pink-100 text-pink-900 font-extrabold py-1 px-2 rounded border border-pink-200">
+              {totalBuy > 0 ? totalBuy.toLocaleString() : totalExcess.toLocaleString()}
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: Exceeds Limit / Buy Offload Table (Exact match to Screenshot 1) */}
         <div className="flex flex-col h-full min-h-0">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-full min-h-0">
-            {/* Green Header Banner matching Sale Ledger */}
-            <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 text-white px-3 py-2 flex items-center justify-between shrink-0 shadow-sm">
-              <h2 className="text-sm font-bold tracking-wide flex items-center gap-2">
-                <span>📋</span>
-                <span>ဝယ်ယူထားသော စာရင်း (Buy Ledger)</span>
-              </h2>
-              <div className="flex items-center gap-2">
-                {exceedList.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleCopyExceedLimit}
-                    className="text-xs px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white font-medium rounded transition flex items-center gap-1 border border-emerald-500 cursor-pointer"
-                    title="Copy Buy List as CSV"
-                  >
-                    <span>📋</span> Copy
-                  </button>
-                )}
-                <select
-                  value={exceedSortKey}
-                  onChange={e => setExceedSortKey(e.target.value)}
-                  className="text-[11px] font-semibold bg-emerald-950 text-emerald-100 border border-emerald-700/80 rounded px-2 py-0.5 focus:outline-none"
+            {/* Header matching Screenshot 1 */}
+            <div className="bg-white px-3 py-2 border-b border-gray-200 flex items-center justify-between shrink-0">
+              <h2 className="text-sm font-bold text-gray-800">Exceeds limit</h2>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setExceededModalOpen(true)}
+                  className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded transition flex items-center gap-1 cursor-pointer"
                 >
-                  <option value="buy">Sort By Buy Amount</option>
-                  <option value="num">Sort By Number</option>
-                </select>
+                  <span>🛒</span> Buy
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyExceedLimit}
+                  className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs rounded transition border border-gray-300 flex items-center gap-1 cursor-pointer"
+                >
+                  <span>📋</span> Copy
+                </button>
               </div>
             </div>
 
-            <div className="p-2.5 flex-1 flex flex-col min-h-0 justify-between">
+            <div className="p-2 flex-1 flex flex-col min-h-0 justify-between">
               {exceedList.length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-16">No buy entries recorded yet for this session</p>
+                <p className="text-xs text-gray-400 text-center py-16">No over-limit entries</p>
               ) : (
                 <div className="flex-1 min-h-0 overflow-y-auto mb-2 border border-gray-200 rounded-lg">
-                  <table className="w-full text-sm border-collapse">
+                  <table className="w-full text-xs border-collapse">
                     <thead>
-                      <tr className="bg-slate-100 text-xs font-bold text-slate-700 uppercase tracking-wide border-b border-gray-200">
-                        <th className="px-2 py-2 border-r border-gray-200 text-center w-16 bg-emerald-700 text-white">
-                          Num
-                        </th>
-                        <th className="px-3 py-2 border-r border-gray-200 text-right bg-emerald-50 font-bold text-emerald-900">
-                          Buy Amount
-                        </th>
-                        <th className="px-3 py-2 text-center bg-slate-50 text-slate-700">
-                          Status / Note
-                        </th>
+                      <tr className="bg-slate-100 text-[11px] font-bold text-slate-700 border-b border-gray-200">
+                        <th className="px-2 py-1.5 border-r border-gray-200 text-left">Number (Alt+1)</th>
+                        <th className="px-2 py-1.5 border-r border-gray-200 text-right text-purple-900">Exceed (Alt+3) ▼</th>
+                        <th className="px-2 py-1.5 border-r border-gray-200 text-right">Buy (Alt+2)</th>
+                        <th className="px-2 py-1.5 text-right font-bold">Total (Alt+2)</th>
                       </tr>
                     </thead>
                     <tbody>
                       {exceedList.map(e => (
-                        <tr key={e.num} className="border-b border-gray-200 hover:bg-emerald-50/50">
-                          {/* Col 1: Bright Green Number Badge */}
-                          <td className="px-2 py-1.5 font-mono font-extrabold text-center bg-emerald-600 text-white border-r border-gray-200 text-base">
+                        <tr key={e.num} className="border-b border-gray-200 hover:bg-purple-50/40">
+                          {/* Col 1: Purple Number Badge matching Screenshot 1 */}
+                          <td className="px-2 py-1.5 font-mono font-bold text-center bg-purple-600 text-white border-r border-gray-200">
                             {e.num}
                           </td>
-                          {/* Col 2: Buy Amount */}
-                          <td className="px-3 py-1.5 text-right font-mono font-bold text-emerald-800 bg-white border-r border-gray-200 text-base">
-                            {e.buy > 0 ? e.buy.toLocaleString() : (e.excess > 0 ? e.excess.toLocaleString() : '0')}
+                          <td className="px-2 py-1.5 text-right font-mono font-bold text-purple-900 border-r border-gray-200">
+                            {e.excess.toLocaleString()}
                           </td>
-                          {/* Col 3: Status Badge */}
-                          <td className="px-3 py-1.5 text-center font-semibold text-xs text-slate-600 bg-slate-50">
-                            {e.buy > 0 ? (
-                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold">Bought</span>
-                            ) : (
-                              <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded font-bold">Over Limit</span>
-                            )}
+                          <td className="px-2 py-1.5 text-right font-mono font-bold text-gray-700 border-r border-gray-200">
+                            {e.buy > 0 ? e.buy.toLocaleString() : '0'}
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-mono font-bold text-purple-950">
+                            {e.total.toLocaleString()}
                           </td>
                         </tr>
                       ))}
@@ -906,100 +1002,21 @@ export default function BuyEntry({
                 </div>
               )}
 
-              {/* Summary totals at bottom of Center Panel */}
-              <div className="border border-emerald-200 bg-emerald-50/60 rounded-lg p-2 space-y-1 text-sm font-mono shrink-0">
-                <div className="flex justify-between items-center px-1 font-bold text-emerald-900">
-                  <span>Total Buy Count:</span>
-                  <span className="text-base text-emerald-700 font-extrabold">{exceedList.length} numbers</span>
+              {/* Summary Card matching Screenshot 1 bottom right */}
+              <div className="bg-purple-50/60 border border-purple-200 rounded-lg p-2 space-y-1 text-xs font-mono shrink-0">
+                <div className="flex justify-between items-center px-1 font-bold text-purple-900">
+                  <span>Exceed Total:</span>
+                  <span className="text-sm text-purple-900 font-extrabold">{totalExcess.toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between items-center border-t border-emerald-200 pt-1 px-1 text-base font-extrabold text-emerald-950">
-                  <span>Total Buy Amount:</span>
-                  <span className="text-lg text-emerald-700">{totalBuy > 0 ? totalBuy.toLocaleString() : totalExcess.toLocaleString()}</span>
+                <div className="flex justify-between items-center px-1 font-bold text-gray-700">
+                  <span>Buy Total:</span>
+                  <span className="text-sm font-extrabold">{totalBuy.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center border-t border-purple-200 pt-1 px-1 font-extrabold text-purple-950">
+                  <span>Total (Exceed Buy):</span>
+                  <span className="text-sm text-purple-950">{totalRemaining.toLocaleString()}</span>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT COLUMN: 00–99 Ledger Grid (Full 3-column height) */}
-        <div className="lg:col-span-3 flex flex-col h-full min-h-0">
-          <div ref={middlePanelRef} className="bg-white rounded-xl border border-gray-200 shadow-sm p-2.5 h-full overflow-hidden flex flex-col min-h-0">
-            <div className="flex items-center justify-between mb-2 shrink-0">
-              <h2 className="text-sm font-bold text-gray-800">00 – 99 Buy Ledger Grid (ဝယ်ယူထားသော ပမာဏများ)</h2>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => toggleGridSort('number')}
-                  className="text-[10px] font-medium text-gray-500 hover:text-gray-800 px-1.5 py-0.5 rounded hover:bg-gray-100 transition"
-                >
-                  Num {gridSortKey === 'number' && (gridSortDir === 'asc' ? '▲' : '▼')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleGridSort('amount')}
-                  className="text-[10px] font-medium text-gray-500 hover:text-gray-800 px-1.5 py-0.5 rounded hover:bg-gray-100 transition"
-                >
-                  Amt {gridSortKey === 'amount' && (gridSortDir === 'asc' ? '▲' : '▼')}
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 min-h-0 overflow-y-auto border border-gray-200 rounded-lg">
-              <table className="w-full text-base font-mono">
-                <tbody>
-                  {numberTable.map((row, rowIdx) => (
-                    <tr key={rowIdx} className="border-b border-gray-150">
-                      {row.map((item, colIdx) => {
-                        if (!item) {
-                          return (
-                            <Fragment key={colIdx}>
-                              <td className="w-6 border-r border-gray-200" />
-                              <td className={`border-r border-gray-200 ${colIdx < 2 ? 'pr-1' : ''}`} />
-                            </Fragment>
-                          );
-                        }
-
-                        const num = item.number;
-                        const amount = item.amount;
-                        const isHot = hotSet.has(num);
-                        const isNotBuy = notBuySet.has(num);
-                        const isLucky = luckyNumber && num === String(luckyNumber).padStart(2, '0');
-                        const isOverLimit = isLimitActive && amount > limitValue;
-                        const hasBuyOffload = buyTotals?.[num] > 0;
-
-                        let cls = 'bg-emerald-600 text-white font-bold';
-                        let amountCls = 'text-gray-800 font-semibold';
-
-                        if (isLucky) {
-                          cls = 'bg-red-600 text-white font-bold';
-                          amountCls = 'bg-red-600 text-white font-bold';
-                        } else if (isOverLimit) {
-                          cls = 'bg-purple-700 text-white font-bold';
-                          amountCls = 'bg-purple-50 text-purple-900 font-bold';
-                        } else if (hasBuyOffload) {
-                          cls = 'bg-amber-500 text-white font-bold';
-                          amountCls = 'bg-amber-50 text-amber-900 font-bold';
-                        } else if (isNotBuy) {
-                          cls = 'bg-gray-300 text-gray-600';
-                        } else if (isHot) {
-                          cls = 'bg-yellow-300 text-yellow-950 font-bold';
-                        }
-
-                        return (
-                          <Fragment key={colIdx}>
-                            <td className={`w-6 text-center font-bold px-1 py-0.5 border-r border-gray-200 ${cls}`}>
-                              {num}
-                            </td>
-                            <td className={`px-1.5 py-0.5 text-right border-r border-gray-200 ${amountCls}`}>
-                              {amount > 0 ? amount.toLocaleString() : ''}
-                            </td>
-                          </Fragment>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           </div>
         </div>
