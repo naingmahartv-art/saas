@@ -782,15 +782,15 @@ export default function BuyEntry({
                             {row.map((p, cIdx) => {
                               const globalIdx = rIdx * 5 + cIdx;
                               const isSelected = selectedTokenIds.has(p.id);
-                              const isDragging = draggingIndex === globalIdx;
-                              const isDragOver = dragOverIndex === globalIdx;
+                              const isDragging = draggedTokenId === p.id;
+                              const isDragOver = dragOverTokenId === p.id;
 
                               return (
                                 <td
                                   key={p.id}
                                   draggable
-                                  onDragStart={(e) => handleCellDragStart(e, globalIdx)}
-                                  onDragOver={(e) => handleCellDragOver(e, globalIdx)}
+                                  onDragStart={(e) => handleCellDragStart(e, p.id)}
+                                  onDragOver={(e) => handleCellDragOver(e, p.id)}
                                   onDrop={(e) => handleCellDrop(e, p.id)}
                                   onDragEnd={handleCellDragEnd}
                                   className={`relative border px-1.5 py-1 text-left font-mono font-bold transition-all ${
