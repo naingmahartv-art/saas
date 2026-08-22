@@ -637,195 +637,159 @@ export default function BuyEntry({
         {/* Main 3-Column Layout matching Sale Ledger UI Proportions */}
         <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_1.3fr_0.8fr] gap-3 flex-1 min-h-0 items-stretch">
         
-        {/* LEFT COLUMN: Input & Voucher Entries */}
-        <div className="flex flex-col h-full min-h-0">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-full min-h-0">
-            {/* Green Title Header matching legacy design */}
-            <div className="bg-gradient-to-r from-emerald-800 via-emerald-700 to-teal-800 text-white px-3 py-2 flex items-center justify-between shrink-0 shadow-sm">
-              <h1 className="text-sm font-bold tracking-wide flex items-center gap-2">
-                <span>🛒</span>
-                <span>အဝယ်စာရင်း ထည့်သွင်းခြင်း (Buy Voucher Entry)</span>
-              </h1>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] bg-emerald-900/80 px-2.5 py-0.5 rounded font-mono text-emerald-200 border border-emerald-600/50 font-bold">
-                  Sr. {vouchersCount}
-                </span>
-                <span className="text-[11px] bg-teal-900/80 px-2 py-0.5 rounded font-mono text-teal-200 border border-teal-600/50">
-                  {pendingTokens.length} numbers
-                </span>
+        {/* LEFT COLUMN: Input & Voucher Entries (100% Identical to Sale Ledger Entry Component) */}
+        <div className="flex flex-col h-full min-h-0 space-y-3">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 shrink-0">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="w-full">
+                <select
+                  value={agentId}
+                  onChange={e => setAgentId(e.target.value)}
+                  className="w-full px-3 py-2 text-sm font-semibold bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-xs"
+                >
+                  <option value="buy_offload">Agent (Alt+A)</option>
+                  {agents.map(a => (
+                    <option key={a.id} value={a.id}>{a.agentName || a.id}</option>
+                  ))}
+                </select>
               </div>
+
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputValue}
+                onChange={handleChange}
+                onKeyDown={handleKeyDown}
+                placeholder={agentId ? "Enter numbers (Alt+N)" : "Select an agent first"}
+                className="w-full px-3 py-2 text-sm font-mono tracking-wide border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100"
+              />
             </div>
 
-            <div className="p-3 flex flex-col flex-1 min-h-0 space-y-2.5">
-              {/* Agent Selector & Inputs */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div className="w-full">
-                  <label className="block text-[11px] font-bold text-gray-700 mb-1">Select Buy Agent</label>
-                  <select
-                    value={agentId}
-                    onChange={e => setAgentId(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs font-semibold bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-xs"
-                  >
-                    <option value="buy_offload">Default (Buy Offload / အဝယ်)</option>
-                    {agents.map(a => (
-                      <option key={a.id} value={a.id}>{a.agentName || a.id}</option>
-                    ))}
-                  </select>
-                </div>
+            {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mt-3">{error}</p>}
+            {successMsg && <p className="text-sm text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2 mt-3">{successMsg}</p>}
 
-                <div className="w-full">
-                  <label className="block text-[11px] font-bold text-gray-700 mb-1">Buy Numbers & Amount</label>
-                  <div className="relative">
-                    <input
-                      ref={inputRef}
-                      type="text"
-                      value={inputValue}
-                      onChange={handleChange}
-                      onKeyDown={handleKeyDown}
-                      placeholder="e.g. 12.14R100 or 12100"
-                      className="w-full px-3 py-1.5 text-sm font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                    {inputValue && (
-                      <button
-                        type="button"
-                        onClick={() => setInputValue('')}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600 font-bold"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
+            {/* Two Large Full-Width Purple Action Buttons matching Screenshot 1 */}
+            <div className="flex gap-2 mt-3">
+              <button
+                type="button"
+                onClick={handleSaveBuyVoucher}
+                disabled={saving || pendingTokens.length === 0}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-bold py-2.5 rounded-lg transition shadow-sm flex items-center justify-center gap-1 cursor-pointer"
+              >
+                {saving ? 'Saving...' : 'Save (F1)'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setInputValue('');
+                  setPendingTokens([]);
+                  setError('');
+                  setWarnings([]);
+                }}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold py-2.5 rounded-lg transition shadow-sm flex items-center justify-center gap-1 cursor-pointer"
+              >
+                Search (F8)
+              </button>
+            </div>
+          </div>
 
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={addInputToken}
-                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm transition flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>➕</span> Add (Enter)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInputValue('');
-                      setPendingTokens([]);
-                      setError('');
-                      setWarnings([]);
-                    }}
-                    className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs rounded-lg border border-gray-300 transition cursor-pointer"
-                  >
-                    Clear
-                  </button>
-                </div>
-
+          {/* Voucher token list — Modern Table Grid View matching Screenshot 1 */}
+          <div className="bg-white rounded-xl border border-slate-200/90 shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
+            <div className="px-3.5 py-2.5 border-b border-indigo-900/40 flex flex-wrap items-center justify-between gap-2 shrink-0 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xs font-bold tracking-wide text-slate-100 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+                  • Entries
+                  <span className="bg-purple-500/25 border border-purple-400/30 text-purple-200 px-2.5 py-0.5 rounded text-[11px] font-mono font-bold">
+                    Sr. {vouchersCount}
+                  </span>
+                  <span className="bg-indigo-500/25 border border-indigo-400/30 text-indigo-200 px-2 py-0.5 rounded text-[11px] font-mono">
+                    {pendingTokens.length} numbers
+                  </span>
+                </span>
                 <button
                   type="button"
-                  onClick={handleSaveBuyVoucher}
-                  disabled={saving || pendingTokens.length === 0}
-                  className="px-4 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs rounded-lg shadow-sm disabled:opacity-50 transition flex items-center gap-1 cursor-pointer"
+                  onClick={() => setQuickEntryOpen(true)}
+                  className="text-[11px] px-2.5 py-1 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 font-semibold rounded hover:bg-emerald-500/30 transition flex items-center gap-1.5 backdrop-blur-sm cursor-pointer"
+                  title="Quick Entry modal"
                 >
-                  {saving ? 'Saving...' : '💾 Save Voucher'}
+                  <span>📥</span> Import
                 </button>
               </div>
 
-              {/* Error & Warning Messages */}
-              {error && (
-                <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium shrink-0">
-                  ⚠️ {error}
-                </div>
-              )}
-              {successMsg && (
-                <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-700 font-bold shrink-0">
-                  ✅ {successMsg}
-                </div>
-              )}
-
-              {/* Search & Selection Controls for Pending Tokens */}
-              <div className="flex items-center justify-between gap-2 shrink-0 pt-1">
+              <div className="flex items-center gap-2">
                 <input
                   type="text"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  placeholder="Filter items..."
-                  className="px-2.5 py-1 text-xs border border-gray-300 rounded-md w-36 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                  placeholder="Find number..."
+                  className="px-2.5 py-1 text-xs font-mono bg-slate-800/90 border border-slate-700 text-slate-100 placeholder-slate-400 rounded focus:outline-none focus:ring-2 focus:ring-indigo-400 w-28"
                 />
-                <div className="flex items-center gap-2 text-xs">
-                  {selectedTokenIds.size > 0 && (
-                    <button
-                      type="button"
-                      onClick={removeSelectedTokens}
-                      className="px-2 py-0.5 bg-red-600 text-white font-bold text-[11px] rounded hover:bg-red-700 transition"
-                    >
-                      Delete Selected ({selectedTokenIds.size})
-                    </button>
-                  )}
-                  <span className="text-gray-500 text-[11px]">
-                    Total Pending: <strong className="text-emerald-700">{pendingTokens.length}</strong>
-                  </span>
-                </div>
-              </div>
-
-              {/* Pending Tokens Table */}
-              <div className="flex-1 min-h-0 overflow-y-auto border border-gray-200 rounded-lg bg-gray-50/50">
-                {visibleTokens.length === 0 ? (
-                  <p className="text-xs text-gray-400 text-center py-10">No pending buy entries</p>
-                ) : (
-                  <div className="p-1">
-                    <table className="w-full border-collapse text-sm">
-                      <tbody>
-                        {entryTableRows.map((row, rIdx) => (
-                          <tr key={rIdx}>
-                            {row.map((p, cIdx) => {
-                              const globalIdx = rIdx * 5 + cIdx;
-                              const isSelected = selectedTokenIds.has(p.id);
-                              const isDragging = draggedTokenId === p.id;
-                              const isDragOver = dragOverTokenId === p.id;
-
-                              return (
-                                <td
-                                  key={p.id}
-                                  draggable
-                                  onDragStart={(e) => handleCellDragStart(e, p.id)}
-                                  onDragOver={(e) => handleCellDragOver(e, p.id)}
-                                  onDrop={(e) => handleCellDrop(e, p.id)}
-                                  onDragEnd={handleCellDragEnd}
-                                  className={`relative border px-1.5 py-1 text-left font-mono font-bold transition-all ${
-                                    isSelected
-                                      ? 'bg-emerald-600 text-white rounded z-10'
-                                      : 'border-slate-200 hover:bg-emerald-100/60 text-slate-900'
-                                  }`}
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={(e) => handleCellSelect(p, globalIdx, e)}
-                                    className={`w-full truncate font-mono font-bold text-sm text-left select-none cursor-pointer ${
-                                      isSelected ? 'text-white' : 'text-slate-900 hover:text-emerald-700'
-                                    }`}
-                                  >
-                                    {p.tokenText}
-                                  </button>
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* Bottom Total Bar */}
-              <div className="flex justify-between items-center pt-1 border-t border-gray-100 text-xs font-mono">
-                <span className="text-gray-500 font-semibold">Buy Voucher Total:</span>
-                <span className="font-bold text-emerald-800 text-sm">
-                  {pendingTokens.reduce((s, p) => s + p.entries.reduce((a, e) => a + e.amount, 0), 0).toLocaleString()}
+                <span className="text-xs font-bold text-emerald-300 bg-emerald-500/20 border border-emerald-400/30 px-2.5 py-1 rounded font-mono shadow-inner">
+                  Total: {pendingTokens.reduce((s, p) => s + p.entries.reduce((a, e) => a + e.amount, 0), 0).toLocaleString()}
                 </span>
               </div>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto p-2 bg-slate-900 flex flex-col justify-center items-center">
+              {pendingTokens.length === 0 ? (
+                <div className="px-4 py-16 text-center text-slate-400 text-sm font-medium">No entries yet</div>
+              ) : visibleTokens.length === 0 ? (
+                <div className="px-4 py-16 text-center text-slate-400 text-sm font-medium">No matching entries</div>
+              ) : (
+                <div className="w-full border border-slate-700 rounded-lg overflow-hidden bg-slate-950">
+                  <table className="w-full text-base border-collapse table-fixed">
+                    <colgroup>
+                      <col className="w-[20%]" />
+                      <col className="w-[20%]" />
+                      <col className="w-[20%]" />
+                      <col className="w-[20%]" />
+                      <col className="w-[20%]" />
+                    </colgroup>
+                    <tbody>
+                      {entryTableRows.map((row, rIdx) => (
+                        <tr key={rIdx} className="even:bg-slate-900 hover:bg-indigo-950 transition-colors">
+                          {Array.from({ length: 5 }, (_, cIdx) => {
+                            const globalIdx = rIdx * 5 + cIdx;
+                            const p = row[cIdx];
+                            if (!p) return <td key={cIdx} className="border border-slate-800 bg-slate-950/20 px-1 py-1.5" />;
+
+                            const isDragging = draggedTokenId === p.id;
+                            const isDragOver = dragOverTokenId === p.id;
+                            const isSelected = selectedTokenIds.has(p.id);
+
+                            return (
+                              <td
+                                key={p.id}
+                                draggable
+                                onDragStart={e => handleCellDragStart(e, p.id)}
+                                onDragOver={e => handleCellDragOver(e, p.id)}
+                                onDrop={e => handleCellDrop(e, p.id)}
+                                onDragEnd={handleCellDragEnd}
+                                className={`relative border px-1.5 py-1 text-left font-mono font-bold transition-all ${
+                                  isSelected
+                                    ? 'bg-purple-600 text-white ring-2 ring-purple-400 rounded z-10'
+                                    : 'border-slate-800 hover:bg-indigo-900 text-slate-100'
+                                }`}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleCellSelect(p, globalIdx, e)}
+                                  className={`w-full truncate font-mono font-bold text-sm text-left select-none cursor-pointer ${
+                                    isSelected ? 'text-white font-extrabold' : 'text-slate-100 hover:text-purple-300'
+                                  }`}
+                                >
+                                  {p.tokenText}
+                                </button>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         </div>
