@@ -797,39 +797,122 @@ export default function BuyEntry({
           </div>
         </div>
 
-        {/* CENTER COLUMN: 00–99 Grid (Exact match to Screenshot 1 layout) */}
-        <div ref={middlePanelRef} className="bg-white rounded-xl border border-gray-200 shadow-sm p-2.5 h-full overflow-hidden flex flex-col min-h-0">
-          <div className="flex items-center justify-between mb-2 shrink-0">
-            <h2 className="text-sm font-bold text-gray-800">00 – 99</h2>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1">
+        {/* CENTER COLUMN: Exceeded / Buy Offload Table (Matches Screenshot 2 Center Panel: 0,fjD;aomtuGufrsm;) */}
+        <div className="flex flex-col h-full min-h-0">
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-full min-h-0">
+            {/* Header matching Screenshot 2 */}
+            <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 text-white px-3.5 py-2 flex items-center justify-between shrink-0 shadow-sm">
+              <h2 className="text-sm font-bold tracking-wide flex items-center gap-2">
+                <span>⚠️</span>
+                <span>ဝယ်ယူရန် ကျော်နေသော နံပါတ်များ (Exceeded / Buy List)</span>
+              </h2>
+              <div className="flex items-center gap-2">
+                <select
+                  value={exceedSortKey}
+                  onChange={e => setExceedSortKey(e.target.value)}
+                  className="text-[11px] font-semibold bg-emerald-950 text-emerald-100 border border-emerald-700/80 rounded px-2 py-0.5 focus:outline-none"
+                >
+                  <option value="excess">Sort By Exceed Amount</option>
+                  <option value="num">Sort By Number</option>
+                </select>
                 <button
                   type="button"
-                  onClick={() => toggleGridSort('number')}
-                  className="text-[10px] font-medium text-gray-500 hover:text-gray-800 px-1.5 py-0.5 rounded hover:bg-gray-100 transition"
+                  onClick={handleCopyExceedLimit}
+                  className="text-xs px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white font-medium rounded transition flex items-center gap-1 border border-emerald-500 cursor-pointer"
                 >
-                  Number (Alt+4) {gridSortKey === 'number' && (gridSortDir === 'asc' ? '▲' : '▼')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleGridSort('amount')}
-                  className="text-[10px] font-medium text-gray-500 hover:text-gray-800 px-1.5 py-0.5 rounded hover:bg-gray-100 transition"
-                >
-                  Amount (Alt+5) {gridSortKey === 'amount' && (gridSortDir === 'asc' ? '▲' : '▼')}
+                  <span>📋</span> Copy
                 </button>
               </div>
+            </div>
+
+            <div className="p-2.5 flex-1 flex flex-col min-h-0 justify-between">
+              {exceedList.length === 0 ? (
+                <div className="px-4 py-16 text-center text-slate-400 dark:text-slate-500 text-sm font-medium">No over-limit entries for this session</div>
+              ) : (
+                <div className="flex-1 min-h-0 overflow-y-auto mb-2 border border-gray-200 dark:border-slate-800 rounded-lg">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 border-b border-gray-200 dark:border-slate-700">
+                        <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-center w-20 bg-purple-700 text-white font-bold">
+                          Number (Alt+1)
+                        </th>
+                        <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-right text-purple-900 dark:text-purple-300 font-extrabold">
+                          Exceed (Alt+3) ▼
+                        </th>
+                        <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-right font-bold text-emerald-700 dark:text-emerald-400">
+                          Buy (Alt+2)
+                        </th>
+                        <th className="px-3 py-2 text-right font-extrabold text-slate-900 dark:text-slate-100">
+                          Total (Alt+2)
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {exceedList.map(e => (
+                        <tr key={e.num} className="border-b border-gray-200 dark:border-slate-800 hover:bg-purple-50/40 dark:hover:bg-slate-800/60">
+                          {/* Col 1: Purple Number Badge matching Screenshot 1 & 2 */}
+                          <td className="px-3 py-2 font-mono font-extrabold text-center bg-purple-600 text-white border-r border-gray-200 text-base">
+                            {e.num}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono font-extrabold text-purple-900 dark:text-purple-300 border-r border-gray-200 text-base">
+                            {e.excess.toLocaleString()}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-emerald-800 dark:text-emerald-400 border-r border-gray-200 text-base">
+                            {e.buy > 0 ? e.buy.toLocaleString() : '0'}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono font-extrabold text-slate-900 dark:text-slate-100 text-base">
+                            {e.total.toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Summary Card matching Screenshot 2 center panel bottom */}
+              <div className="bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800/40 rounded-lg p-2.5 space-y-1.5 text-sm font-mono shrink-0">
+                <div className="flex justify-between items-center px-1 font-bold text-purple-900 dark:text-purple-300">
+                  <span>Exceed Total:</span>
+                  <span className="text-base text-purple-900 dark:text-purple-200 font-extrabold">{totalExcess.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center px-1 font-bold text-emerald-800 dark:text-emerald-300">
+                  <span>Buy Total:</span>
+                  <span className="text-base font-extrabold">{totalBuy.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center border-t border-purple-200 dark:border-purple-800/40 pt-1 px-1 font-extrabold text-slate-950 dark:text-slate-100 text-base">
+                  <span>Total (Exceed - Buy):</span>
+                  <span className="text-lg text-purple-950 dark:text-purple-100">{totalRemaining.toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: 00–99 Buy Ledger Grid (Matches Screenshot 2 Right Panel: xHrS Nyef0,fxm;aom) */}
+        <div ref={middlePanelRef} className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm p-2.5 h-full overflow-hidden flex flex-col min-h-0">
+          <div className="flex items-center justify-between mb-2 shrink-0">
+            <h2 className="text-sm font-bold text-gray-800 dark:text-gray-200">00 – 99 Buy Grid (ဝယ်ယူထားသော စာရင်း)</h2>
+            <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={handleCopyExceedLimit}
-                className="text-[10px] px-2 py-0.5 bg-indigo-50 border border-indigo-200 text-indigo-700 font-semibold rounded hover:bg-indigo-100 transition"
+                onClick={() => toggleGridSort('number')}
+                className="text-[10px] font-medium text-gray-500 hover:text-gray-800 px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-slate-800 transition"
               >
-                📥 Export CSV (Alt+3)
+                Num {gridSortKey === 'number' && (gridSortDir === 'asc' ? '▲' : '▼')}
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleGridSort('amount')}
+                className="text-[10px] font-medium text-gray-500 hover:text-gray-800 px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-slate-800 transition"
+              >
+                Amt {gridSortKey === 'amount' && (gridSortDir === 'asc' ? '▲' : '▼')}
               </button>
             </div>
           </div>
 
           <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            <table className="w-full h-full text-base border border-collapse border-gray-200 table-fixed">
+            <table className="w-full h-full text-base border border-collapse border-gray-200 dark:border-slate-800 table-fixed">
               <colgroup>
                 <col className="w-[10%]" />
                 <col className="w-[15%]" />
@@ -847,8 +930,8 @@ export default function BuyEntry({
                       if (!item) {
                         return (
                           <Fragment key={colIdx}>
-                            <td className="border border-gray-200" />
-                            <td className="border border-gray-200" />
+                            <td className="border border-gray-200 dark:border-slate-800" />
+                            <td className="border border-gray-200 dark:border-slate-800" />
                           </Fragment>
                         );
                       }
@@ -858,31 +941,28 @@ export default function BuyEntry({
                       const isHot = hotSet.has(num);
                       const isNotBuy = notBuySet.has(num);
                       const isLucky = luckyNumber && num === String(luckyNumber).padStart(2, '0');
-                      const isOverLimit = isLimitActive && amount > limitValue;
 
-                      let cls = 'bg-gray-50 text-gray-600';
-                      let amountCls = 'text-gray-700';
+                      let cls = 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-slate-300';
+                      let amountCls = 'text-gray-700 dark:text-slate-200';
 
                       if (isLucky) {
                         cls = 'bg-red-600 text-white font-bold';
                         amountCls = 'bg-red-600 text-white font-bold';
-                      } else if (isOverLimit) {
-                        cls = 'bg-purple-600 text-white font-bold';
-                        amountCls = 'bg-purple-500 text-white font-bold';
                       } else if (amount > 0) {
-                        cls = 'bg-green-600 text-white font-bold';
+                        cls = 'bg-emerald-600 text-white font-bold';
+                        amountCls = 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 font-bold';
                       } else if (isNotBuy) {
-                        cls = 'bg-gray-300 text-gray-500';
+                        cls = 'bg-gray-300 dark:bg-slate-700 text-gray-500';
                       } else if (isHot) {
                         cls = 'bg-yellow-300 text-yellow-900 font-bold';
                       }
 
                       return (
                         <Fragment key={colIdx}>
-                          <td className={`px-0.5 py-0.5 text-xs font-mono font-semibold text-center border border-gray-200 ${cls}`}>
+                          <td className={`px-0.5 py-0.5 text-xs font-mono font-semibold text-center border border-gray-200 dark:border-slate-800 ${cls}`}>
                             {num}
                           </td>
-                          <td className={`px-1 py-0.5 text-xs text-right font-mono whitespace-nowrap border border-gray-200 ${amountCls}`}>
+                          <td className={`px-1 py-0.5 text-xs text-right font-mono whitespace-nowrap border border-gray-200 dark:border-slate-800 ${amountCls}`}>
                             {amount > 0 ? amount.toLocaleString() : ''}
                           </td>
                         </Fragment>
@@ -892,99 +972,6 @@ export default function BuyEntry({
                 ))}
               </tbody>
             </table>
-          </div>
-
-          {/* Bottom Total Row matching Screenshot 1 */}
-          <div className="mt-2 grid grid-cols-3 gap-2 text-xs font-mono text-center shrink-0">
-            <div className="bg-orange-500 text-white font-extrabold py-1 px-2 rounded">
-              [{exceedList[0]?.num || '55'}] {(exceedList[0]?.buy || 19652).toLocaleString()} × 80 = {((exceedList[0]?.buy || 19652) * 80).toLocaleString()}
-            </div>
-            <div className="bg-pink-100 text-pink-900 font-bold py-1 px-2 rounded border border-pink-200">
-              11.08
-            </div>
-            <div className="bg-pink-100 text-pink-900 font-extrabold py-1 px-2 rounded border border-pink-200">
-              {totalBuy > 0 ? totalBuy.toLocaleString() : totalExcess.toLocaleString()}
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT COLUMN: Exceeds Limit / Buy Offload Table (Exact match to Screenshot 1) */}
-        <div className="flex flex-col h-full min-h-0">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col h-full min-h-0">
-            {/* Header matching Screenshot 1 */}
-            <div className="bg-white px-3 py-2 border-b border-gray-200 flex items-center justify-between shrink-0">
-              <h2 className="text-sm font-bold text-gray-800">Exceeds limit</h2>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setExceededModalOpen(true)}
-                  className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded transition flex items-center gap-1 cursor-pointer"
-                >
-                  <span>🛒</span> Buy
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCopyExceedLimit}
-                  className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs rounded transition border border-gray-300 flex items-center gap-1 cursor-pointer"
-                >
-                  <span>📋</span> Copy
-                </button>
-              </div>
-            </div>
-
-            <div className="p-2 flex-1 flex flex-col min-h-0 justify-between">
-              {exceedList.length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-16">No over-limit entries</p>
-              ) : (
-                <div className="flex-1 min-h-0 overflow-y-auto mb-2 border border-gray-200 rounded-lg">
-                  <table className="w-full text-xs border-collapse">
-                    <thead>
-                      <tr className="bg-slate-100 text-[11px] font-bold text-slate-700 border-b border-gray-200">
-                        <th className="px-2 py-1.5 border-r border-gray-200 text-left">Number (Alt+1)</th>
-                        <th className="px-2 py-1.5 border-r border-gray-200 text-right text-purple-900">Exceed (Alt+3) ▼</th>
-                        <th className="px-2 py-1.5 border-r border-gray-200 text-right">Buy (Alt+2)</th>
-                        <th className="px-2 py-1.5 text-right font-bold">Total (Alt+2)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {exceedList.map(e => (
-                        <tr key={e.num} className="border-b border-gray-200 hover:bg-purple-50/40">
-                          {/* Col 1: Purple Number Badge matching Screenshot 1 */}
-                          <td className="px-2 py-1.5 font-mono font-bold text-center bg-purple-600 text-white border-r border-gray-200">
-                            {e.num}
-                          </td>
-                          <td className="px-2 py-1.5 text-right font-mono font-bold text-purple-900 border-r border-gray-200">
-                            {e.excess.toLocaleString()}
-                          </td>
-                          <td className="px-2 py-1.5 text-right font-mono font-bold text-gray-700 border-r border-gray-200">
-                            {e.buy > 0 ? e.buy.toLocaleString() : '0'}
-                          </td>
-                          <td className="px-2 py-1.5 text-right font-mono font-bold text-purple-950">
-                            {e.total.toLocaleString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* Summary Card matching Screenshot 1 bottom right */}
-              <div className="bg-purple-50/60 border border-purple-200 rounded-lg p-2 space-y-1 text-xs font-mono shrink-0">
-                <div className="flex justify-between items-center px-1 font-bold text-purple-900">
-                  <span>Exceed Total:</span>
-                  <span className="text-sm text-purple-900 font-extrabold">{totalExcess.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center px-1 font-bold text-gray-700">
-                  <span>Buy Total:</span>
-                  <span className="text-sm font-extrabold">{totalBuy.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center border-t border-purple-200 pt-1 px-1 font-extrabold text-purple-950">
-                  <span>Total (Exceed Buy):</span>
-                  <span className="text-sm text-purple-950">{totalRemaining.toLocaleString()}</span>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
