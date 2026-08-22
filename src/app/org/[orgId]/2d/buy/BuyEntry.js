@@ -1148,7 +1148,6 @@ export default function BuyEntry({
           </div>
         </div>
       )}
-      </div>
     </div>
   );
 }
