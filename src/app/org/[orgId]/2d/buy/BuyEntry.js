@@ -278,11 +278,11 @@ export default function BuyEntry({
 
   useEffect(() => {
     if (!activeSession) return;
-    fetch(`/api/org/${orgId}/ledger/totals?onCount=${activeSession.onCount}&ampm=${activeSession.ampm}`)
+    fetch(`/api/org/${orgId}/ledger?isBuy=true`)
       .then(res => res.json())
       .then(data => {
-        if (typeof data.vouchersCount === 'number') {
-          setVouchersCount(data.vouchersCount);
+        if (Array.isArray(data.slips)) {
+          setVouchersCount(data.slips.length);
         }
       })
       .catch(() => {});
@@ -697,7 +697,7 @@ export default function BuyEntry({
           </div>
 
           {/* Voucher token list — Modern Table Grid View matching Screenshot 1 */}
-          <div className="bg-white rounded-xl border border-slate-200/90 shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200/90 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
             <div className="px-3.5 py-2.5 border-b border-indigo-900/40 flex flex-wrap items-center justify-between gap-2 shrink-0 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white shadow-sm">
               <div className="flex items-center gap-2.5">
                 <span className="text-xs font-bold tracking-wide text-slate-100 flex items-center gap-1.5">
@@ -714,7 +714,7 @@ export default function BuyEntry({
                   type="button"
                   onClick={() => setQuickEntryOpen(true)}
                   className="text-[11px] px-2.5 py-1 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 font-semibold rounded hover:bg-emerald-500/30 transition flex items-center gap-1.5 backdrop-blur-sm cursor-pointer"
-                  title="Quick Entry modal"
+                  title="Import JSON or CSV data/file"
                 >
                   <span>📥</span> Import
                 </button>
@@ -734,13 +734,13 @@ export default function BuyEntry({
               </div>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto p-2 bg-slate-900 flex flex-col justify-center items-center">
+            <div className="flex-1 min-h-0 overflow-y-auto p-2 bg-slate-50/30 dark:bg-slate-900/40 flex flex-col justify-start">
               {pendingTokens.length === 0 ? (
-                <div className="px-4 py-16 text-center text-slate-400 text-sm font-medium">No entries yet</div>
+                <div className="px-4 py-16 text-center text-slate-400 dark:text-slate-500 text-sm font-medium">No entries yet</div>
               ) : visibleTokens.length === 0 ? (
-                <div className="px-4 py-16 text-center text-slate-400 text-sm font-medium">No matching entries</div>
+                <div className="px-4 py-16 text-center text-slate-400 dark:text-slate-500 text-sm font-medium">No matching entries</div>
               ) : (
-                <div className="w-full border border-slate-700 rounded-lg overflow-hidden bg-slate-950">
+                <div className="w-full border border-slate-200/90 dark:border-slate-800 rounded-lg overflow-hidden bg-white dark:bg-slate-900 shadow-xs">
                   <table className="w-full text-base border-collapse table-fixed">
                     <colgroup>
                       <col className="w-[20%]" />
@@ -751,11 +751,11 @@ export default function BuyEntry({
                     </colgroup>
                     <tbody>
                       {entryTableRows.map((row, rIdx) => (
-                        <tr key={rIdx} className="even:bg-slate-900 hover:bg-indigo-950 transition-colors">
+                        <tr key={rIdx} className="even:bg-slate-50/50 dark:even:bg-slate-800/40 hover:bg-indigo-50/40 dark:hover:bg-slate-800/60 transition-colors duration-150">
                           {Array.from({ length: 5 }, (_, cIdx) => {
                             const globalIdx = rIdx * 5 + cIdx;
                             const p = row[cIdx];
-                            if (!p) return <td key={cIdx} className="border border-slate-800 bg-slate-950/20 px-1 py-1.5" />;
+                            if (!p) return <td key={cIdx} className="border border-slate-150/80 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-900/20 px-1 py-1.5" />;
 
                             const isDragging = draggedTokenId === p.id;
                             const isDragOver = dragOverTokenId === p.id;
@@ -769,17 +769,17 @@ export default function BuyEntry({
                                 onDragOver={e => handleCellDragOver(e, p.id)}
                                 onDrop={e => handleCellDrop(e, p.id)}
                                 onDragEnd={handleCellDragEnd}
-                                className={`relative border px-1.5 py-1 text-left font-mono font-bold transition-all ${
+                                className={`relative border px-1.5 py-1 text-left font-mono font-bold transition-all duration-150 ${
                                   isSelected
-                                    ? 'bg-purple-600 text-white ring-2 ring-purple-400 rounded z-10'
-                                    : 'border-slate-800 hover:bg-indigo-900 text-slate-100'
+                                    ? 'bg-purple-600 text-white dark:bg-purple-600 dark:text-white ring-2 ring-purple-400 rounded z-10'
+                                    : 'border-slate-200/80 dark:border-slate-800 hover:bg-indigo-50/60 dark:hover:bg-slate-800/60 text-slate-900 dark:text-slate-100'
                                 }`}
                               >
                                 <button
                                   type="button"
                                   onClick={(e) => handleCellSelect(p, globalIdx, e)}
                                   className={`w-full truncate font-mono font-bold text-sm text-left select-none cursor-pointer ${
-                                    isSelected ? 'text-white font-extrabold' : 'text-slate-100 hover:text-purple-300'
+                                    isSelected ? 'text-white font-extrabold' : 'text-slate-900 dark:text-slate-100 hover:text-purple-700 dark:hover:text-purple-300'
                                   }`}
                                 >
                                   {p.tokenText}
