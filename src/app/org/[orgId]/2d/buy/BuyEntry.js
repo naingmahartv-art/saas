@@ -797,99 +797,7 @@ export default function BuyEntry({
           </div>
         </div>
 
-        {/* CENTER COLUMN: Exceeded / Buy Offload Table (Matches Screenshot 2 Center Panel: 0,fjD;aomtuGufrsm;) */}
-        <div className="flex flex-col h-full min-h-0">
-          <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-full min-h-0">
-            {/* Header matching Screenshot 2 */}
-            <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 text-white px-3.5 py-2 flex items-center justify-between shrink-0 shadow-sm">
-              <h2 className="text-sm font-bold tracking-wide flex items-center gap-2">
-                <span>⚠️</span>
-                <span>ဝယ်ယူရန် ကျော်နေသော နံပါတ်များ (Exceeded / Buy List)</span>
-              </h2>
-              <div className="flex items-center gap-2">
-                <select
-                  value={exceedSortKey}
-                  onChange={e => setExceedSortKey(e.target.value)}
-                  className="text-[11px] font-semibold bg-emerald-950 text-emerald-100 border border-emerald-700/80 rounded px-2 py-0.5 focus:outline-none"
-                >
-                  <option value="excess">Sort By Exceed Amount</option>
-                  <option value="num">Sort By Number</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={handleCopyExceedLimit}
-                  className="text-xs px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white font-medium rounded transition flex items-center gap-1 border border-emerald-500 cursor-pointer"
-                >
-                  <span>📋</span> Copy
-                </button>
-              </div>
-            </div>
-
-            <div className="p-2.5 flex-1 flex flex-col min-h-0 justify-between">
-              {exceedList.length === 0 ? (
-                <div className="px-4 py-16 text-center text-slate-400 dark:text-slate-500 text-sm font-medium">No over-limit entries for this session</div>
-              ) : (
-                <div className="flex-1 min-h-0 overflow-y-auto mb-2 border border-gray-200 dark:border-slate-800 rounded-lg">
-                  <table className="w-full text-sm border-collapse">
-                    <thead>
-                      <tr className="bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 border-b border-gray-200 dark:border-slate-700">
-                        <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-center w-20 bg-purple-700 text-white font-bold">
-                          Number (Alt+1)
-                        </th>
-                        <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-right text-purple-900 dark:text-purple-300 font-extrabold">
-                          Exceed (Alt+3) ▼
-                        </th>
-                        <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-right font-bold text-emerald-700 dark:text-emerald-400">
-                          Buy (Alt+2)
-                        </th>
-                        <th className="px-3 py-2 text-right font-extrabold text-slate-900 dark:text-slate-100">
-                          Total (Alt+2)
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {exceedList.map(e => (
-                        <tr key={e.num} className="border-b border-gray-200 dark:border-slate-800 hover:bg-purple-50/40 dark:hover:bg-slate-800/60">
-                          {/* Col 1: Purple Number Badge matching Screenshot 1 & 2 */}
-                          <td className="px-3 py-2 font-mono font-extrabold text-center bg-purple-600 text-white border-r border-gray-200 text-base">
-                            {e.num}
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono font-extrabold text-purple-900 dark:text-purple-300 border-r border-gray-200 text-base">
-                            {e.excess.toLocaleString()}
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono font-bold text-emerald-800 dark:text-emerald-400 border-r border-gray-200 text-base">
-                            {e.buy > 0 ? e.buy.toLocaleString() : '0'}
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono font-extrabold text-slate-900 dark:text-slate-100 text-base">
-                            {e.total.toLocaleString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* Summary Card matching Screenshot 2 center panel bottom */}
-              <div className="bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800/40 rounded-lg p-2.5 space-y-1.5 text-sm font-mono shrink-0">
-                <div className="flex justify-between items-center px-1 font-bold text-purple-900 dark:text-purple-300">
-                  <span>Exceed Total:</span>
-                  <span className="text-base text-purple-900 dark:text-purple-200 font-extrabold">{totalExcess.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center px-1 font-bold text-emerald-800 dark:text-emerald-300">
-                  <span>Buy Total:</span>
-                  <span className="text-base font-extrabold">{totalBuy.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center border-t border-purple-200 dark:border-purple-800/40 pt-1 px-1 font-extrabold text-slate-950 dark:text-slate-100 text-base">
-                  <span>Total (Exceed - Buy):</span>
-                  <span className="text-lg text-purple-950 dark:text-purple-100">{totalRemaining.toLocaleString()}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT COLUMN: 00–99 Buy Ledger Grid (Matches Screenshot 2 Right Panel: xHrS Nyef0,fxm;aom) */}
+        {/* CENTER COLUMN: 00–99 Buy Grid (Moved to middle between Left Entry & Right Exceeded list) */}
         <div ref={middlePanelRef} className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm p-2.5 h-full overflow-hidden flex flex-col min-h-0">
           <div className="flex items-center justify-between mb-2 shrink-0">
             <h2 className="text-sm font-bold text-gray-800 dark:text-gray-200">00 – 99 Buy Grid (ဝယ်ယူထားသော စာရင်း)</h2>
@@ -972,6 +880,98 @@ export default function BuyEntry({
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: Exceeded / Buy Offload Table (Moved to right column) */}
+        <div className="flex flex-col h-full min-h-0">
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-full min-h-0">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 text-white px-3.5 py-2 flex items-center justify-between shrink-0 shadow-sm">
+              <h2 className="text-sm font-bold tracking-wide flex items-center gap-2">
+                <span>⚠️</span>
+                <span>ဝယ်ယူရန် ကျော်နေသော နံပါတ်များ (Exceeded List)</span>
+              </h2>
+              <div className="flex items-center gap-2">
+                <select
+                  value={exceedSortKey}
+                  onChange={e => setExceedSortKey(e.target.value)}
+                  className="text-[11px] font-semibold bg-emerald-950 text-emerald-100 border border-emerald-700/80 rounded px-2 py-0.5 focus:outline-none"
+                >
+                  <option value="excess">Sort By Exceed Amount</option>
+                  <option value="num">Sort By Number</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={handleCopyExceedLimit}
+                  className="text-xs px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white font-medium rounded transition flex items-center gap-1 border border-emerald-500 cursor-pointer"
+                >
+                  <span>📋</span> Copy
+                </button>
+              </div>
+            </div>
+
+            <div className="p-2.5 flex-1 flex flex-col min-h-0 justify-between">
+              {exceedList.length === 0 ? (
+                <div className="px-4 py-16 text-center text-slate-400 dark:text-slate-500 text-sm font-medium">No over-limit entries for this session</div>
+              ) : (
+                <div className="flex-1 min-h-0 overflow-y-auto mb-2 border border-gray-200 dark:border-slate-800 rounded-lg">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 border-b border-gray-200 dark:border-slate-700">
+                        <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-center w-20 bg-purple-700 text-white font-bold">
+                          Number (Alt+1)
+                        </th>
+                        <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-right text-purple-900 dark:text-purple-300 font-extrabold">
+                          Exceed (Alt+3) ▼
+                        </th>
+                        <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-right font-bold text-emerald-700 dark:text-emerald-400">
+                          Buy (Alt+2)
+                        </th>
+                        <th className="px-3 py-2 text-right font-extrabold text-slate-900 dark:text-slate-100">
+                          Total (Alt+2)
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {exceedList.map(e => (
+                        <tr key={e.num} className="border-b border-gray-200 dark:border-slate-800 hover:bg-purple-50/40 dark:hover:bg-slate-800/60">
+                          {/* Col 1: Purple Number Badge */}
+                          <td className="px-3 py-2 font-mono font-extrabold text-center bg-purple-600 text-white border-r border-gray-200 text-base">
+                            {e.num}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono font-extrabold text-purple-900 dark:text-purple-300 border-r border-gray-200 text-base">
+                            {e.excess.toLocaleString()}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-emerald-800 dark:text-emerald-400 border-r border-gray-200 text-base">
+                            {e.buy > 0 ? e.buy.toLocaleString() : '0'}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono font-extrabold text-slate-900 dark:text-slate-100 text-base">
+                            {e.total.toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Summary Card */}
+              <div className="bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800/40 rounded-lg p-2.5 space-y-1.5 text-sm font-mono shrink-0">
+                <div className="flex justify-between items-center px-1 font-bold text-purple-900 dark:text-purple-300">
+                  <span>Exceed Total:</span>
+                  <span className="text-base text-purple-900 dark:text-purple-200 font-extrabold">{totalExcess.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center px-1 font-bold text-emerald-800 dark:text-emerald-300">
+                  <span>Buy Total:</span>
+                  <span className="text-base font-extrabold">{totalBuy.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center border-t border-purple-200 dark:border-purple-800/40 pt-1 px-1 font-extrabold text-slate-950 dark:text-slate-100 text-base">
+                  <span>Total (Exceed - Buy):</span>
+                  <span className="text-lg text-purple-950 dark:text-purple-100">{totalRemaining.toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
