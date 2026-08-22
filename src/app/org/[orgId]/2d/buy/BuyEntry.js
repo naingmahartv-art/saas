@@ -356,6 +356,19 @@ export default function BuyEntry({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [orgId, selectedTokenIds, router, exceededModalOpen]);
 
+  function handleChange(e) {
+    setInputValue(e.target.value);
+    setSuccessMsg('');
+    setError('');
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addInputToken();
+    }
+  }
+
   function addInputToken() {
     setError('');
     setWarnings([]);
@@ -711,7 +724,7 @@ export default function BuyEntry({
 
                 <button
                   type="button"
-                  onClick={handleSaveVoucher}
+                  onClick={handleSaveBuyVoucher}
                   disabled={saving || pendingTokens.length === 0}
                   className="px-4 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs rounded-lg shadow-sm disabled:opacity-50 transition flex items-center gap-1 cursor-pointer"
                 >
