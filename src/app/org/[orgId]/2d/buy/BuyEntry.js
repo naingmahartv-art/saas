@@ -527,7 +527,7 @@ export default function BuyEntry({
   return (
     <div className="w-full h-[calc(100vh-1.5rem)] flex flex-col overflow-hidden">
       {/* Top Header Navigation Bar */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm px-4 py-2 mb-3 flex flex-wrap items-center justify-between gap-2 shrink-0">
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm px-4 py-2 mb-2 flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-3">
           {activeSession ? (
             <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-gray-900 dark:text-slate-100">
@@ -540,7 +540,7 @@ export default function BuyEntry({
                 <button
                   type="button"
                   onClick={onOpenSessionPicker}
-                  className="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-0.5 rounded hover:bg-indigo-50 transition"
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-0.5 rounded hover:bg-indigo-50 transition cursor-pointer"
                 >
                   {t('session.changeSession')}
                 </button>
@@ -551,6 +551,73 @@ export default function BuyEntry({
               <p className="text-sm text-red-600 font-medium">{t('session.noSessionSelected')}</p>
             </div>
           )}
+        </div>
+
+        {/* Action Toolbar on Top Nav Bar */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Exit (F4) */}
+          <button
+            type="button"
+            onClick={handleExit}
+            className="px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 dark:text-rose-200 font-bold text-xs rounded-lg border border-rose-300 dark:border-rose-800 shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+            title="Exit to 2D Ledger (F4)"
+          >
+            <span>🛑</span>
+            <span>Exit (F4)</span>
+            <span className="text-[10px] font-normal opacity-80">| ထွက်မည်</span>
+          </button>
+
+          {/* Buy 1 (အဝယ် ၁) */}
+          <button
+            type="button"
+            onClick={handleSelectBuy1}
+            className={`px-3 py-1 font-bold text-xs rounded-lg border flex items-center gap-1.5 transition cursor-pointer shadow-xs ${
+              agentId === (agents?.[0]?.id || 'buy_offload')
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 shadow-sm'
+                : 'bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 border-gray-300 dark:border-slate-700'
+            }`}
+            title="Select Buy 1 Agent"
+          >
+            <span>🛒</span>
+            <span>အဝယ် ၁ (Buy 1)</span>
+          </button>
+
+          {/* Buy 2 (အဝယ် ၂) */}
+          <button
+            type="button"
+            onClick={handleSelectBuy2}
+            className={`px-3 py-1 font-bold text-xs rounded-lg border flex items-center gap-1.5 transition cursor-pointer shadow-xs ${
+              agentId === (agents?.[1]?.id || (agents?.length === 1 ? agents[0]?.id : 'buy_offload'))
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 shadow-sm'
+                : 'bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 border-gray-300 dark:border-slate-700'
+            }`}
+            title="Select Buy 2 Agent"
+          >
+            <span>🛒</span>
+            <span>အဝယ် ၂ (Buy 2)</span>
+          </button>
+
+          {/* Total / Ledger Summary */}
+          <button
+            type="button"
+            onClick={onOpenReports}
+            className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 dark:text-indigo-200 font-bold text-xs rounded-lg border border-indigo-300 dark:border-indigo-800 shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+            title="Open Total / Ledger Summary Reports"
+          >
+            <span>📊</span>
+            <span>ကျန်ငွေ / စာရင်း အချုပ်</span>
+          </button>
+
+          {/* Exceeded Numbers (F12) */}
+          <button
+            type="button"
+            onClick={() => setExceededModalOpen(prev => !prev)}
+            className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg border border-amber-600 shadow-sm flex items-center gap-1.5 transition cursor-pointer"
+            title="Exceeded / Overflow Numbers Modal (F12)"
+          >
+            <span>⚠️</span>
+            <span>ကျော်နေသော နံပါတ်များ (F12)</span>
+          </button>
         </div>
       </div>
 
@@ -923,76 +990,6 @@ export default function BuyEntry({
           </div>
         </div>
 
-      </div>
-
-      {/* Bottom Classic Action Buttons Bar matching user screenshot layout & fonts */}
-      <div className="bg-slate-100 dark:bg-slate-900 border border-gray-300 dark:border-slate-800 rounded-xl px-3 py-2 mt-2 flex flex-wrap items-center justify-between gap-2 shadow-xs shrink-0">
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Button 1: Exit ( F4 ) / ထွက်မည် */}
-          <button
-            type="button"
-            onClick={handleExit}
-            className="px-3.5 py-1.5 bg-gray-200 hover:bg-gray-300 active:bg-gray-400 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-900 dark:text-slate-100 font-bold text-xs rounded-lg border border-gray-400 dark:border-slate-700 shadow-xs flex flex-col items-center justify-center transition cursor-pointer min-w-[95px]"
-            title="Exit to 2D Ledger (F4)"
-          >
-            <span className="font-mono text-xs font-bold text-gray-800 dark:text-gray-200">Exit ( F4 )</span>
-            <span className="text-[10px] text-gray-600 dark:text-gray-400 font-normal">ထွက်မည်</span>
-          </button>
-
-          {/* Button 2: t0,f 1 / အဝယ် ၁ (Buy 1) */}
-          <button
-            type="button"
-            onClick={handleSelectBuy1}
-            className={`px-3.5 py-1.5 font-bold text-xs rounded-lg border shadow-xs flex flex-col items-center justify-center transition cursor-pointer min-w-[95px] ${
-              agentId === (agents?.[0]?.id || 'buy_offload')
-                ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 shadow-sm'
-                : 'bg-gray-200 hover:bg-gray-300 active:bg-gray-400 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-900 dark:text-slate-100 border-gray-400 dark:border-slate-700'
-            }`}
-            title="Select Buy 1 Agent (t0,f 1)"
-          >
-            <span className="font-mono text-xs">t0,f 1</span>
-            <span className="text-[10px] opacity-90 font-normal">အဝယ် ၁</span>
-          </button>
-
-          {/* Button 3: t0,f 2 / အဝယ် ၂ (Buy 2) */}
-          <button
-            type="button"
-            onClick={handleSelectBuy2}
-            className={`px-3.5 py-1.5 font-bold text-xs rounded-lg border shadow-xs flex flex-col items-center justify-center transition cursor-pointer min-w-[95px] ${
-              agentId === (agents?.[1]?.id || (agents?.length === 1 ? agents[0]?.id : 'buy_offload'))
-                ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 shadow-sm'
-                : 'bg-gray-200 hover:bg-gray-300 active:bg-gray-400 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-900 dark:text-slate-100 border-gray-400 dark:border-slate-700'
-            }`}
-            title="Select Buy 2 Agent (t0,f 2)"
-          >
-            <span className="font-mono text-xs">t0,f 2</span>
-            <span className="text-[10px] opacity-90 font-normal">အဝယ် ၂</span>
-          </button>
-
-          {/* Button 4: uRH*Pef; tcsKyf / ကျန်ငွေ / စာရင်း အချုပ် */}
-          <button
-            type="button"
-            onClick={onOpenReports}
-            className="px-4 py-1.5 bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-950/80 dark:hover:bg-indigo-900/80 text-indigo-900 dark:text-indigo-100 font-bold text-xs rounded-lg border border-indigo-400 dark:border-indigo-800 shadow-xs flex flex-col items-center justify-center transition cursor-pointer min-w-[135px]"
-            title="Open Total / Ledger Summary Reports (uRH*Pef; tcsKyf)"
-          >
-            <span className="font-mono text-xs font-bold">uRH*Pef; tcsKyf</span>
-            <span className="text-[10px] text-indigo-700 dark:text-indigo-300 font-normal">ကျန်ငွေ / စာရင်း အချုပ်</span>
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* Button 5: ausmraeaom eHvgwfrsm; (F12) / ကျော်နေသော နံပါတ်များ */}
-          <button
-            type="button"
-            onClick={() => setExceededModalOpen(prev => !prev)}
-            className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-lg border border-amber-600 shadow-sm flex flex-col items-center justify-center transition cursor-pointer min-w-[170px]"
-            title="Exceeded / Overflow Numbers Modal (F12)"
-          >
-            <span className="font-mono text-xs font-bold">ausmraeaom eHvgwfrsm; (F12)</span>
-            <span className="text-[10px] text-amber-100 font-normal">ကျော်နေသော နံပါတ်များ</span>
-          </button>
-        </div>
       </div>
 
       {/* Exceeded / Overflow Numbers Modal (F12) */}
