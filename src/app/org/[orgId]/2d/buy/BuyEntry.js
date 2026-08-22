@@ -7,6 +7,7 @@ import { useI18n } from '@/lib/i18n/index.js';
 import { useIsMac } from '@/lib/ledger/useLedgerShortcuts.js';
 import { formatCombo as rawFormatCombo, matchesCombo } from '@/lib/ledger/shortcuts.js';
 import SessionPicker from '../ledger/SessionPicker.js';
+import AgentCombobox from '../ledger/AgentCombobox.js';
 import useLedgerFontSize from '@/lib/ledger/useLedgerFontSize.js';
 
 function buildNumberTable(numbersList) {
@@ -642,16 +643,18 @@ export default function BuyEntry({
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 shrink-0">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div className="w-full">
-                <select
+                <AgentCombobox
+                  ref={agentSelectRef}
+                  agents={agents}
                   value={agentId}
-                  onChange={e => setAgentId(e.target.value)}
-                  className="w-full px-3 py-2 text-sm font-semibold bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-xs"
-                >
-                  <option value="buy_offload">Agent (Alt+A)</option>
-                  {agents.map(a => (
-                    <option key={a.id} value={a.id}>{a.agentName || a.id}</option>
-                  ))}
-                </select>
+                  onChange={setAgentId}
+                  placeholder="Agent (Alt+A)"
+                  onEnter={() => {
+                    setTimeout(() => {
+                      inputRef.current?.focus();
+                    }, 50);
+                  }}
+                />
               </div>
 
               <input
