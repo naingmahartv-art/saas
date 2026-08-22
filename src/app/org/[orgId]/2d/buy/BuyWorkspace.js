@@ -141,6 +141,7 @@ export default function BuyWorkspace({
           orgId={orgId}
           activeSession={activeSession}
           agents={agents}
+          isBuyPage={true}
           onClose={() => setIsReportsOpen(false)}
         />
       )}

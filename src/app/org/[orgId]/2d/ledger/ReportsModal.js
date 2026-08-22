@@ -96,7 +96,7 @@ const PDF_EN = {
   luckyNumber: 'Lucky Number',
 };
 
-export default function ReportsModal({ orgId, activeSession, agents, onClose, initialTab = 'allAgent' }) {
+export default function ReportsModal({ orgId, activeSession, agents, onClose, initialTab = 'allAgent', isBuyPage = false }) {
   const { t } = useI18n();
   const [tab, setTab] = useState(initialTab);
   const [statusMsg, setStatusMsg] = useState('');
@@ -124,7 +124,8 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
     if (!agentName) { setAgentSlips([]); return; }
     setAgentLoading(true);
     try {
-      const res = await fetch(`/api/org/${orgId}/ledger?agentName=${encodeURIComponent(agentName)}`);
+      const buyFilter = isBuyPage ? '&isBuy=true' : '&isBuy=false';
+      const res = await fetch(`/api/org/${orgId}/ledger?agentName=${encodeURIComponent(agentName)}${buyFilter}`);
       const data = await res.json();
       setAgentSlips(data.slips || []);
     } catch {
@@ -142,7 +143,7 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
         setPayoutData(data);
       } catch {}
     }
-  }, [orgId, activeSession]);
+  }, [orgId, activeSession, isBuyPage]);
 
   useEffect(() => {
     if (tab === 'agent' && selectedAgent) loadAgentReport(selectedAgent.agentName);
@@ -165,7 +166,8 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
   const loadSummary = useCallback(async () => {
     setSummaryLoading(true);
     try {
-      const res = await fetch(`/api/org/${orgId}/ledger?sort=asc`);
+      const buyFilter = isBuyPage ? '?sort=asc&isBuy=true' : '?sort=asc&isBuy=false';
+      const res = await fetch(`/api/org/${orgId}/ledger${buyFilter}`);
       const data = await res.json();
       setSummarySlips(data.slips || []);
     } catch {
@@ -173,7 +175,7 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
     } finally {
       setSummaryLoading(false);
     }
-  }, [orgId]);
+  }, [orgId, isBuyPage]);
 
   useEffect(() => {
     if (tab === 'summary') loadSummary();
@@ -234,7 +236,8 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
   const loadAllAgentData = useCallback(async () => {
     setAllAgentLoading(true);
     try {
-      const res = await fetch(`/api/org/${orgId}/ledger`);
+      const buyFilter = isBuyPage ? '?isBuy=true' : '?isBuy=false';
+      const res = await fetch(`/api/org/${orgId}/ledger${buyFilter}`);
       const data = await res.json();
       setAllAgentSlips(data.slips || []);
     } catch {
@@ -254,7 +257,7 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
         // ignore
       }
     }
-  }, [orgId, activeSession, payoutData]);
+  }, [orgId, activeSession, payoutData, isBuyPage]);
 
   useEffect(() => {
     if (tab === 'allAgent') loadAllAgentData();

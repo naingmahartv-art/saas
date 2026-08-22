@@ -163,11 +163,11 @@ export default function BuyEntry({
     const list = [];
     for (let i = 0; i <= 99; i += 1) {
       const num = String(i).padStart(2, '0');
-      const amount = totals?.[num] || 0;
+      const amount = buyTotals?.[num] || 0;
       list.push({ number: num, amount });
     }
     return list;
-  }, [totals]);
+  }, [buyTotals]);
 
   const sortedGridNumbers = useMemo(() => {
     const list = [...allNumbersList];
@@ -911,7 +911,7 @@ export default function BuyEntry({
         <div className="lg:col-span-3 flex flex-col h-full min-h-0">
           <div ref={middlePanelRef} className="bg-white rounded-xl border border-gray-200 shadow-sm p-2.5 h-full overflow-hidden flex flex-col min-h-0">
             <div className="flex items-center justify-between mb-2 shrink-0">
-              <h2 className="text-sm font-bold text-gray-800">00 – 99 Overall Ledger Grid</h2>
+              <h2 className="text-sm font-bold text-gray-800">00 – 99 Buy Ledger Grid (ဝယ်ယူထားသော ပမာဏများ)</h2>
               <div className="flex items-center gap-1">
                 <button
                   type="button"

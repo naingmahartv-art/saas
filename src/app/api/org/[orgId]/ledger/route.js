@@ -45,7 +45,14 @@ export async function GET(request, { params }) {
   const sortDir = searchParams.get('sort') === 'desc' ? 'desc' : 'asc';
   const snap = await orgSessionVouchersCol(orgId, sid).orderBy('srNo', sortDir).get();
 
-  let slips = snap.docs.map(d => d.data());
+  const typeParam = searchParams.get('type');
+  const isBuyParam = searchParams.get('isBuy');
+  if (isBuyParam === 'true' || typeParam === 'buy') {
+    slips = slips.filter(s => s.agentId === 'buy_offload' || s.isBuyVoucher === true || s.voucherType === 'buy');
+  } else if (isBuyParam === 'false' || typeParam === 'sale') {
+    slips = slips.filter(s => s.agentId !== 'buy_offload' && !s.isBuyVoucher && s.voucherType !== 'buy');
+  }
+
   if (agentName) {
     const needle = agentName.trim().toLowerCase();
     slips = slips.filter(s => s.agentName?.trim().toLowerCase() === needle);
