@@ -9,6 +9,9 @@ import { formatCombo as rawFormatCombo, matchesCombo } from '@/lib/ledger/shortc
 import SessionPicker from '../ledger/SessionPicker.js';
 import AgentCombobox from '../ledger/AgentCombobox.js';
 import useLedgerFontSize from '@/lib/ledger/useLedgerFontSize.js';
+import { enqueue } from '@/lib/ledger/voucherQueue.js';
+import { deleteLocalVoucher, saveLocalVoucher } from '@/lib/ledger/localVoucherDb.js';
+import { todayStr, getCurrentSlotKey } from '@/lib/lottery/sessionSlots.js';
 
 const NUMBER_TABLE_COLUMNS = 4;
 const ALLOWED_CHARS = /[^0-9RAGPBWNFXT+\-*/.[\]]/gi;
@@ -510,27 +513,31 @@ export default function BuyEntry({
     if (saving) return;
     setError('');
     setWarnings([]);
-    if (!activeSession) {
-      setError(t('ledger.noActiveSession'));
-      return;
-    }
+
+    const fallbackDate = todayStr();
+    const fallbackSlot = getCurrentSlotKey();
+    const vOnDate = editingVoucher?.onDate || activeSession?.onDate || fallbackDate;
+    const vAmpm = editingVoucher?.ampm || activeSession?.ampm || fallbackSlot;
+    const vOnCount = editingVoucher?.onCount || activeSession?.onCount || 1;
+    const vMachineId = editingVoucher?.machineId || activeSession?.machineId || 1;
 
     if (editingId) {
-      const vOnCount = editingVoucher?.onCount ?? activeSession.onCount;
-      const vAmpm = editingVoucher?.ampm ?? activeSession.ampm;
-      const vOnDate = editingVoucher?.onDate ?? activeSession.onDate;
-
       if (pendingTokens.length === 0) {
         setSaving(true);
         const delNo = editingSrNo;
         try {
-          const q = `onCount=${encodeURIComponent(vOnCount)}&ampm=${encodeURIComponent(vAmpm)}&onDate=${encodeURIComponent(vOnDate)}`;
-          const res = await fetch(`/api/org/${orgId}/ledger/${editingId}?${q}`, { method: 'DELETE' });
-          const data = await res.json();
-          if (!res.ok) {
-            setError(data.error || 'Failed to delete voucher');
-            return;
-          }
+          await deleteLocalVoucher(editingId, orgId);
+          enqueue(orgId, {
+            id: editingId,
+            voucherId: editingId,
+            action: 'delete',
+            voucherType: 'buy',
+            isBuyVoucher: true,
+            onCount: vOnCount,
+            ampm: vAmpm,
+            onDate: vOnDate,
+          });
+
           setPendingTokens([]);
           setInputValue('');
           setEditingId(null);
@@ -539,7 +546,7 @@ export default function BuyEntry({
           if (onSaved) onSaved();
           setTimeout(() => setSuccessMsg(''), 4000);
         } catch {
-          setError(t('common.networkError'));
+          setError(t('common.failedToSave'));
         } finally {
           setSaving(false);
         }
@@ -550,22 +557,46 @@ export default function BuyEntry({
       const updateNo = editingSrNo;
       try {
         const tokens = pendingTokens.map(p => p.tokenText);
-        const res = await fetch(`/api/org/${orgId}/ledger/${editingId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId,
-            tokens,
-            onCount: vOnCount,
-            ampm: vAmpm,
-            onDate: vOnDate,
-          }),
+        const items = pendingTokens.flatMap(p => p.entries);
+        const amount = items.reduce((sum, it) => sum + (parseFloat(it.amount || it.value) || 0), 0);
+
+        await saveLocalVoucher({
+          id: editingId,
+          clientId: editingId,
+          voucherId: editingId,
+          orgId,
+          agentId: agentId || 'buy_offload',
+          tokens,
+          items,
+          entries: items,
+          amount,
+          onCount: vOnCount,
+          ampm: vAmpm,
+          onDate: vOnDate,
+          machineId: vMachineId,
+          voucherType: 'buy',
+          isBuyVoucher: true,
+          action: 'update',
+          status: 'pending',
         });
-        const data = await res.json();
-        if (!res.ok) {
-          setError(data.error || 'Failed to update Buy Voucher');
-          return;
-        }
+
+        enqueue(orgId, {
+          id: editingId,
+          voucherId: editingId,
+          agentId: agentId || 'buy_offload',
+          tokens,
+          items,
+          entries: items,
+          amount,
+          onCount: vOnCount,
+          ampm: vAmpm,
+          onDate: vOnDate,
+          machineId: vMachineId,
+          voucherType: 'buy',
+          isBuyVoucher: true,
+          action: 'update',
+        });
+
         setPendingTokens([]);
         setInputValue('');
         setEditingId(null);
@@ -574,57 +605,45 @@ export default function BuyEntry({
         if (onSaved) onSaved();
         setTimeout(() => setSuccessMsg(''), 4000);
       } catch (err) {
-        setError(err.message || 'Network error');
+        setError(err.message || t('common.failedToSave'));
       } finally {
         setSaving(false);
       }
       return;
     }
 
-    // if (pendingTokens.length === 0) {
-    //   if (!successMsg) {
-    //     setError('No items to save in Buy Voucher');
-    //   }
-    //   return;
-    // }
-
     const tokens = pendingTokens.map(p => p.tokenText);
     const items = pendingTokens.flatMap(p => p.entries);
-    setSaving(true);
-
-    try {
-      const res = await fetch(`/api/org/${orgId}/ledger/buy-voucher`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          agentId,
-          tokens,
-          onCount: activeSession.onCount,
-          ampm: activeSession.ampm,
-          onDate: activeSession.onDate,
-          machineId: activeSession.machineId,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || 'Failed to save Buy Voucher');
-        return;
-      }
-
-      if (onOptimisticBuySave) onOptimisticBuySave(items);
-      setPendingTokens([]);
-      setInputValue('');
-      setSuccessMsg(`Buy Voucher saved successfully! (Sr.No: ${data.srNo})`);
-      if (onSaved) onSaved();
-      setTimeout(() => {
-        setSuccessMsg('');
-        inputRef.current?.focus();
-      }, 3000);
-    } catch (err) {
-      setError(err.message || 'Network error');
-    } finally {
-      setSaving(false);
+    if (items.length === 0 && !editingId) {
+      setError(t('ledger.noEntriesError'));
+      return;
     }
+    const amount = items.reduce((sum, it) => sum + (parseFloat(it.amount || it.value) || 0), 0);
+
+    const clientId = enqueue(orgId, {
+      agentId: agentId || 'buy_offload',
+      tokens,
+      items,
+      entries: items,
+      amount,
+      onCount: vOnCount,
+      ampm: vAmpm,
+      onDate: vOnDate,
+      machineId: vMachineId,
+      voucherType: 'buy',
+      isBuyVoucher: true,
+      action: 'create',
+    });
+
+    if (onOptimisticBuySave) onOptimisticBuySave(items);
+    setPendingTokens([]);
+    setInputValue('');
+    setSuccessMsg(t('ledger.queuedMsg') || 'Buy Voucher saved successfully!');
+    if (onSaved) onSaved();
+    setTimeout(() => {
+      setSuccessMsg('');
+      inputRef.current?.focus();
+    }, 3000);
   }
 
   useEffect(() => {

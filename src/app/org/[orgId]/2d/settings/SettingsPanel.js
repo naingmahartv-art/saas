@@ -1,6 +1,7 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useI18n } from '@/lib/i18n/index.js';
+import { getOfflineMode, setOfflineMode, cleanLocalVouchersBeforeDate } from '@/lib/ledger/localVoucherDb.js';
 import CommissionSettingsManager from './CommissionSettingsManager.js';
 import RateSettingsManager from './RateSettingsManager.js';
 
@@ -32,6 +33,48 @@ export default function SettingsPanel({
   const [notBuyNumbers, setNotBuyNumbers] = useState(initialNotBuyNumbers || []);
   const [notBuyInput, setNotBuyInput] = useState('');
   const [notBuyError, setNotBuyError] = useState('');
+
+  // Offline / Standalone mode
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
+  useEffect(() => {
+    setIsOfflineMode(getOfflineMode(orgId));
+    const handleModeChange = (e) => {
+      if (e.detail?.orgId === orgId) {
+        setIsOfflineMode(Boolean(e.detail?.enabled));
+      }
+    };
+    window.addEventListener('offline_mode_change', handleModeChange);
+    return () => window.removeEventListener('offline_mode_change', handleModeChange);
+  }, [orgId]);
+
+  const handleToggleOfflineMode = (e) => {
+    const nextVal = e.target.checked;
+    setOfflineMode(orgId, nextVal);
+    setIsOfflineMode(nextVal);
+  };
+
+  // Local data cleanup
+  const [cleanDate, setCleanDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [cleanLoading, setCleanLoading] = useState(false);
+  const [cleanMsg, setCleanMsg] = useState('');
+
+  async function handleCleanLocalData(e) {
+    e.preventDefault();
+    if (!cleanDate) return;
+    if (!window.confirm(t('settings.cleanConfirm', { date: cleanDate }))) {
+      return;
+    }
+    setCleanLoading(true);
+    setCleanMsg('');
+    try {
+      const count = await cleanLocalVouchersBeforeDate(orgId, cleanDate);
+      setCleanMsg(t('settings.cleanedCount', { count }));
+    } catch {
+      setCleanMsg(t('common.networkError'));
+    } finally {
+      setCleanLoading(false);
+    }
+  }
 
   async function saveRates(e) {
     e.preventDefault();
@@ -344,6 +387,62 @@ export default function SettingsPanel({
             </div>
           </>
         )}
+      </section>
+
+      {/* Operating Mode (Offline / Standalone Device) */}
+      <section className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold text-gray-800 mb-1 flex items-center gap-2">
+              <span>{t('settings.operatingMode')}</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isOfflineMode ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-emerald-100 text-emerald-800 border border-emerald-300'}`}>
+                {isOfflineMode ? t('settings.fullyOffline') : t('settings.partialOffline')}
+              </span>
+            </h2>
+            <p className="text-xs text-gray-500 max-w-2xl leading-relaxed">
+              {t('settings.operatingModeDesc')}
+            </p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer shrink-0">
+            <input
+              type="checkbox"
+              checked={isOfflineMode}
+              onChange={handleToggleOfflineMode}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none ring-2 ring-transparent peer-focus:ring-amber-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+          </label>
+        </div>
+      </section>
+
+      {/* Local Storage & Data Cleanup */}
+      <section className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+        <h2 className="text-base font-semibold text-gray-800 mb-1">{t('settings.dataCleanup')}</h2>
+        <p className="text-xs text-gray-500 mb-4 max-w-2xl leading-relaxed">
+          {t('settings.dataCleanupDesc')}
+        </p>
+        <form onSubmit={handleCleanLocalData} className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              {t('settings.cleanBeforeDate')}
+            </label>
+            <input
+              type="date"
+              value={cleanDate}
+              onChange={e => setCleanDate(e.target.value)}
+              className="w-48 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={cleanLoading || !cleanDate}
+            className="bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white text-sm font-medium py-2 px-4 rounded-lg transition shadow-sm"
+          >
+            {cleanLoading ? t('settings.cleaning') : t('settings.cleanBtn')}
+          </button>
+          {cleanMsg && <p className="text-sm text-gray-700 font-medium">{cleanMsg}</p>}
+        </form>
       </section>
 
       {/* Agent Session Commissions & History by Date */}

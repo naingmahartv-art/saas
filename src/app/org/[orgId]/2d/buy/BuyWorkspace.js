@@ -70,7 +70,7 @@ export default function BuyWorkspace({
     refreshTotals();
   }, [refreshTotals]);
 
-  const live = useLiveSession(orgId, activeSession?.id);
+  const live = useLiveSession(orgId, activeSession?.id, { scope: 'buy' });
   useEffect(() => {
     if (!live) return;
     setTotals(live.totals || {});

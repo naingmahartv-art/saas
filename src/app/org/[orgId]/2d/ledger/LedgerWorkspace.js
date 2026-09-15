@@ -223,7 +223,7 @@ export default function LedgerWorkspace({
   // covered by the optimistic bump below). See session-stream/route.js and
   // useLiveSession.js. Falls back gracefully to the fetch-based paths above
   // if the stream hasn't connected yet or drops.
-  const live = useLiveSession(orgId, effectiveSession?.id);
+  const live = useLiveSession(orgId, effectiveSession?.id, { scope: 'sale' });
   useEffect(() => {
     if (!live) return;
     setTotals(live.totals || {});

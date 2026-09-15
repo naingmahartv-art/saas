@@ -1,8 +1,22 @@
 'use client';
 import { useEffect, useState, useMemo, useCallback, Fragment } from 'react';
 import { useI18n } from '@/lib/i18n/index.js';
+import { getLocalVouchers, deleteLocalVoucher, getOfflineMode } from '@/lib/ledger/localVoucherDb.js';
+import { parseNumberExpression } from '@/lib/lottery/numberParser.js';
+import { enqueue } from '@/lib/ledger/voucherQueue.js';
 
 const SLOT_LABEL_KEY = { '09:00': 'slot0900', '12:00': 'slot1200', '04:00': 'slot0400' };
+
+function calculateTokensAmount(tokens) {
+  let total = 0;
+  for (const t of tokens || []) {
+    const { entries } = parseNumberExpression(t, { maxEntries: 10000 });
+    for (const e of entries || []) {
+      total += parseFloat(e.amount || e.value) || 0;
+    }
+  }
+  return total;
+}
 
 function csvEscape(value) {
   const s = String(value ?? '');
@@ -43,27 +57,69 @@ export default function LedgerHistory({ orgId, activeSession, onEdit, onDeleted,
   const [deletingId, setDeletingId] = useState(null);
   const [statusMsg, setStatusMsg] = useState('');
 
+  const loadFromLocalDb = useCallback(async () => {
+    try {
+      const vType = isBuy ? 'buy' : 'sale';
+      const all = await getLocalVouchers(orgId, { voucherType: vType });
+      const targetDate = activeSession?.onDate;
+      const targetAmpm = activeSession?.ampm;
+      const targetOnCount = activeSession?.onCount;
+
+      const formatted = all
+        .filter(v => {
+          if (targetDate && v.onDate && v.onDate !== targetDate) return false;
+          if (targetAmpm && v.ampm && v.ampm !== targetAmpm) return false;
+          if (targetOnCount && v.onCount && v.onCount !== targetOnCount) return false;
+          return true;
+        })
+        .map(v => ({
+          id: v.id,
+          srNo: v.srNo ?? (v.status === 'pending' ? 'Pending' : '-'),
+          agentId: v.agentId,
+          agentName: v.agentName || (isBuy ? 'Buy Offload' : v.agentId),
+          tokens: v.tokens || [],
+          amount: v.amount || calculateTokensAmount(v.tokens),
+          createdAt: v.createdAt,
+          onDate: v.onDate,
+          ampm: v.ampm,
+          onCount: v.onCount,
+          status: v.status,
+          isOfflineItem: true,
+        }));
+      setSlips(formatted);
+    } catch (err) {
+      console.warn('Failed to load local slips:', err);
+      setSlips([]);
+    }
+  }, [orgId, isBuy, activeSession]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+
+    if (getOfflineMode(orgId)) {
+      await loadFromLocalDb();
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await fetch(`/api/org/${orgId}/ledger?isBuy=${isBuy ? 'true' : 'false'}`);
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || t('common.failedToSave'));
+        await loadFromLocalDb();
         return;
       }
       setSlips(data.slips || []);
     } catch {
-      setError(t('common.networkError'));
+      await loadFromLocalDb();
     } finally {
       setLoading(false);
     }
-  }, [orgId, isBuy, t]);
+  }, [orgId, isBuy, loadFromLocalDb]);
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, refreshSignal]);
 
   function toggleSort(key) {
@@ -94,18 +150,33 @@ export default function LedgerHistory({ orgId, activeSession, onEdit, onDeleted,
     if (!confirm(t('ledger.historyDeleteConfirm', { n: slip.srNo }))) return;
     setDeletingId(slip.id);
     try {
-      const qs = new URLSearchParams({ onCount: slip.onCount, ampm: slip.ampm, onDate: slip.onDate }).toString();
-      const res = await fetch(`/api/org/${orgId}/ledger/${slip.id}?${qs}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || t('common.failedToSave'));
-        return;
+      await deleteLocalVoucher(slip.id, orgId);
+
+      if (!getOfflineMode(orgId)) {
+        const qs = new URLSearchParams({
+          onCount: String(slip.onCount || 1),
+          ampm: slip.ampm || '',
+          onDate: slip.onDate || '',
+        }).toString();
+        await fetch(`/api/org/${orgId}/ledger/${slip.id}?${qs}`, { method: 'DELETE' }).catch(() => {
+          enqueue(orgId, {
+            id: slip.id,
+            voucherId: slip.id,
+            action: 'delete',
+            voucherType: isBuy ? 'buy' : 'sale',
+            isBuyVoucher: isBuy,
+            onCount: slip.onCount,
+            ampm: slip.ampm,
+            onDate: slip.onDate,
+          });
+        });
       }
+
       setSlips(prev => prev.filter(s => s.id !== slip.id));
       if (expanded === slip.id) setExpanded(null);
       if (onDeleted) onDeleted();
     } catch {
-      setError(t('common.networkError'));
+      setError(t('common.failedToSave'));
     } finally {
       setDeletingId(null);
     }

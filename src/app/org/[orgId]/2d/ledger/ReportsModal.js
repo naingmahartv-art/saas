@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo, Fragment } from 'reac
 import { useI18n } from '@/lib/i18n/index.js';
 import { buildReportPdf, reportFileName } from '@/lib/reports/buildPdf.js';
 import { parseNumberExpression, MAX_ENTRIES } from '@/lib/lottery/numberParser.js';
+import { getLocalVouchers, getOfflineMode } from '@/lib/ledger/localVoucherDb.js';
 
 const SLOT_LABEL_KEY = { '09:00': 'slot0900', '12:00': 'slot1200', '04:00': 'slot0400' };
 
@@ -139,9 +140,51 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
     return selectedAgent.commission ?? 0;
   }, [selectedAgent, activeSession]);
 
+  const loadLocalAgentReport = useCallback(async (ag) => {
+    try {
+      const vType = isBuyPage ? 'buy' : 'sale';
+      const all = await getLocalVouchers(orgId, { voucherType: vType });
+      const targetDate = activeSession?.onDate;
+      const targetAmpm = activeSession?.ampm;
+      const targetOnCount = activeSession?.onCount;
+
+      const filtered = all
+        .filter(v => {
+          if (targetDate && v.onDate && v.onDate !== targetDate) return false;
+          if (targetAmpm && v.ampm && v.ampm !== targetAmpm) return false;
+          if (targetOnCount && v.onCount && v.onCount !== targetOnCount) return false;
+          if (ag.id === 'buy_offload') return v.isBuyVoucher === true || v.agentId === 'buy_offload';
+          return v.agentId === ag.id || v.agentName === ag.agentName || v.agentId === ag.agentName;
+        })
+        .map(v => ({
+          id: v.id,
+          srNo: v.srNo ?? (v.status === 'pending' ? 'Pending' : '-'),
+          agentId: v.agentId,
+          agentName: v.agentName || (isBuyPage ? 'Buy Offload' : ag.agentName || v.agentId),
+          tokens: v.tokens || [],
+          details: v.entries || v.items || [],
+          amount: v.amount || 0,
+          createdAt: v.createdAt,
+          onDate: v.onDate,
+          ampm: v.ampm,
+          onCount: v.onCount,
+        }));
+      setAgentSlips(filtered);
+    } catch {
+      setAgentSlips([]);
+    }
+  }, [orgId, isBuyPage, activeSession]);
+
   const loadAgentReport = useCallback(async (ag) => {
     if (!ag) { setAgentSlips([]); return; }
     setAgentLoading(true);
+
+    if (getOfflineMode(orgId)) {
+      await loadLocalAgentReport(ag);
+      setAgentLoading(false);
+      return;
+    }
+
     try {
       let url = `/api/org/${orgId}/ledger?isBuy=${isBuyPage ? 'true' : 'false'}`;
       if (ag.id === 'buy_offload') {
@@ -153,9 +196,13 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
       }
       const res = await fetch(url);
       const data = await res.json();
+      if (!res.ok) {
+        await loadLocalAgentReport(ag);
+        return;
+      }
       setAgentSlips(data.slips || []);
     } catch {
-      setAgentSlips([]);
+      await loadLocalAgentReport(ag);
     } finally {
       setAgentLoading(false);
     }
@@ -169,7 +216,7 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
         setPayoutData(data);
       } catch {}
     }
-  }, [orgId, activeSession, isBuyPage]);
+  }, [orgId, activeSession, isBuyPage, loadLocalAgentReport]);
 
   useEffect(() => {
     if (tab === 'agent' && selectedAgent) {
@@ -187,23 +234,82 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
     [sortedAgentSlips]
   );
 
+  const agentTotalBet = useMemo(
+    () => sortedAgentSlips.reduce((sum, s) => sum + (s.amount || 0), 0),
+    [sortedAgentSlips]
+  );
+
+  const agentNetWinLoss = useMemo(() => {
+    if (isBuyPage) return null;
+    const commAmt = Math.round((agentTotalBet * selectedAgentCommission) / 100);
+    const winAmt = 0; // calculated in payout view if lucky number is set
+    return {
+      bet: agentTotalBet,
+      comm: commAmt,
+      net: agentTotalBet - commAmt - winAmt,
+    };
+  }, [isBuyPage, agentTotalBet, selectedAgentCommission]);
+
   // --- Summary Report ---
   const [summarySlips, setSummarySlips] = useState([]);
   const [summaryLoading, setSummaryLoading] = useState(false);
 
+  const loadLocalSummary = useCallback(async () => {
+    try {
+      const vType = isBuyPage ? 'buy' : 'sale';
+      const all = await getLocalVouchers(orgId, { voucherType: vType });
+      const targetDate = activeSession?.onDate;
+      const targetAmpm = activeSession?.ampm;
+      const targetOnCount = activeSession?.onCount;
+
+      const filtered = all
+        .filter(v => {
+          if (targetDate && v.onDate && v.onDate !== targetDate) return false;
+          if (targetAmpm && v.ampm && v.ampm !== targetAmpm) return false;
+          if (targetOnCount && v.onCount && v.onCount !== targetOnCount) return false;
+          return true;
+        })
+        .map(v => ({
+          id: v.id,
+          srNo: v.srNo ?? (v.status === 'pending' ? 'Pending' : '-'),
+          agentId: v.agentId,
+          agentName: v.agentName || (isBuyPage ? 'Buy Offload' : v.agentId),
+          tokens: v.tokens || [],
+          details: v.entries || v.items || [],
+          amount: v.amount || 0,
+          createdAt: v.createdAt,
+          onDate: v.onDate,
+          ampm: v.ampm,
+          onCount: v.onCount,
+        }));
+      setSummarySlips(filtered);
+    } catch {
+      setSummarySlips([]);
+    }
+  }, [orgId, isBuyPage, activeSession]);
+
   const loadSummary = useCallback(async () => {
     setSummaryLoading(true);
+    if (getOfflineMode(orgId)) {
+      await loadLocalSummary();
+      setSummaryLoading(false);
+      return;
+    }
     try {
       const buyFilter = isBuyPage ? '?sort=asc&isBuy=true' : '?sort=asc&isBuy=false';
       const res = await fetch(`/api/org/${orgId}/ledger${buyFilter}`);
       const data = await res.json();
+      if (!res.ok) {
+        await loadLocalSummary();
+        return;
+      }
       setSummarySlips(data.slips || []);
     } catch {
-      setSummarySlips([]);
+      await loadLocalSummary();
     } finally {
       setSummaryLoading(false);
     }
-  }, [orgId, isBuyPage]);
+  }, [orgId, isBuyPage, loadLocalSummary]);
 
   useEffect(() => {
     if (tab === 'summary') loadSummary();
@@ -261,14 +367,58 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
   const [allAgentSlips, setAllAgentSlips] = useState([]);
   const [allAgentLoading, setAllAgentLoading] = useState(false);
 
+  const loadLocalAllAgentData = useCallback(async () => {
+    try {
+      const all = await getLocalVouchers(orgId);
+      const targetDate = activeSession?.onDate;
+      const targetAmpm = activeSession?.ampm;
+      const targetOnCount = activeSession?.onCount;
+
+      const filtered = all
+        .filter(v => {
+          if (targetDate && v.onDate && v.onDate !== targetDate) return false;
+          if (targetAmpm && v.ampm && v.ampm !== targetAmpm) return false;
+          if (targetOnCount && v.onCount && v.onCount !== targetOnCount) return false;
+          return true;
+        })
+        .map(v => ({
+          id: v.id,
+          srNo: v.srNo ?? (v.status === 'pending' ? 'Pending' : '-'),
+          agentId: v.agentId,
+          agentName: v.agentName || (v.voucherType === 'buy' || v.isBuyVoucher ? 'Buy Offload' : v.agentId),
+          tokens: v.tokens || [],
+          details: v.entries || v.items || [],
+          amount: v.amount || 0,
+          isBuyVoucher: v.voucherType === 'buy' || v.isBuyVoucher === true,
+          voucherType: v.voucherType,
+          createdAt: v.createdAt,
+          onDate: v.onDate,
+          ampm: v.ampm,
+          onCount: v.onCount,
+        }));
+      setAllAgentSlips(filtered);
+    } catch {
+      setAllAgentSlips([]);
+    }
+  }, [orgId, activeSession]);
+
   const loadAllAgentData = useCallback(async () => {
     setAllAgentLoading(true);
+    if (getOfflineMode(orgId)) {
+      await loadLocalAllAgentData();
+      setAllAgentLoading(false);
+      return;
+    }
     try {
       const res = await fetch(`/api/org/${orgId}/ledger?all=true`);
       const data = await res.json();
+      if (!res.ok) {
+        await loadLocalAllAgentData();
+        return;
+      }
       setAllAgentSlips(data.slips || []);
     } catch {
-      setAllAgentSlips([]);
+      await loadLocalAllAgentData();
     } finally {
       setAllAgentLoading(false);
     }
@@ -284,7 +434,7 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
         // ignore
       }
     }
-  }, [orgId, activeSession, payoutData]);
+  }, [orgId, activeSession, payoutData, loadLocalAllAgentData]);
 
   useEffect(() => {
     if (tab === 'allAgent') loadAllAgentData();
