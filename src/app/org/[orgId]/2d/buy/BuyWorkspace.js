@@ -27,7 +27,7 @@ export default function BuyWorkspace({
   const [notBuyNumbers, setNotBuyNumbers] = useState(initialNotBuyNumbers);
   const [editingVoucher, setEditingVoucher] = useState(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [isReportsOpen, setIsReportsOpen] = useState(false);
+  const [reportsTab, setReportsTab] = useState(null);
   const [refreshSignal, setRefreshSignal] = useState(0);
   // SessionPicker starts closed if an active session exists or has already been acknowledged
   const [isSessionPickerOpen, setIsSessionPickerOpen] = useState(() => {
@@ -117,13 +117,22 @@ export default function BuyWorkspace({
         luckyNumber={luckyNumber}
         totals={totals}
         buyTotals={buyTotals}
+        editingVoucher={editingVoucher}
         canWrite={canWrite}
         shortcuts={shortcuts}
         replaceSlash={replaceSlash}
         replaceAsterisk={replaceAsterisk}
         onOptimisticBuySave={applyOptimisticBuyTotals}
+        onSaved={() => {
+          setEditingVoucher(null);
+          refreshTotals();
+          setRefreshSignal(s => s + 1);
+        }}
+        onCancelEdit={() => setEditingVoucher(null)}
         onOpenHistory={() => setIsHistoryOpen(true)}
-        onOpenReports={() => setIsReportsOpen(true)}
+        onOpenReports={() => setReportsTab('allAgent')}
+        onOpenBuy1={() => setReportsTab('agent')}
+        onOpenBuy2={() => setReportsTab('summary')}
         onOpenSessionPicker={() => setIsSessionPickerOpen(true)}
       />
 
@@ -136,13 +145,14 @@ export default function BuyWorkspace({
         />
       )}
 
-      {isReportsOpen && (
+      {reportsTab && (
         <ReportsModal
           orgId={orgId}
           activeSession={activeSession}
           agents={agents}
+          initialTab={reportsTab}
           isBuyPage={true}
-          onClose={() => setIsReportsOpen(false)}
+          onClose={() => setReportsTab(null)}
         />
       )}
 
@@ -169,10 +179,15 @@ export default function BuyWorkspace({
               <LedgerHistory
                 orgId={orgId}
                 activeSession={activeSession}
+                isBuy={true}
                 refreshSignal={refreshSignal}
-                onEditVoucher={v => {
+                onEdit={v => {
                   setEditingVoucher(v);
                   setIsHistoryOpen(false);
+                }}
+                onDeleted={() => {
+                  refreshTotals();
+                  setRefreshSignal(s => s + 1);
                 }}
               />
             </div>

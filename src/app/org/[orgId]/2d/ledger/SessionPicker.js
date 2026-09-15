@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation';
 import { useI18n } from '@/lib/i18n/index.js';
 import { SLOTS, getCurrentSlotKey, todayStr } from '@/lib/lottery/sessionSlots.js';
 
+import { clearLimitLocalStorage } from '@/lib/ledger/clearLimit.js';
+
 const SLOT_LABEL_KEY = { '09:00': 'slot0900', '12:00': 'slot1200', '04:00': 'slot0400' };
 const SLOT_RANGE_KEY = { '09:00': 'slot0900Range', '12:00': 'slot1200Range', '04:00': 'slot0400Range' };
 
@@ -30,6 +32,7 @@ export default function SessionPicker({ orgId, activeSession, machines, onClose 
         setError(data.error || t('session.saveFailed'));
         return;
       }
+      clearLimitLocalStorage(orgId);
       router.refresh();
       onClose();
     } catch {

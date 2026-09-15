@@ -51,7 +51,7 @@ export async function PUT(request, { params }) {
   if (lockError) return NextResponse.json({ error: lockError.error }, { status: lockError.status });
 
   const sid = buildSessionId(coords.onDate, coords.ampm, coords.onCount);
-  const voucherRef = orgSessionVoucherDoc(orgId, sid, id);
+  let voucherRef = orgSessionVoucherDoc(orgId, sid, id);
   const sessionRef = orgSessionDoc(orgId, sid);
 
   let newEntries;
@@ -78,8 +78,20 @@ export async function PUT(request, { params }) {
   let updatedAgentName;
 
   await db.runTransaction(async (tx) => {
-    const voucherSnap = await tx.get(voucherRef);
-    if (!voucherSnap.exists) throw new Error('NOT_FOUND');
+    let voucherSnap = await tx.get(voucherRef);
+    if (!voucherSnap.exists) {
+      const activeSessionsSnap = await orgSessionsCol(orgId).get();
+      for (const sessDoc of activeSessionsSnap.docs) {
+        const altRef = orgSessionVoucherDoc(orgId, sessDoc.id, id);
+        const altSnap = await tx.get(altRef);
+        if (altSnap.exists) {
+          voucherSnap = altSnap;
+          voucherRef = altRef;
+          break;
+        }
+      }
+    }
+    if (!voucherSnap || !voucherSnap.exists) throw new Error('NOT_FOUND');
     slip = voucherSnap.data();
 
     updatedAgentId = slip.agentId;
@@ -173,16 +185,27 @@ export async function DELETE(request, { params }) {
   if (lockError) return NextResponse.json({ error: lockError.error }, { status: lockError.status });
 
   const sid = buildSessionId(coords.onDate, coords.ampm, coords.onCount);
-  const voucherRef = orgSessionVoucherDoc(orgId, sid, id);
-  const sessionRef = orgSessionDoc(orgId, sid);
+  let voucherRef = orgSessionVoucherDoc(orgId, sid, id);
 
   const db = getDb();
   let slip;
   let deltaMap = {};
 
   await db.runTransaction(async (tx) => {
-    const voucherSnap = await tx.get(voucherRef);
-    if (!voucherSnap.exists) throw new Error('NOT_FOUND');
+    let voucherSnap = await tx.get(voucherRef);
+    if (!voucherSnap.exists) {
+      const activeSessionsSnap = await orgSessionsCol(orgId).get();
+      for (const sessDoc of activeSessionsSnap.docs) {
+        const altRef = orgSessionVoucherDoc(orgId, sessDoc.id, id);
+        const altSnap = await tx.get(altRef);
+        if (altSnap.exists) {
+          voucherSnap = altSnap;
+          voucherRef = altRef;
+          break;
+        }
+      }
+    }
+    if (!voucherSnap || !voucherSnap.exists) throw new Error('NOT_FOUND');
     slip = voucherSnap.data();
 
     let oldEntries = [];

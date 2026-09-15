@@ -72,6 +72,7 @@ export async function GET(request, { params }) {
           luckyNo: sData.luckyNumber || sData.luckyNo || sData.winningNumber || null,
           rate: sData.rate || 80,
           agentCommissions: sData.agentCommissions || {},
+          agentRates: sData.agentRates || {},
         });
       }
     }

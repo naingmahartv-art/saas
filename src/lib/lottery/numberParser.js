@@ -35,8 +35,7 @@
  *   P   → "Part": num is a SEED DIGIT 0-9 (not a lottery number), e.g. "1P"
  *         — expands to every number containing that digit, 19 numbers — confirmed
  *   F   → "Series": num is a SEED DIGIT 0-9, e.g. "1F" — expands to the tens-D
- *         series D0-D9 (10 numbers), EXCEPT "0F" starts at 01, skipping "00"
- *         (9 numbers) — confirmed
+ *         series D0-D9 (10 numbers), e.g. "0F" expands to 00-09 (10 numbers) — confirmed
  *   others → injected via expandModifier(modifier, num, amount) in config
  *
  * A/W/N/X/T behave like a table lookup: standalone (no digits before the letter,
@@ -114,6 +113,7 @@ const ALL_NUMBERS = Array.from({ length: 100 }, (_, i) => String(i).padStart(2, 
  * @returns {{ num: string, amount: number }[]}
  */
 function defaultExpandModifier(modifier, num, amount, baseIncluded) {
+  if (!amount || amount <= 0) return [];
   switch (modifier.toUpperCase()) {
     case 'A':
       // APoo: all same-digit numbers (00,11,...,99)
@@ -193,7 +193,7 @@ function defaultExpandModifier(modifier, num, amount, baseIncluded) {
     case 'F': {
       // Series:
       // Case 1: Digit AFTER F (e.g. F1300 -> BACK_1) -> Units digit fixed to d (01,11,21,...,91)
-      // Case 2: Digit BEFORE F (e.g. 1F300 -> 01) -> Tens digit fixed to d (10,11,12,...,19)
+      // Case 2: Digit BEFORE F (e.g. 1F300 -> 01) -> Tens digit fixed to d (00,01,02,...,09)
       if (!num) return [];
 
       if (typeof num === 'string' && num.startsWith('BACK_')) {
@@ -206,9 +206,8 @@ function defaultExpandModifier(modifier, num, amount, baseIncluded) {
       }
 
       const digit = num.length === 2 ? num[1] : num[0];
-      const start = digit === '0' ? 1 : 0;
       const out = [];
-      for (let u = start; u <= 9; u++) out.push({ num: `${digit}${u}`, amount });
+      for (let u = 0; u <= 9; u++) out.push({ num: `${digit}${u}`, amount });
       return out;
     }
 
@@ -528,14 +527,19 @@ export function parseNumberExpression(expression, config = {}) {
     }
   }
 
-  if (allEntries.length > maxEntries) {
+  const validEntries = allEntries.filter(e => e && typeof e.amount === 'number' && e.amount > 0);
+  if (validEntries.length < allEntries.length || validEntries.length === 0) {
+    return { entries: [], error: `'${expression}' is not allowed. Invalid expression or missing bet amount.` };
+  }
+
+  if (validEntries.length > maxEntries) {
     return {
       entries: [],
-      error: `Too Large. Can't Add. Please save!! (${allEntries.length} entries, max ${maxEntries})`,
+      error: `Too Large. Can't Add. Please save!! (${validEntries.length} entries, max ${maxEntries})`,
     };
   }
 
-  return { entries: allEntries, error: null };
+  return { entries: validEntries, error: null };
 }
 
 /**

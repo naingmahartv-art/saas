@@ -15,16 +15,29 @@ export default async function TwoDLayout({ children, params }) {
     redirect('/login');
   }
 
-  const [orgSnap, meSnap] = await Promise.all([orgDoc(orgId).get(), userDoc(session.id).get()]);
-  const org = orgSnap.exists ? orgSnap.data() : null;
-  if (!org) redirect('/login');
-  // Authoritative, always-fresh suspension check — the JWT-carried status
-  // middleware checks can be stale for up to 7 days.
-  if (meSnap.data()?.status === 'suspended') redirect('/suspended');
+  let org = null;
+  let me = null;
+
+  try {
+    const fetchPromise = Promise.all([orgDoc(orgId).get(), userDoc(session.id).get()]);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Firestore timeout')), 2000)
+    );
+    const [orgSnap, meSnap] = await Promise.race([fetchPromise, timeoutPromise]);
+    org = orgSnap.exists ? orgSnap.data() : null;
+    me = meSnap.exists ? meSnap.data() : null;
+    if (org && me?.status === 'suspended') {
+      redirect('/suspended');
+    }
+  } catch {
+    // Offline / Firestore timeout - use JWT session information
+  }
+
+  const orgName = org?.name || session.orgName || '2D Workspace';
 
   return (
     <div className="min-h-screen flex bg-gray-50 dark:bg-slate-950 dark:text-slate-100">
-      <Sidebar2D orgId={orgId} orgName={org.name} userName={session.name} role={session.role} />
+      <Sidebar2D orgId={orgId} orgName={orgName} userName={session.name} role={session.role} />
       <main className="flex-1 min-w-0">{children}</main>
     </div>
   );

@@ -44,13 +44,24 @@ export async function GET(request, { params }) {
 
   const sortDir = searchParams.get('sort') === 'desc' ? 'desc' : 'asc';
   const snap = await orgSessionVouchersCol(orgId, sid).orderBy('srNo', sortDir).get();
+  let slips = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
   const typeParam = searchParams.get('type');
   const isBuyParam = searchParams.get('isBuy');
-  if (isBuyParam === 'true' || typeParam === 'buy') {
+  const allParam = searchParams.get('all');
+
+  if (allParam === 'true') {
+    // Return all slips without filtering
+  } else if (isBuyParam === 'true' || typeParam === 'buy') {
     slips = slips.filter(s => s.agentId === 'buy_offload' || s.isBuyVoucher === true || s.voucherType === 'buy');
-  } else if (isBuyParam === 'false' || typeParam === 'sale') {
+  } else {
+    // Default to Sale vouchers only (exclude buy offload vouchers)
     slips = slips.filter(s => s.agentId !== 'buy_offload' && !s.isBuyVoucher && s.voucherType !== 'buy');
+  }
+
+  const agentId = searchParams.get('agentId');
+  if (agentId) {
+    slips = slips.filter(s => s.agentId === agentId);
   }
 
   if (agentName) {
@@ -77,100 +88,132 @@ function expandTokens(tokens) {
 
 // POST /api/org/[orgId]/ledger — save a voucher
 export async function POST(request, { params }) {
-  const { orgId } = await params;
-  const session = await getSession();
-  if (!session || (session.orgId !== orgId && session.role !== 'super_admin')) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const { agentId, onCount, ampm, onDate, machineId, tokens, clientId } = await request.json();
-
-  if (!agentId || !onCount || !ampm || !onDate) {
-    return NextResponse.json({ error: 'agentId, onCount, ampm, and onDate are required' }, { status: 400 });
-  }
-  if (!Array.isArray(tokens) || tokens.length === 0) {
-    return NextResponse.json({ error: 'tokens must be a non-empty array' }, { status: 400 });
-  }
-
-  const lockError = await assertCashierWriteAllowed(session, orgId);
-  if (lockError) return NextResponse.json({ error: lockError.error }, { status: lockError.status });
-
-  const sid = buildSessionId(onDate, ampm, onCount);
-  const sessionRef = orgSessionDoc(orgId, sid);
-  const sessionSnap = await sessionRef.get();
-  if (!sessionSnap.exists || !sessionSnap.data().isActive) {
-    return NextResponse.json({ error: 'No active session' }, { status: 400 });
-  }
-
-  const agentSnap = await orgAgentDoc(orgId, agentId).get();
-  if (!agentSnap.exists) {
-    return NextResponse.json({ error: 'Agent not found for this organization' }, { status: 400 });
-  }
-  const agent = agentSnap.data();
-
-  let entries;
   try {
-    entries = expandTokens(tokens);
-  } catch (err) {
-    return NextResponse.json({ error: `Could not parse "${err.token}": ${err.message}` }, { status: 400 });
-  }
-  if (entries.length === 0) {
-    return NextResponse.json({ error: 'Tokens did not expand to any numbers' }, { status: 400 });
-  }
-
-  const perNumber = {};
-  for (const e of entries) {
-    const amt = parseFloat(e.amount) || 0;
-    perNumber[e.num] = (perNumber[e.num] || 0) + amt;
-  }
-  const amount = Object.values(perNumber).reduce((sum, amt) => sum + amt, 0);
-  const now = Date.now();
-
-  const db = getDb();
-  const voucherRef = clientId ? orgSessionVouchersCol(orgId, sid).doc(clientId) : orgSessionVouchersCol(orgId, sid).doc();
-
-  const { srNo, created } = await db.runTransaction(async (tx) => {
-    const [sSnap, existingVoucherSnap] = await Promise.all([tx.get(sessionRef), tx.get(voucherRef)]);
-    if (!sSnap.exists) throw new Error('SESSION_NOT_FOUND');
-    if (existingVoucherSnap.exists) {
-      return { srNo: existingVoucherSnap.data().srNo, created: false };
+    const { orgId } = await params;
+    const session = await getSession();
+    if (!session || (session.orgId !== orgId && session.role !== 'super_admin')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    const nextSrNo = (sSnap.data().voucherCount || 0) + 1;
 
-    // Save ultra-light voucher document to Firestore (tokens array only, omit details)
-    tx.set(voucherRef, {
-      id: voucherRef.id,
-      orgId,
-      sessionId: sid,
-      srNo: nextSrNo,
-      onCount: parseInt(onCount),
-      ampm,
-      onDate,
-      machineId: parseInt(machineId) || 1,
-      agentId,
-      agentName: agent.agentName,
-      amount,
-      tokens,
-      createdAt: now,
-      createdBy: session.id,
-    });
-    tx.update(sessionRef, { voucherCount: nextSrNo });
-    return { srNo: nextSrNo, created: true };
-  });
+    const { agentId, onCount, ampm, onDate, machineId, tokens, clientId } = await request.json();
 
-  if (created) {
-    await logActivity({
-      orgId,
-      userId: session.id,
-      userName: session.name,
-      userRole: session.role,
-      action: 'create',
-      entity: 'voucher',
-      entityId: srNo != null ? String(srNo) : null,
-      details: { srNo, onCount, ampm, agentName: agent.agentName, amount, tokens },
-      ipAddress: getClientIp(request),
+    if (!agentId || !onCount || !ampm || !onDate) {
+      return NextResponse.json({ error: 'agentId, onCount, ampm, and onDate are required' }, { status: 400 });
+    }
+    if (!Array.isArray(tokens) || tokens.length === 0) {
+      return NextResponse.json({ error: 'tokens must be a non-empty array' }, { status: 400 });
+    }
+
+    const lockError = await assertCashierWriteAllowed(session, orgId);
+    if (lockError) return NextResponse.json({ error: lockError.error }, { status: lockError.status });
+
+    const sid = buildSessionId(onDate, ampm, onCount);
+    let effectiveSid = sid;
+    let sessionRef = orgSessionDoc(orgId, sid);
+    let sessionSnap = await sessionRef.get();
+
+    if (!sessionSnap.exists || !sessionSnap.data()?.isActive) {
+      const activeSnap = await orgSessionsCol(orgId).where('isActive', '==', true).limit(1).get();
+      if (!activeSnap.empty) {
+        effectiveSid = activeSnap.docs[0].id;
+        sessionRef = activeSnap.docs[0].ref;
+        sessionSnap = activeSnap.docs[0];
+      } else {
+        return NextResponse.json(
+          { error: 'No active session — voucher will sync when a session starts' },
+          { status: 503 }
+        );
+      }
+    }
+
+    const agentSnap = await orgAgentDoc(orgId, agentId).get();
+    if (!agentSnap.exists) {
+      return NextResponse.json({ error: 'Agent not found for this organization' }, { status: 400 });
+    }
+    const agent = agentSnap.data();
+
+    let entries;
+    try {
+      entries = expandTokens(tokens);
+    } catch (err) {
+      return NextResponse.json({ error: `Could not parse "${err.token}": ${err.message}` }, { status: 400 });
+    }
+    if (entries.length === 0) {
+      return NextResponse.json({ error: 'Tokens did not expand to any numbers' }, { status: 400 });
+    }
+
+    const perNumber = {};
+    for (const e of entries) {
+      const amt = parseFloat(e.amount) || 0;
+      perNumber[e.num] = (perNumber[e.num] || 0) + amt;
+    }
+    const amount = Object.values(perNumber).reduce((sum, amt) => sum + amt, 0);
+    const now = Date.now();
+
+    const db = getDb();
+    const voucherRef = clientId ? orgSessionVouchersCol(orgId, effectiveSid).doc(clientId) : orgSessionVouchersCol(orgId, effectiveSid).doc();
+
+    const { srNo, created } = await db.runTransaction(async (tx) => {
+      const [sSnap, existingVoucherSnap] = await Promise.all([tx.get(sessionRef), tx.get(voucherRef)]);
+      if (!sSnap.exists) throw new Error('SESSION_NOT_FOUND');
+      if (existingVoucherSnap.exists) {
+        return { srNo: existingVoucherSnap.data().srNo, created: false };
+      }
+      const nextSrNo = (sSnap.data().voucherCount || 0) + 1;
+
+      // Save ultra-light voucher document to Firestore (tokens array only, omit details)
+      tx.set(voucherRef, {
+        id: voucherRef.id,
+        orgId,
+        sessionId: sid,
+        srNo: nextSrNo,
+        onCount: parseInt(onCount),
+        ampm,
+        onDate,
+        machineId: parseInt(machineId) || 1,
+        agentId,
+        agentName: agent.agentName,
+        amount,
+        tokens,
+        createdAt: now,
+        createdBy: session.id,
+      });
+      tx.update(sessionRef, { voucherCount: nextSrNo });
+      return { srNo: nextSrNo, created: true };
     });
+
+    if (created) {
+      await logActivity({
+        orgId,
+        userId: session.id,
+        userName: session.name,
+        userRole: session.role,
+        action: 'create',
+        entity: 'voucher',
+        entityId: srNo != null ? String(srNo) : null,
+        details: { srNo, onCount, ampm, agentName: agent.agentName, amount, tokens },
+        ipAddress: getClientIp(request),
+      });
+    }
+
+    return NextResponse.json({ success: true, srNo });
+  } catch (err) {
+    const isNetworkError =
+      err?.code === 14 ||
+      err?.message?.includes('UNAVAILABLE') ||
+      err?.message?.includes('EHOSTUNREACH') ||
+      err?.message?.includes('ECONNREFUSED') ||
+      err?.message?.includes('ETIMEDOUT') ||
+      err?.message?.includes('network');
+
+    if (isNetworkError) {
+      return NextResponse.json(
+        { error: 'Database service is unreachable (network offline). Voucher remains queued locally.', code: 'UNAVAILABLE' },
+        { status: 503 }
+      );
+    }
+
+    console.error('Error saving ledger voucher:', err);
+    return NextResponse.json({ error: err.message || 'Internal Server Error' }, { status: 500 });
   }
-
-  return NextResponse.json({ success: true, srNo });
 }

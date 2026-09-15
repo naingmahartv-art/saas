@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDb, orgSessionsCol, orgSessionDoc, sessionId as buildSessionId } from '@/lib/db/firestore.js';
+import { getDb, orgSessionsCol, orgSessionDoc, orgRestrictionDoc, orgAgentsCol, sessionId as buildSessionId } from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth/session.js';
 import { computeOnCount, isValidSlotKey } from '@/lib/lottery/sessionSlots.js';
 import { getClientIp, getActiveSession } from '@/lib/auth/permissions.js';
@@ -49,10 +49,49 @@ export async function POST(request, { params }) {
   const onCount = computeOnCount(onDate, ampm);
   const sid = buildSessionId(onDate, ampm, onCount);
   const targetRef = orgSessionDoc(orgId, sid);
+  const limitRef = orgRestrictionDoc(orgId, 'limits');
   const now = Date.now();
   const resolvedMachineId = parseInt(machineId) || 1;
 
   const db = getDb();
+  const [agentsSnap, prevSessionsSnap] = await Promise.all([
+    orgAgentsCol(orgId).get(),
+    orgSessionsCol(orgId).orderBy('onCount', 'desc').limit(10).get(),
+  ]);
+
+  let inheritedCommissions = {};
+  let inheritedRates = {};
+
+  // Baseline defaults from agent profiles
+  for (const doc of agentsSnap.docs) {
+    const a = doc.data() || {};
+    if (a.commission !== undefined && a.commission !== null && a.commission !== '') {
+      inheritedCommissions[doc.id] = parseFloat(a.commission) || 0;
+    }
+    if (a.rate !== undefined && a.rate !== null && a.rate !== '') {
+      inheritedRates[doc.id] = parseFloat(a.rate) || 80;
+    } else {
+      inheritedRates[doc.id] = 80;
+    }
+  }
+
+  // Inherit from the most recent previous session with commissions/rates
+  for (const doc of prevSessionsSnap.docs) {
+    if (doc.id === sid) continue;
+    const sData = doc.data() || {};
+    const hasComms = sData.agentCommissions && Object.keys(sData.agentCommissions).length > 0;
+    const hasRates = sData.agentRates && Object.keys(sData.agentRates).length > 0;
+    if (hasComms) {
+      inheritedCommissions = { ...inheritedCommissions, ...sData.agentCommissions };
+    }
+    if (hasRates) {
+      inheritedRates = { ...inheritedRates, ...sData.agentRates };
+    }
+    if (hasComms || hasRates) {
+      break;
+    }
+  }
+
   const result = await db.runTransaction(async (tx) => {
     const [targetSnap, activeSnap] = await Promise.all([
       tx.get(targetRef),
@@ -62,11 +101,22 @@ export async function POST(request, { params }) {
     const currentlyActive = activeSnap.empty ? null : { ref: activeSnap.docs[0].ref, id: activeSnap.docs[0].id };
     if (currentlyActive && currentlyActive.id !== sid) {
       tx.update(currentlyActive.ref, { isActive: false });
+      // Reset limit amount so it does not carry over to another session
+      tx.set(limitRef, { orgId, limitValue: 0, updatedAt: now }, { merge: true });
     }
 
     if (targetSnap.exists) {
-      const existing = targetSnap.data();
-      const patched = { isActive: true, machineId: resolvedMachineId };
+      const existing = targetSnap.data() || {};
+      const patched = {
+        isActive: true,
+        machineId: resolvedMachineId,
+      };
+      if (!existing.agentCommissions || Object.keys(existing.agentCommissions).length === 0) {
+        patched.agentCommissions = inheritedCommissions;
+      }
+      if (!existing.agentRates || Object.keys(existing.agentRates).length === 0) {
+        patched.agentRates = inheritedRates;
+      }
       tx.update(targetRef, patched);
       return { reopened: true, data: { ...existing, ...patched } };
     }
@@ -82,6 +132,8 @@ export async function POST(request, { params }) {
       voucherCount: 0,
       totals: {},
       luckyNumber: null,
+      agentCommissions: inheritedCommissions,
+      agentRates: inheritedRates,
       createdAt: now,
     };
     tx.set(targetRef, created);
@@ -124,6 +176,8 @@ export async function PATCH(request, { params }) {
   }
 
   await orgSessionDoc(orgId, active.id).update({ isActive: false });
+  // Reset limit amount so closed session limits do not carry over to future session
+  await orgRestrictionDoc(orgId, 'limits').set({ orgId, limitValue: 0, updatedAt: Date.now() }, { merge: true });
 
   await logActivity({
     orgId,

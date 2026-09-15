@@ -31,7 +31,7 @@ function buildMessageText(slips, activeSession, t) {
   return lines.join('\n');
 }
 
-export default function LedgerHistory({ orgId, activeSession, onEdit, onDeleted, refreshSignal, onClose, canWrite = true }) {
+export default function LedgerHistory({ orgId, activeSession, onEdit, onDeleted, refreshSignal, onClose, canWrite = true, isBuy = false }) {
   const { t } = useI18n();
   const [slips, setSlips] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +47,7 @@ export default function LedgerHistory({ orgId, activeSession, onEdit, onDeleted,
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/org/${orgId}/ledger`);
+      const res = await fetch(`/api/org/${orgId}/ledger?isBuy=${isBuy ? 'true' : 'false'}`);
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || t('common.failedToSave'));
@@ -59,7 +59,7 @@ export default function LedgerHistory({ orgId, activeSession, onEdit, onDeleted,
     } finally {
       setLoading(false);
     }
-  }, [orgId, t]);
+  }, [orgId, isBuy, t]);
 
   useEffect(() => {
     load();

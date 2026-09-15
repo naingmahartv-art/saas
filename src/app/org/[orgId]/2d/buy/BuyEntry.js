@@ -10,17 +10,20 @@ import SessionPicker from '../ledger/SessionPicker.js';
 import AgentCombobox from '../ledger/AgentCombobox.js';
 import useLedgerFontSize from '@/lib/ledger/useLedgerFontSize.js';
 
-function buildNumberTable(numbersList) {
-  const perCol = 34;
-  const col1 = numbersList.slice(0, perCol);
-  const col2 = numbersList.slice(perCol, perCol * 2);
-  const col3 = numbersList.slice(perCol * 2);
+const NUMBER_TABLE_COLUMNS = 4;
+const ALLOWED_CHARS = /[^0-9RAGPBWNFXT+\-*/.[\]]/gi;
 
-  const rows = [];
-  for (let i = 0; i < perCol; i += 1) {
-    rows.push([col1[i] || null, col2[i] || null, col3[i] || null]);
-  }
-  return rows;
+function normalizeInput(raw, slashRep = 'P', asteriskRep = 'R') {
+  return raw.replace(ALLOWED_CHARS, '').replaceAll('/', slashRep).replaceAll('*', asteriskRep).toUpperCase();
+}
+
+function buildNumberTable(numbersList) {
+  const groupSize = Math.ceil(numbersList.length / NUMBER_TABLE_COLUMNS);
+  const groups = Array.from({ length: NUMBER_TABLE_COLUMNS }, (_, g) =>
+    numbersList.slice(g * groupSize, (g + 1) * groupSize)
+  );
+  const rows = Math.max(...groups.map(g => g.length), 0);
+  return Array.from({ length: rows }, (_, r) => groups.map(g => g[r] ?? null));
 }
 
 const SLOT_LABEL_KEY = {
@@ -45,13 +48,18 @@ export default function BuyEntry({
   luckyNumber,
   totals = {},
   buyTotals = {},
+  editingVoucher = null,
   canWrite = true,
   shortcuts,
   replaceSlash = 'P',
   replaceAsterisk = 'R',
   onOptimisticBuySave,
+  onSaved,
+  onCancelEdit,
   onOpenHistory,
   onOpenReports,
+  onOpenBuy1,
+  onOpenBuy2,
   onOpenSessionPicker,
 }) {
   const { t } = useI18n();
@@ -63,8 +71,31 @@ export default function BuyEntry({
   const [agentId, setAgentId] = useState('buy_offload');
   const [inputValue, setInputValue] = useState('');
   const [pendingTokens, setPendingTokens] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [editingSrNo, setEditingSrNo] = useState(null);
   const [error, setError] = useState('');
   const [warnings, setWarnings] = useState([]);
+
+  useEffect(() => {
+    if (!editingVoucher) return;
+    const tokens = (editingVoucher.tokens || []).map(tokText => {
+      const { entries } = parseNumberExpression(tokText, { maxEntries: MAX_ENTRIES });
+      return { id: Math.random().toString(), tokenText: tokText, entries: entries || [] };
+    });
+    setPendingTokens(tokens);
+    setEditingId(editingVoucher.id);
+    setEditingSrNo(editingVoucher.srNo);
+    const matchedAgent = agents?.find(a => a.agentName === editingVoucher.agentName);
+    if (matchedAgent) {
+      setAgentId(matchedAgent.id);
+    } else if (editingVoucher.agentId) {
+      setAgentId(editingVoucher.agentId);
+    }
+    setInputValue('');
+    setError('');
+    setWarnings([]);
+    setSuccessMsg('');
+  }, [editingVoucher, agents]);
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [search, setSearch] = useState('');
@@ -84,6 +115,7 @@ export default function BuyEntry({
   const inputRef = useRef(null);
   const agentSelectRef = useRef(null);
   const middlePanelRef = useRef(null);
+  const saveRef = useRef(null);
   const [middlePanelHeight, setMiddlePanelHeight] = useState(0);
 
   const [quickEntryOpen, setQuickEntryOpen] = useState(false);
@@ -92,11 +124,23 @@ export default function BuyEntry({
   const quickNumsRef = useRef(null);
   const quickAmountRef = useRef(null);
 
+  const [cellPopup, setCellPopup] = useState(null);
+  const [checkAgentOpen, setCheckAgentOpen] = useState(false);
+  const [checkAgentInput, setCheckAgentInput] = useState('');
+  const [checkAgentResults, setCheckAgentResults] = useState(null);
+  const [checkAgentLoading, setCheckAgentLoading] = useState(false);
+
   const notBuySet = useMemo(() => new Set(notBuyNumbers || []), [notBuyNumbers]);
   const hotSet = useMemo(() => new Set(hotNumbers || []), [hotNumbers]);
 
   const limitValue = typeof limit?.limitValue === 'number' ? limit.limitValue : (limit?.num1Limit || limit?.limit || 0);
   const isLimitActive = limitValue > 0;
+
+  const visibleTokens = useMemo(() => {
+    if (!search.trim()) return pendingTokens;
+    const q = search.trim().toLowerCase();
+    return pendingTokens.filter(p => p.tokenText.toLowerCase().includes(q));
+  }, [pendingTokens, search]);
 
   useEffect(() => {
     if (!middlePanelRef.current) return;
@@ -189,6 +233,45 @@ export default function BuyEntry({
 
   const numberTable = useMemo(() => buildNumberTable(sortedGridNumbers), [sortedGridNumbers]);
 
+  const entryTableRows = useMemo(() => {
+    const cols = 5;
+    const rows = [];
+    for (let i = 0; i < visibleTokens.length; i += cols) {
+      rows.push(visibleTokens.slice(i, i + cols));
+    }
+    return rows;
+  }, [visibleTokens]);
+
+  function handleCellClick(num) {
+    const amt = buyTotals?.[num] || 0;
+    setCellPopup({ num, amount: amt });
+  }
+
+  function openCheckAgent() {
+    setCheckAgentOpen(true);
+    setCheckAgentInput('');
+    setCheckAgentResults(null);
+  }
+
+  async function runCheckAgent(val) {
+    const clean = val.replace(/[^0-9]/g, '').slice(0, 2);
+    setCheckAgentInput(clean);
+    if (!clean) {
+      setCheckAgentResults(null);
+      return;
+    }
+    setCheckAgentLoading(true);
+    try {
+      const res = await fetch(`/api/org/${orgId}/ledger/totals?num=${clean}`);
+      const data = await res.json();
+      setCheckAgentResults(data.byAgent || []);
+    } catch {
+      setCheckAgentResults([]);
+    } finally {
+      setCheckAgentLoading(false);
+    }
+  }
+
   function handleCellDragStart(e, tokenId) {
     setDraggedTokenId(tokenId);
     e.dataTransfer.effectAllowed = 'move';
@@ -249,14 +332,51 @@ export default function BuyEntry({
     }
   }
 
-  function handleInputKeyDown(e) {
+  function formatDashInput(val) {
+    const clean = val.replace(/[^0-9]/g, '');
+    const chunks = [];
+    for (let i = 0; i < clean.length; i += 2) {
+      chunks.push(clean.slice(i, i + 2));
+    }
+    return chunks.join('-');
+  }
+
+  function handleQuickNumsChange(e) {
+    const formatted = formatDashInput(e.target.value);
+    setQuickEntryNums(formatted);
+  }
+
+  function handleQuickNumsKeyDown(e) {
     if (e.key === 'Enter') {
       e.preventDefault();
-      addInputToken();
-    } else if (e.key === ' ' || e.code === 'Space') {
+      quickAmountRef.current?.focus();
+    } else if (e.key === 'Escape') {
       e.preventDefault();
-      setQuickEntryOpen(true);
-      setTimeout(() => quickNumsRef.current?.focus(), 50);
+      setQuickEntryOpen(false);
+      inputRef.current?.focus();
+    }
+  }
+
+  function handleQuickAmountKeyDown(e) {
+    if (e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault();
+      if (quickNumsRef.current) {
+        quickNumsRef.current.focus();
+        const len = quickNumsRef.current.value.length;
+        quickNumsRef.current.setSelectionRange(len, len);
+      }
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleQuickSubmit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      if (quickNumsRef.current) {
+        quickNumsRef.current.focus();
+        const len = quickNumsRef.current.value.length;
+        quickNumsRef.current.setSelectionRange(len, len);
+      }
     }
   }
 
@@ -269,11 +389,62 @@ export default function BuyEntry({
     });
   }
 
+  const [editingTokenId, setEditingTokenId] = useState(null);
+  const [editingTokenValue, setEditingTokenValue] = useState('');
+
   function removeSelectedTokens() {
     if (selectedTokenIds.size === 0) return;
     setPendingTokens(prev => prev.filter(p => !selectedTokenIds.has(p.id)));
+    if (editingTokenId && selectedTokenIds.has(editingTokenId)) {
+      setEditingTokenId(null);
+      setEditingTokenValue('');
+    }
     setSelectedTokenIds(new Set());
     setLastSelectedIndex(null);
+  }
+
+  function startTokenEdit(token) {
+    setEditingTokenId(token.id);
+    setEditingTokenValue(token.tokenText);
+    setError('');
+    setSuccessMsg('');
+  }
+
+  function cancelTokenEdit() {
+    setEditingTokenId(null);
+    setEditingTokenValue('');
+    setError('');
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
+  }
+
+  function commitTokenEdit(id) {
+    const text = editingTokenValue.trim();
+    if (!text) {
+      removeToken(id);
+      setEditingTokenId(null);
+      setEditingTokenValue('');
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
+      return;
+    }
+
+    const { entries: parsed, error: parseError } = parseNumberExpression(text, { maxEntries: MAX_ENTRIES });
+    if (parseError || !parsed || parsed.length === 0) {
+      setError(parseError || `'${text}' is not allowed.`);
+      return;
+    }
+
+    setPendingTokens(prev => prev.map(p => (p.id === id ? { id, tokenText: text, entries: parsed } : p)));
+    setEditingTokenId(null);
+    setEditingTokenValue('');
+    setError('');
+    setSuccessMsg('');
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
   }
 
   useEffect(() => {
@@ -335,17 +506,190 @@ export default function BuyEntry({
     inputRef.current?.focus();
   }
 
+  async function handleSaveBuyVoucher() {
+    if (saving) return;
+    setError('');
+    setWarnings([]);
+    if (!activeSession) {
+      setError(t('ledger.noActiveSession'));
+      return;
+    }
+
+    if (editingId) {
+      const vOnCount = editingVoucher?.onCount ?? activeSession.onCount;
+      const vAmpm = editingVoucher?.ampm ?? activeSession.ampm;
+      const vOnDate = editingVoucher?.onDate ?? activeSession.onDate;
+
+      if (pendingTokens.length === 0) {
+        setSaving(true);
+        const delNo = editingSrNo;
+        try {
+          const q = `onCount=${encodeURIComponent(vOnCount)}&ampm=${encodeURIComponent(vAmpm)}&onDate=${encodeURIComponent(vOnDate)}`;
+          const res = await fetch(`/api/org/${orgId}/ledger/${editingId}?${q}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (!res.ok) {
+            setError(data.error || 'Failed to delete voucher');
+            return;
+          }
+          setPendingTokens([]);
+          setInputValue('');
+          setEditingId(null);
+          setEditingSrNo(null);
+          setSuccessMsg(`Buy Voucher #${delNo || ''} deleted successfully!`);
+          if (onSaved) onSaved();
+          setTimeout(() => setSuccessMsg(''), 4000);
+        } catch {
+          setError(t('common.networkError'));
+        } finally {
+          setSaving(false);
+        }
+        return;
+      }
+
+      setSaving(true);
+      const updateNo = editingSrNo;
+      try {
+        const tokens = pendingTokens.map(p => p.tokenText);
+        const res = await fetch(`/api/org/${orgId}/ledger/${editingId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agentId,
+            tokens,
+            onCount: vOnCount,
+            ampm: vAmpm,
+            onDate: vOnDate,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error || 'Failed to update Buy Voucher');
+          return;
+        }
+        setPendingTokens([]);
+        setInputValue('');
+        setEditingId(null);
+        setEditingSrNo(null);
+        setSuccessMsg(`Buy Voucher #${updateNo || ''} updated successfully!`);
+        if (onSaved) onSaved();
+        setTimeout(() => setSuccessMsg(''), 4000);
+      } catch (err) {
+        setError(err.message || 'Network error');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    // if (pendingTokens.length === 0) {
+    //   if (!successMsg) {
+    //     setError('No items to save in Buy Voucher');
+    //   }
+    //   return;
+    // }
+
+    const tokens = pendingTokens.map(p => p.tokenText);
+    const items = pendingTokens.flatMap(p => p.entries);
+    setSaving(true);
+
+    try {
+      const res = await fetch(`/api/org/${orgId}/ledger/buy-voucher`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentId,
+          tokens,
+          onCount: activeSession.onCount,
+          ampm: activeSession.ampm,
+          onDate: activeSession.onDate,
+          machineId: activeSession.machineId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to save Buy Voucher');
+        return;
+      }
+
+      if (onOptimisticBuySave) onOptimisticBuySave(items);
+      setPendingTokens([]);
+      setInputValue('');
+      setSuccessMsg(`Buy Voucher saved successfully! (Sr.No: ${data.srNo})`);
+      if (onSaved) onSaved();
+      setTimeout(() => {
+        setSuccessMsg('');
+        inputRef.current?.focus();
+      }, 3000);
+    } catch (err) {
+      setError(err.message || 'Network error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   useEffect(() => {
-    function onKeyDown(e) {
-      if (e.key === 'F4') {
+    saveRef.current = handleSaveBuyVoucher;
+  });
+
+  useEffect(() => {
+    function handleGlobalKeyDown(e) {
+      if (shortcuts && matchesCombo(e, shortcuts.focusAgent)) {
+        e.preventDefault();
+        agentSelectRef.current?.focus();
+      } else if (shortcuts && matchesCombo(e, shortcuts.focusInput)) {
+        e.preventDefault();
+        inputRef.current?.focus();
+      } else if (shortcuts && matchesCombo(e, shortcuts.history)) {
+        e.preventDefault();
+        onOpenHistory?.();
+      } else if (shortcuts && (matchesCombo(e, shortcuts.reports) || e.key === 'F6')) {
+        e.preventDefault();
+        onOpenReports?.();
+      } else if ((shortcuts && matchesCombo(e, shortcuts.sale1)) || e.key === 'F7') {
+        e.preventDefault();
+        onOpenBuy1?.();
+      } else if ((shortcuts && matchesCombo(e, shortcuts.sale2)) || e.key === 'F10') {
+        e.preventDefault();
+        onOpenBuy2?.();
+      } else if (shortcuts && matchesCombo(e, shortcuts.clear)) {
+        e.preventDefault();
+        handleClear();
+        inputRef.current?.focus();
+      } else if (shortcuts && matchesCombo(e, shortcuts.save)) {
+        e.preventDefault();
+        saveRef.current?.();
+      } else if (shortcuts && matchesCombo(e, shortcuts.checkAgent)) {
+        e.preventDefault();
+        if (checkAgentOpen) {
+          setCheckAgentOpen(false);
+          inputRef.current?.focus();
+        } else {
+          openCheckAgent();
+        }
+      } else if (shortcuts && matchesCombo(e, shortcuts.sortGridNum)) {
+        e.preventDefault();
+        toggleGridSort('number');
+      } else if (shortcuts && matchesCombo(e, shortcuts.sortGridAmount)) {
+        e.preventDefault();
+        toggleGridSort('amount');
+      } else if (e.key === 'F4') {
         e.preventDefault();
         handleExit();
       } else if (e.key === 'F12') {
         e.preventDefault();
         setExceededModalOpen(prev => !prev);
-      } else if (e.key === 'Escape' && exceededModalOpen) {
-        setExceededModalOpen(false);
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTokenIds.size > 0) {
+      } else if (e.key === 'Escape') {
+        if (checkAgentOpen) {
+          e.preventDefault();
+          setCheckAgentOpen(false);
+          inputRef.current?.focus();
+        } else if (exceededModalOpen) {
+          setExceededModalOpen(false);
+        } else if (quickEntryOpen) {
+          setQuickEntryOpen(false);
+          inputRef.current?.focus();
+        }
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTokenIds.size > 0 && !editingTokenId) {
         const activeTag = document.activeElement ? document.activeElement.tagName : '';
         if (activeTag !== 'INPUT' && activeTag !== 'TEXTAREA' && activeTag !== 'SELECT') {
           e.preventDefault();
@@ -353,18 +697,49 @@ export default function BuyEntry({
         }
       }
     }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [orgId, selectedTokenIds, router, exceededModalOpen]);
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [
+    shortcuts,
+    orgId,
+    selectedTokenIds,
+    editingTokenId,
+    router,
+    exceededModalOpen,
+    checkAgentOpen,
+    quickEntryOpen,
+    inputValue,
+    onOpenHistory,
+    onOpenReports,
+  ]);
+
+  useEffect(() => {
+    if (quickEntryOpen) {
+      setTimeout(() => {
+        quickNumsRef.current?.focus();
+      }, 50);
+    }
+  }, [quickEntryOpen]);
 
   function handleChange(e) {
-    setInputValue(e.target.value);
+    setInputValue(normalizeInput(e.target.value, replaceSlash, replaceAsterisk));
     setSuccessMsg('');
     setError('');
   }
 
   function handleKeyDown(e) {
-    if (e.key === 'Enter') {
+    if (e.key === ' ' || e.code === 'Space') {
+      e.preventDefault();
+      if (!agentId) {
+        setError('Select an agent first');
+        return;
+      }
+      setQuickEntryNums(formatDashInput(inputValue));
+      setQuickEntryAmount('');
+      setQuickEntryOpen(true);
+      setInputValue('');
+    } else if (e.key === 'Enter') {
       e.preventDefault();
       addInputToken();
     }
@@ -408,87 +783,54 @@ export default function BuyEntry({
     return `${num}${amtRaw}`;
   }
 
-  function handleAddQuickEntry() {
+  function handleQuickSubmit() {
     setError('');
     setWarnings([]);
     const cleanNums = quickEntryNums.replace(/[^0-9]/g, '');
-    const amtRaw = quickEntryAmount.trim().toUpperCase();
-
-    if (!cleanNums || !amtRaw) {
-      setError('Please enter both numbers and amount');
+    if (!cleanNums) {
+      setError('Please enter some numbers.');
+      setQuickEntryOpen(false);
+      return;
+    }
+    const rawAmtStr = quickEntryAmount.trim().toUpperCase();
+    if (!rawAmtStr) {
+      setError('Please enter a valid amount.');
+      setQuickEntryOpen(false);
       return;
     }
 
     const newTokens = [];
+    const parseErrors = [];
     for (let i = 0; i < cleanNums.length; i += 2) {
       const num = cleanNums.slice(i, i + 2);
       if (num.length === 2) {
-        const expr = buildTokenExprForNum(num, amtRaw);
-        const { entries: parsed, error: parseError } = parseNumberExpression(expr, { maxEntries: MAX_ENTRIES });
-        if (!parseError && parsed.length > 0) {
-          newTokens.push({ id: Date.now() + Math.random().toString(), tokenText: expr, entries: parsed });
+        const tokenExpr = buildTokenExprForNum(num, rawAmtStr);
+        const { entries, error: parseErr } = parseNumberExpression(tokenExpr, { maxEntries: MAX_ENTRIES });
+        if (parseErr) {
+          parseErrors.push(parseErr);
+        } else if (entries && entries.length > 0) {
+          newTokens.push({
+            id: Date.now() + Math.random().toString(),
+            tokenText: tokenExpr,
+            entries,
+          });
         }
       }
     }
 
     if (newTokens.length === 0) {
-      setError('Invalid numbers or amount expression');
+      setError(parseErrors[0] || 'Please enter valid 2-digit numbers and amount.');
+      setQuickEntryOpen(false);
       return;
     }
 
     setPendingTokens(prev => [...prev, ...newTokens]);
+    setQuickEntryOpen(false);
     setQuickEntryNums('');
     setQuickEntryAmount('');
-    setQuickEntryOpen(false);
-    setTimeout(() => inputRef.current?.focus(), 50);
-  }
-
-  async function handleSaveBuyVoucher() {
-    setError('');
-    setWarnings([]);
-    if (!activeSession) {
-      setError(t('ledger.noActiveSession'));
-      return;
-    }
-    if (pendingTokens.length === 0) {
-      setError('No items to save in Buy Voucher');
-      return;
-    }
-
-    const items = pendingTokens.flatMap(p => p.entries);
-    setSaving(true);
-
-    try {
-      const res = await fetch(`/api/org/${orgId}/ledger/buy-voucher`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          onCount: activeSession.onCount,
-          ampm: activeSession.ampm,
-          onDate: activeSession.onDate,
-          machineId: activeSession.machineId,
-          items,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || 'Failed to save Buy Voucher');
-        return;
-      }
-
-      if (onOptimisticBuySave) onOptimisticBuySave(items);
-      setPendingTokens([]);
-      setInputValue('');
-      setSuccessMsg(`Buy Voucher saved successfully! (Sr.No: ${data.srNo})`);
-      setTimeout(() => {
-        setSuccessMsg('');
-        inputRef.current?.focus();
-      }, 3000);
-    } catch (err) {
-      setError(err.message || 'Network error');
-    } finally {
-      setSaving(false);
-    }
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
   }
 
   async function handleCopyExceedLimit() {
@@ -519,25 +861,6 @@ export default function BuyEntry({
     }
   }
 
-  const visibleTokens = useMemo(() => {
-    let list = pendingTokens.map(p => ({
-      ...p,
-      amount: p.entries.reduce((s, e) => s + e.amount, 0),
-    }));
-    const q = search.trim();
-    if (q) list = list.filter(p => p.tokenText.includes(q));
-    return list;
-  }, [pendingTokens, search]);
-
-  const entryTableRows = useMemo(() => {
-    const cols = 5;
-    const rows = [];
-    for (let i = 0; i < visibleTokens.length; i += cols) {
-      rows.push(visibleTokens.slice(i, i + cols));
-    }
-    return rows;
-  }, [visibleTokens]);
-
   return (
     <div className="w-full h-[calc(100vh-1.5rem)] flex flex-col overflow-hidden">
       {/* Top Header Navigation Bar */}
@@ -550,6 +873,11 @@ export default function BuyEntry({
               <span>{activeSession.onDate}</span>
               <span className="text-gray-400">•</span>
               <span className="text-gray-500">{t('session.machineLabel', { id: activeSession.machineId })}</span>
+              {editingSrNo && (
+                <span className="px-2.5 py-0.5 bg-amber-500 text-white font-bold text-xs rounded-md shadow-xs animate-pulse">
+                  Editing Buy Voucher #{editingSrNo}
+                </span>
+              )}
               {onOpenSessionPicker && (
                 <button
                   type="button"
@@ -581,45 +909,52 @@ export default function BuyEntry({
             <span className="text-[10px] font-normal opacity-80">| ထွက်မည်</span>
           </button>
 
-          {/* Buy 1 (အဝယ် ၁) */}
-          <button
-            type="button"
-            onClick={handleSelectBuy1}
-            className={`px-3 py-1 font-bold text-xs rounded-lg border flex items-center gap-1.5 transition cursor-pointer shadow-xs ${
-              agentId === (agents?.[0]?.id || 'buy_offload')
-                ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 shadow-sm'
-                : 'bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 border-gray-300 dark:border-slate-700'
-            }`}
-            title="Select Buy 1 Agent"
-          >
-            <span>🛒</span>
-            <span>အဝယ် ၁ (Buy 1)</span>
-          </button>
+          {/* Buy 1 (F7) */}
+          {onOpenBuy1 && (
+            <button
+              type="button"
+              onClick={onOpenBuy1}
+              className="px-3 py-1 font-bold text-xs rounded-lg border flex items-center gap-1.5 transition cursor-pointer shadow-xs bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 border-gray-300 dark:border-slate-700"
+              title="Buy Report by Agent (F7)"
+            >
+              <span>📋</span>
+              <span>Buy 1 (F7)</span>
+            </button>
+          )}
 
-          {/* Buy 2 (အဝယ် ၂) */}
-          <button
-            type="button"
-            onClick={handleSelectBuy2}
-            className={`px-3 py-1 font-bold text-xs rounded-lg border flex items-center gap-1.5 transition cursor-pointer shadow-xs ${
-              agentId === (agents?.[1]?.id || (agents?.length === 1 ? agents[0]?.id : 'buy_offload'))
-                ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 shadow-sm'
-                : 'bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 border-gray-300 dark:border-slate-700'
-            }`}
-            title="Select Buy 2 Agent"
-          >
-            <span>🛒</span>
-            <span>အဝယ် ၂ (Buy 2)</span>
-          </button>
+          {/* Buy 2 (F10) */}
+          {onOpenBuy2 && (
+            <button
+              type="button"
+              onClick={onOpenBuy2}
+              className="px-3 py-1 font-bold text-xs rounded-lg border flex items-center gap-1.5 transition cursor-pointer shadow-xs bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 border-gray-300 dark:border-slate-700"
+              title="Buy Summary Report (F10)"
+            >
+              <span>📈</span>
+              <span>Buy 2 (F10)</span>
+            </button>
+          )}
 
-          {/* Total / Ledger Summary */}
+          {/* Total / Ledger Summary (F6) */}
           <button
             type="button"
             onClick={onOpenReports}
             className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 dark:text-indigo-200 font-bold text-xs rounded-lg border border-indigo-300 dark:border-indigo-800 shadow-xs flex items-center gap-1.5 transition cursor-pointer"
-            title="Open Total / Ledger Summary Reports"
+            title="Reports (F6)"
           >
             <span>📊</span>
-            <span>ကျန်ငွေ / စာရင်း အချုပ်</span>
+            <span>Reports (F6)</span>
+          </button>
+
+          {/* Check Numbers Breakdown (Alt+G) */}
+          <button
+            type="button"
+            onClick={() => (checkAgentOpen ? setCheckAgentOpen(false) : openCheckAgent())}
+            className="px-3 py-1 bg-sky-50 hover:bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:hover:bg-sky-900/60 dark:text-sky-200 font-bold text-xs rounded-lg border border-sky-300 dark:border-sky-800 shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+            title={`Search number breakdown (${formatCombo(shortcuts?.checkAgent)})`}
+          >
+            <span>🔍</span>
+            <span>Check Numbers ({formatCombo(shortcuts?.checkAgent)})</span>
           </button>
 
           {/* Exceeded Numbers (F12) */}
@@ -630,7 +965,7 @@ export default function BuyEntry({
             title="Exceeded / Overflow Numbers Modal (F12)"
           >
             <span>⚠️</span>
-          <span>ကျော်နေသော နံပါတ်များ (F12)</span>
+            <span>ကျော်နေသော နံပါတ်များ (F12)</span>
           </button>
         </div>
       </div>
@@ -671,27 +1006,46 @@ export default function BuyEntry({
             {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mt-3">{error}</p>}
             {successMsg && <p className="text-sm text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2 mt-3">{successMsg}</p>}
 
-            {/* Two Large Full-Width Purple Action Buttons matching Screenshot 1 */}
+            {/* Action Buttons matching Sale Ledger UI */}
             <div className="flex gap-2 mt-3">
               <button
                 type="button"
                 onClick={handleSaveBuyVoucher}
-                disabled={saving || pendingTokens.length === 0}
-                className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-bold py-2.5 rounded-lg transition shadow-sm flex items-center justify-center gap-1 cursor-pointer"
+                disabled={saving || (!editingId && pendingTokens.length === 0)}
+                className={`flex-1 text-white text-sm font-bold py-2.5 rounded-lg transition shadow-sm flex items-center justify-center gap-1 cursor-pointer ${
+                  editingId && pendingTokens.length === 0
+                    ? 'bg-rose-600 hover:bg-rose-700 font-bold shadow-md'
+                    : editingId
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-purple-600 hover:bg-purple-700 disabled:opacity-50'
+                }`}
               >
-                {saving ? 'Saving...' : 'Save (F1)'}
+                {saving
+                  ? 'Saving...'
+                  : editingId
+                  ? pendingTokens.length === 0
+                    ? `Delete Voucher (#${editingSrNo || ''})`
+                    : `Update Voucher (#${editingSrNo || ''})`
+                  : `Save (${formatCombo(shortcuts?.save)})`}
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  setInputValue('');
-                  setPendingTokens([]);
-                  setError('');
-                  setWarnings([]);
+                  if (editingId) {
+                    setEditingId(null);
+                    setEditingSrNo(null);
+                    setPendingTokens([]);
+                    setInputValue('');
+                    setError('');
+                    setWarnings([]);
+                    if (onCancelEdit) onCancelEdit();
+                  } else {
+                    if (onOpenHistory) onOpenHistory();
+                  }
                 }}
-                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold py-2.5 rounded-lg transition shadow-sm flex items-center justify-center gap-1 cursor-pointer"
+                className="flex-1 bg-slate-700 hover:bg-slate-800 text-white text-sm font-bold py-2.5 rounded-lg transition shadow-sm flex items-center justify-center gap-1 cursor-pointer"
               >
-                Search (F8)
+                {editingId ? 'Cancel Edit' : `Search (${formatCombo(shortcuts?.history || 'f8')})`}
               </button>
             </div>
           </div>
@@ -734,7 +1088,15 @@ export default function BuyEntry({
               </div>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto p-2 bg-slate-50/30 dark:bg-slate-900/40 flex flex-col justify-start">
+            <div
+              onClick={(e) => {
+                if (!e.target.closest('[data-token-cell]')) {
+                  setSelectedTokenIds(new Set());
+                  setLastSelectedIndex(null);
+                }
+              }}
+              className="flex-1 min-h-0 overflow-y-auto p-2 bg-slate-50/30 dark:bg-slate-900/40 flex flex-col justify-start"
+            >
               {pendingTokens.length === 0 ? (
                 <div className="px-4 py-16 text-center text-slate-400 dark:text-slate-500 text-sm font-medium">No entries yet</div>
               ) : visibleTokens.length === 0 ? (
@@ -755,7 +1117,17 @@ export default function BuyEntry({
                           {Array.from({ length: 5 }, (_, cIdx) => {
                             const globalIdx = rIdx * 5 + cIdx;
                             const p = row[cIdx];
-                            if (!p) return <td key={cIdx} className="border border-slate-150/80 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-900/20 px-1 py-1.5" />;
+                            if (!p) return (
+                              <td
+                                key={cIdx}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedTokenIds(new Set());
+                                  setLastSelectedIndex(null);
+                                }}
+                                className="border border-slate-150/80 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-900/20 px-1 py-1.5 cursor-default"
+                              />
+                            );
 
                             const isDragging = draggedTokenId === p.id;
                             const isDragOver = dragOverTokenId === p.id;
@@ -775,15 +1147,56 @@ export default function BuyEntry({
                                     : 'border-slate-200/80 dark:border-slate-800 hover:bg-indigo-50/60 dark:hover:bg-slate-800/60 text-slate-900 dark:text-slate-100'
                                 }`}
                               >
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleCellSelect(p, globalIdx, e)}
-                                  className={`w-full truncate font-mono font-bold text-sm text-left select-none cursor-pointer ${
-                                    isSelected ? 'text-white font-extrabold' : 'text-slate-900 dark:text-slate-100 hover:text-purple-700 dark:hover:text-purple-300'
-                                  }`}
-                                >
-                                  {p.tokenText}
-                                </button>
+                                {editingTokenId === p.id ? (
+                                  <input
+                                    type="text"
+                                    data-token-cell="true"
+                                    value={editingTokenValue}
+                                    onChange={e => setEditingTokenValue(e.target.value.toUpperCase())}
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        commitTokenEdit(p.id);
+                                      } else if (e.key === 'Escape') {
+                                        e.preventDefault();
+                                        cancelTokenEdit();
+                                      }
+                                    }}
+                                    onBlur={() => commitTokenEdit(p.id)}
+                                    autoFocus
+                                    className="w-full px-1 py-0.5 font-mono text-sm border-2 border-purple-500 rounded text-purple-950 dark:text-slate-100 dark:bg-slate-800 text-left font-bold shadow-inner ring-2 ring-purple-200"
+                                  />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    data-token-cell="true"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCellSelect(p, globalIdx, e);
+                                    }}
+                                    onDoubleClick={(e) => {
+                                      e.stopPropagation();
+                                      startTokenEdit(p);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        startTokenEdit(p);
+                                      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        removeSelectedTokens();
+                                      }
+                                    }}
+                                    className={`w-full truncate font-mono font-bold text-sm text-left select-none cursor-pointer ${
+                                      isSelected ? 'text-white font-extrabold' : 'text-slate-900 dark:text-slate-100 hover:text-purple-700 dark:hover:text-purple-300'
+                                    }`}
+                                    title="Click to select, double-click to edit cell inline, press Delete to remove"
+                                  >
+                                    {p.tokenText}
+                                  </button>
+                                )}
                               </td>
                             );
                           })}
@@ -867,10 +1280,17 @@ export default function BuyEntry({
 
                       return (
                         <Fragment key={colIdx}>
-                          <td className={`px-0.5 py-0.5 text-xs font-mono font-semibold text-center border border-gray-200 dark:border-slate-800 ${cls}`}>
+                          <td
+                            onClick={() => handleCellClick(num)}
+                            title={amount > 0 ? `${num}: ${amount.toLocaleString()}` : num}
+                            className={`px-0.5 py-0.5 text-xs font-mono font-semibold text-center cursor-pointer hover:opacity-90 transition border border-gray-200 dark:border-slate-800 ${cls}`}
+                          >
                             {num}
                           </td>
-                          <td className={`px-1 py-0.5 text-xs text-right font-mono whitespace-nowrap border border-gray-200 dark:border-slate-800 ${amountCls}`}>
+                          <td
+                            onClick={() => handleCellClick(num)}
+                            className={`px-1 py-0.5 text-xs text-right font-mono whitespace-nowrap cursor-pointer hover:opacity-90 transition border border-gray-200 dark:border-slate-800 ${amountCls}`}
+                          >
                             {amount > 0 ? amount.toLocaleString() : ''}
                           </td>
                         </Fragment>
@@ -887,20 +1307,12 @@ export default function BuyEntry({
         <div className="flex flex-col h-full min-h-0">
           <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col h-full min-h-0">
             {/* Header */}
-            <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 text-white px-3.5 py-2 flex items-center justify-between shrink-0 shadow-sm">
-              <h2 className="text-sm font-bold tracking-wide flex items-center gap-2">
+            <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-900 text-white px-3 py-1.5 flex items-center justify-between shrink-0 shadow-sm">
+              <h2 className="text-xs font-bold tracking-wide flex items-center gap-1.5">
                 <span>⚠️</span>
-                <span>ဝယ်ယူရန် ကျော်နေသော နံပါတ်များ (Exceeded List)</span>
+                <span>Exceeded List</span>
               </h2>
               <div className="flex items-center gap-2">
-                <select
-                  value={exceedSortKey}
-                  onChange={e => setExceedSortKey(e.target.value)}
-                  className="text-[11px] font-semibold bg-emerald-950 text-emerald-100 border border-emerald-700/80 rounded px-2 py-0.5 focus:outline-none"
-                >
-                  <option value="excess">Sort By Exceed Amount</option>
-                  <option value="num">Sort By Number</option>
-                </select>
                 <button
                   type="button"
                   onClick={handleCopyExceedLimit}
@@ -913,22 +1325,22 @@ export default function BuyEntry({
 
             <div className="p-2.5 flex-1 flex flex-col min-h-0 justify-between">
               {exceedList.length === 0 ? (
-                <div className="px-4 py-16 text-center text-slate-400 dark:text-slate-500 text-sm font-medium">No over-limit entries for this session</div>
+                <div className="px-4 py-16 text-center text-slate-400 dark:text-slate-500 text-xs font-medium">No over-limit entries for this session</div>
               ) : (
                 <div className="flex-1 min-h-0 overflow-y-auto mb-2 border border-gray-200 dark:border-slate-800 rounded-lg">
-                  <table className="w-full text-sm border-collapse">
+                  <table className="w-full text-xs border-collapse">
                     <thead>
                       <tr className="bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 border-b border-gray-200 dark:border-slate-700">
-                        <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-center w-20 bg-purple-700 text-white font-bold">
+                        <th className="px-2 py-1.5 border-r border-gray-200 dark:border-slate-700 text-center w-16 bg-purple-700 text-white font-bold">
                           Number (Alt+1)
                         </th>
-                        <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-right text-purple-900 dark:text-purple-300 font-extrabold">
+                        <th className="px-2 py-1.5 border-r border-gray-200 dark:border-slate-700 text-right text-purple-900 dark:text-purple-300 font-extrabold">
                           Exceed (Alt+3) ▼
                         </th>
-                        <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-right font-bold text-emerald-700 dark:text-emerald-400">
+                        <th className="px-2 py-1.5 border-r border-gray-200 dark:border-slate-700 text-right font-bold text-emerald-700 dark:text-emerald-400">
                           Buy (Alt+2)
                         </th>
-                        <th className="px-3 py-2 text-right font-extrabold text-slate-900 dark:text-slate-100">
+                        <th className="px-2 py-1.5 text-right font-extrabold text-slate-900 dark:text-slate-100">
                           Total (Alt+2)
                         </th>
                       </tr>
@@ -937,16 +1349,16 @@ export default function BuyEntry({
                       {exceedList.map(e => (
                         <tr key={e.num} className="border-b border-gray-200 dark:border-slate-800 hover:bg-purple-50/40 dark:hover:bg-slate-800/60">
                           {/* Col 1: Purple Number Badge */}
-                          <td className="px-3 py-2 font-mono font-extrabold text-center bg-purple-600 text-white border-r border-gray-200 text-base">
+                          <td className="px-2 py-1 font-mono font-bold text-center bg-purple-600 text-white border-r border-gray-200 text-xs">
                             {e.num}
                           </td>
-                          <td className="px-3 py-2 text-right font-mono font-extrabold text-purple-900 dark:text-purple-300 border-r border-gray-200 text-base">
+                          <td className="px-2 py-1 text-right font-mono font-extrabold text-purple-900 dark:text-purple-300 border-r border-gray-200 text-xs">
                             {e.excess.toLocaleString()}
                           </td>
-                          <td className="px-3 py-2 text-right font-mono font-bold text-emerald-800 dark:text-emerald-400 border-r border-gray-200 text-base">
+                          <td className="px-2 py-1 text-right font-mono font-bold text-emerald-800 dark:text-emerald-400 border-r border-gray-200 text-xs">
                             {e.buy > 0 ? e.buy.toLocaleString() : '0'}
                           </td>
-                          <td className="px-3 py-2 text-right font-mono font-extrabold text-slate-900 dark:text-slate-100 text-base">
+                          <td className="px-2 py-1 text-right font-mono font-extrabold text-slate-900 dark:text-slate-100 text-xs">
                             {e.total.toLocaleString()}
                           </td>
                         </tr>
@@ -957,18 +1369,18 @@ export default function BuyEntry({
               )}
 
               {/* Summary Card */}
-              <div className="bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800/40 rounded-lg p-2.5 space-y-1.5 text-sm font-mono shrink-0">
+              <div className="bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800/40 rounded-lg p-2 space-y-1 text-xs font-mono shrink-0">
                 <div className="flex justify-between items-center px-1 font-bold text-purple-900 dark:text-purple-300">
                   <span>Exceed Total:</span>
-                  <span className="text-base text-purple-900 dark:text-purple-200 font-extrabold">{totalExcess.toLocaleString()}</span>
+                  <span className="text-xs text-purple-900 dark:text-purple-200 font-bold">{totalExcess.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between items-center px-1 font-bold text-emerald-800 dark:text-emerald-300">
                   <span>Buy Total:</span>
-                  <span className="text-base font-extrabold">{totalBuy.toLocaleString()}</span>
+                  <span className="text-xs font-bold">{totalBuy.toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between items-center border-t border-purple-200 dark:border-purple-800/40 pt-1 px-1 font-extrabold text-slate-950 dark:text-slate-100 text-base">
+                <div className="flex justify-between items-center border-t border-purple-200 dark:border-purple-800/40 pt-1 px-1 font-bold text-slate-950 dark:text-slate-100 text-xs">
                   <span>Total (Exceed - Buy):</span>
-                  <span className="text-lg text-purple-950 dark:text-purple-100">{totalRemaining.toLocaleString()}</span>
+                  <span className="text-sm font-bold text-purple-950 dark:text-purple-100">{totalRemaining.toLocaleString()}</span>
                 </div>
               </div>
             </div>
@@ -1015,45 +1427,45 @@ export default function BuyEntry({
             <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-900/50 grid grid-cols-3 gap-3 text-center shrink-0">
               <div className="bg-white dark:bg-slate-800 p-2 rounded-lg border border-amber-200 dark:border-amber-900/50 shadow-xs">
                 <span className="block text-[11px] font-semibold text-gray-500 dark:text-slate-400">Total Exceed Count</span>
-                <span className="text-base font-mono font-bold text-amber-700 dark:text-amber-400">{exceedList.length} numbers</span>
+                <span className="text-xs font-mono font-bold text-amber-700 dark:text-amber-400">{exceedList.length} numbers</span>
               </div>
               <div className="bg-white dark:bg-slate-800 p-2 rounded-lg border border-amber-200 dark:border-amber-900/50 shadow-xs">
                 <span className="block text-[11px] font-semibold text-gray-500 dark:text-slate-400">Total Exceed Amount</span>
-                <span className="text-base font-mono font-bold text-red-600">{totalExcess.toLocaleString()}</span>
+                <span className="text-xs font-mono font-bold text-red-600">{totalExcess.toLocaleString()}</span>
               </div>
               <div className="bg-white dark:bg-slate-800 p-2 rounded-lg border border-amber-200 dark:border-amber-900/50 shadow-xs">
                 <span className="block text-[11px] font-semibold text-gray-500 dark:text-slate-400">Net Total (Exceed - Buy)</span>
-                <span className="text-base font-mono font-bold text-purple-700 dark:text-purple-400">{totalRemaining.toLocaleString()}</span>
+                <span className="text-xs font-mono font-bold text-purple-700 dark:text-purple-400">{totalRemaining.toLocaleString()}</span>
               </div>
             </div>
 
             {/* Modal Table Content */}
             <div className="p-4 flex-1 overflow-y-auto min-h-0">
               {exceedList.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-12">No over-limit or exceeded numbers yet.</p>
+                <p className="text-xs text-gray-400 text-center py-12">No over-limit or exceeded numbers yet.</p>
               ) : (
-                <table className="w-full text-sm border-collapse border border-gray-200 dark:border-slate-800">
+                <table className="w-full text-xs border-collapse border border-gray-200 dark:border-slate-800">
                   <thead>
                     <tr className="bg-slate-100 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 border-b border-gray-200 dark:border-slate-700">
-                      <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-center bg-emerald-700 text-white w-20">Number</th>
-                      <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-right text-red-600 bg-red-50 dark:bg-red-950/40">Exceed Amount</th>
-                      <th className="px-3 py-2 border-r border-gray-200 dark:border-slate-700 text-right bg-white dark:bg-slate-900">Buy Offload</th>
-                      <th className="px-3 py-2 text-right bg-purple-700 text-white font-bold">Net Total</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 dark:border-slate-700 text-center bg-emerald-700 text-white w-16">Number</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 dark:border-slate-700 text-right text-red-600 bg-red-50 dark:bg-red-950/40">Exceed Amount</th>
+                      <th className="px-2 py-1.5 border-r border-gray-200 dark:border-slate-700 text-right bg-white dark:bg-slate-900">Buy Offload</th>
+                      <th className="px-2 py-1.5 text-right bg-purple-700 text-white font-bold">Net Total</th>
                     </tr>
                   </thead>
                   <tbody>
                     {exceedList.map(e => (
                       <tr key={e.num} className="border-b border-gray-200 dark:border-slate-800 hover:bg-amber-50/50 dark:hover:bg-amber-950/20">
-                        <td className="px-3 py-1.5 font-mono font-bold text-center bg-emerald-600 text-white border-r border-gray-200 dark:border-slate-800 text-base">
+                        <td className="px-2 py-1 font-mono font-bold text-center bg-emerald-600 text-white border-r border-gray-200 dark:border-slate-800 text-xs">
                           {e.num}
                         </td>
-                        <td className="px-3 py-1.5 text-right font-mono font-bold text-red-600 dark:text-red-400 border-r border-gray-200 dark:border-slate-800">
+                        <td className="px-2 py-1 text-right font-mono font-bold text-red-600 dark:text-red-400 border-r border-gray-200 dark:border-slate-800 text-xs">
                           {e.excess.toLocaleString()}
                         </td>
-                        <td className="px-3 py-1.5 text-right font-mono font-semibold text-slate-800 dark:text-slate-200 border-r border-gray-200 dark:border-slate-800">
+                        <td className="px-2 py-1 text-right font-mono font-semibold text-slate-800 dark:text-slate-200 border-r border-gray-200 dark:border-slate-800 text-xs">
                           {e.buy > 0 ? e.buy.toLocaleString() : '0'}
                         </td>
-                        <td className="px-3 py-1.5 text-right font-mono font-bold text-white bg-purple-700">
+                        <td className="px-2 py-1 text-right font-mono font-bold text-white bg-purple-700 text-xs">
                           {e.total.toLocaleString()}
                         </td>
                       </tr>
@@ -1080,56 +1492,154 @@ export default function BuyEntry({
 
       {/* Quick Entry Modal */}
       {quickEntryOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-4 border border-gray-200">
-            <h3 className="text-sm font-bold text-gray-800 mb-3">Quick Buy Entry (Spacebar)</h3>
-            <div className="space-y-3">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-gray-200 max-w-md w-full overflow-hidden animate-in fade-in zoom-in duration-150">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-800">Quick Entry</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setQuickEntryOpen(false);
+                  inputRef.current?.focus();
+                }}
+                className="text-gray-400 hover:text-gray-600 text-base cursor-pointer"
+                aria-label={t('common.close')}
+              >
+                ✕
+              </button>
+            </div>
+            {/* Body */}
+            <div className="p-5 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Numbers</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                  Enter Numbers Here
+                </label>
                 <input
                   ref={quickNumsRef}
                   type="text"
                   value={quickEntryNums}
-                  onChange={e => setQuickEntryNums(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') quickAmountRef.current?.focus();
+                  onChange={handleQuickNumsChange}
+                  onKeyDown={handleQuickNumsKeyDown}
+                  onFocus={e => {
+                    const len = e.target.value.length;
+                    e.target.setSelectionRange(len, len);
                   }}
-                  placeholder="e.g. 12.14.16"
-                  className="w-full px-3 py-1.5 text-sm font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="Enter Numbers Here"
+                  className="w-full px-3 py-2 text-sm font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
+
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Amount</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                  Amount
+                </label>
                 <input
                   ref={quickAmountRef}
                   type="text"
                   value={quickEntryAmount}
-                  onChange={e => setQuickEntryAmount(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') handleAddQuickEntry();
+                  onChange={e => {
+                    let val = normalizeInput(e.target.value, replaceSlash, replaceAsterisk);
+                    val = val.replace(/[*\/]/g, 'R').replace(/[^0-9rR]/gi, '').toUpperCase();
+                    setQuickEntryAmount(val);
                   }}
-                  placeholder="e.g. 100"
-                  className="w-full px-3 py-1.5 text-sm font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  onKeyDown={handleQuickAmountKeyDown}
+                  placeholder="100, R100, or 100R50"
+                  className="w-full px-3 py-2 text-sm font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
             </div>
-            <div className="flex justify-end gap-2 mt-4">
+
+            {/* Footer */}
+            <div className="px-5 py-3.5 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setQuickEntryOpen(false)}
-                className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg"
+                onClick={() => {
+                  setQuickEntryOpen(false);
+                  inputRef.current?.focus();
+                }}
+                className="px-4 py-2 text-xs font-semibold border border-gray-300 rounded-lg hover:bg-gray-100 transition cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={handleAddQuickEntry}
-                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg"
+                onClick={handleQuickSubmit}
+                className="px-4 py-2 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition cursor-pointer"
               >
-                Add Items
+                Submit
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {checkAgentOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+          onClick={() => setCheckAgentOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-gray-200 dark:border-slate-800 max-w-sm w-full p-4 space-y-3"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-100 dark:border-slate-800 pb-2">
+              <h3 className="text-sm font-bold text-gray-800 dark:text-slate-100 flex items-center gap-1.5">
+                <span>🔍</span>
+                <span>Search Number Breakdown</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setCheckAgentOpen(false)}
+                className="text-gray-400 hover:text-gray-600 text-sm font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <input
+              type="text"
+              value={checkAgentInput}
+              onChange={e => runCheckAgent(e.target.value)}
+              placeholder="Search 2-digit number (e.g. 00-99)"
+              autoFocus
+              className="w-full px-3 py-2 text-sm font-mono text-center border border-gray-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-slate-900 dark:text-slate-100 dark:bg-slate-800"
+            />
+            <div className="space-y-1.5 max-h-56 overflow-y-auto pt-1">
+              {checkAgentLoading ? (
+                <p className="text-xs text-gray-400 text-center py-4">Loading...</p>
+              ) : checkAgentResults === null ? (
+                <p className="text-xs text-gray-400 text-center py-4">Enter a 2-digit number to check total buy entries</p>
+              ) : checkAgentResults.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-4">No buy entries found for this number</p>
+              ) : (
+                checkAgentResults.map(r => (
+                  <div key={r.agentName} className="flex items-center justify-between text-xs bg-purple-50 dark:bg-purple-950/40 rounded-lg p-2 border border-purple-200 dark:border-purple-800/40">
+                    <span className="font-medium text-purple-900 dark:text-purple-200">{r.agentName}</span>
+                    <span className="font-mono font-bold text-purple-800 dark:text-purple-300">{r.total.toLocaleString()}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cellPopup && (
+        <div className="fixed bottom-6 right-6 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-gray-200 dark:border-slate-800 px-6 py-4 text-center min-w-[180px] z-50 relative">
+          <button
+            type="button"
+            onClick={() => setCellPopup(null)}
+            className="absolute top-1.5 right-2 text-gray-400 hover:text-gray-600 text-sm cursor-pointer"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+          <p className="font-mono text-3xl font-bold text-gray-900 dark:text-slate-100">
+            {cellPopup.num}
+            {cellPopup.num === luckyNumber && <span className="ml-2 align-middle text-lg">🎯</span>}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">Buy Total Amount</p>
+          <p className="text-xl font-semibold text-purple-700 dark:text-purple-400">{cellPopup.amount.toLocaleString()}</p>
         </div>
       )}
     </div>

@@ -5,6 +5,8 @@ import {
   getFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
+  CACHE_SIZE_UNLIMITED,
+  enablePersistentCacheIndexAutoCreation,
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -25,13 +27,25 @@ if (getApps().length === 0) {
 
 let db;
 try {
-  db = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager(),
-    }),
-  });
+  if (typeof window !== 'undefined') {
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+        cacheSizeBytes: CACHE_SIZE_UNLIMITED,
+      }),
+    });
+    // Enable automatic index creation for optimal offline querying
+    try {
+      enablePersistentCacheIndexAutoCreation(db);
+    } catch {
+      // index auto-creation optional
+    }
+  } else {
+    db = getFirestore(app);
+  }
 } catch {
   db = getFirestore(app);
 }
 
 export { app, db };
+

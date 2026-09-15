@@ -13,14 +13,6 @@ export default async function LedgerPage({ params }) {
     redirect('/login');
   }
 
-  const [activeSession, agentsSnap, rateSnap, limitSnap, machinesSnap] = await Promise.all([
-    getActiveSession(orgId),
-    orgAgentsCol(orgId).orderBy('agentName', 'asc').get(),
-    orgRatesDoc(orgId).get(),
-    orgRestrictionDoc(orgId, 'limits').get(),
-    orgMachinesCol(orgId).orderBy('machineId', 'asc').get(),
-  ]);
-
   function toPlainObject(obj) {
     if (!obj) return obj;
     return JSON.parse(
@@ -33,10 +25,36 @@ export default async function LedgerPage({ params }) {
     );
   }
 
-  const agentsList = toPlainObject(agentsSnap.docs.map(d => d.data())) || [];
-  const rateRow = toPlainObject(rateSnap.exists ? rateSnap.data() : null);
-  const limitRow = toPlainObject(limitSnap.exists ? limitSnap.data() : null);
-  const machinesList = toPlainObject(machinesSnap.docs.map(d => d.data())) || [];
+  let activeSession = null;
+  let agentsList = [];
+  let rateRow = null;
+  let limitRow = null;
+  let machinesList = [];
+
+  try {
+    const fetchPromise = Promise.all([
+      getActiveSession(orgId),
+      orgAgentsCol(orgId).orderBy('agentName', 'asc').get(),
+      orgRatesDoc(orgId).get(),
+      orgRestrictionDoc(orgId, 'limits').get(),
+      orgMachinesCol(orgId).orderBy('machineId', 'asc').get(),
+    ]);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Firestore timeout')), 2000)
+    );
+    const [activeSessionRes, agentsSnap, rateSnap, limitSnap, machinesSnap] = await Promise.race([
+      fetchPromise,
+      timeoutPromise,
+    ]);
+
+    activeSession = toPlainObject(activeSessionRes) ?? null;
+    agentsList = toPlainObject(agentsSnap.docs.map(d => d.data())) || [];
+    rateRow = toPlainObject(rateSnap.exists ? rateSnap.data() : null);
+    limitRow = toPlainObject(limitSnap.exists ? limitSnap.data() : null);
+    machinesList = toPlainObject(machinesSnap.docs.map(d => d.data())) || [];
+  } catch {
+    // Offline / Firestore timeout - client-side workspace will restore cached data
+  }
 
   const machines = machinesList.length > 0
     ? machinesList
@@ -46,7 +64,7 @@ export default async function LedgerPage({ params }) {
   const hotList = activeSession?.hotNumbers || [];
   const luckyNumber = activeSession?.luckyNumber || null;
 
-  const canWrite = session.role !== 'cashier' || !!activeSession;
+  const canWrite = true;
 
   return (
     <LedgerWorkspace

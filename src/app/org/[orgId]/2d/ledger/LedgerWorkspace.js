@@ -4,6 +4,7 @@ import LedgerEntry from './LedgerEntry.js';
 import LedgerHistory from './LedgerHistory.js';
 import SessionPicker from './SessionPicker.js';
 import ReportsModal from './ReportsModal.js';
+import LocalVouchersManager from '../local-vouchers/LocalVouchersManager.js';
 import useLedgerShortcuts from '@/lib/ledger/useLedgerShortcuts.js';
 import useLiveSession from '@/lib/ledger/useLiveSession.js';
 import { matchesCombo } from '@/lib/ledger/shortcuts.js';
@@ -14,15 +15,152 @@ import { matchesCombo } from '@/lib/ledger/shortcuts.js';
 export default function LedgerWorkspace({
   orgId,
   activeSession,
-  agents,
+  agents = [],
   rate,
   limit,
-  notBuyNumbers: initialNotBuyNumbers,
-  hotNumbers: initialHotNumbers,
-  luckyNumber: initialLuckyNumber,
-  machines,
+  notBuyNumbers: initialNotBuyNumbers = [],
+  hotNumbers: initialHotNumbers = [],
+  luckyNumber: initialLuckyNumber = null,
+  machines = [],
   canWrite,
 }) {
+  const [effectiveAgents, setEffectiveAgents] = useState(() => {
+    if (agents && agents.length > 0) {
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(`agents_cache_${orgId}`, JSON.stringify(agents));
+        } catch {}
+      }
+      return agents;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem(`agents_cache_${orgId}`);
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return agents || [];
+  });
+
+  const [effectiveSession, setEffectiveSession] = useState(() => {
+    if (activeSession) {
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(`session_cache_${orgId}`, JSON.stringify(activeSession));
+        } catch {}
+      }
+      return activeSession;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem(`session_cache_${orgId}`);
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return activeSession || null;
+  });
+
+  const [effectiveRate, setEffectiveRate] = useState(() => {
+    if (rate) {
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(`rate_cache_${orgId}`, JSON.stringify(rate));
+        } catch {}
+      }
+      return rate;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem(`rate_cache_${orgId}`);
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return rate || null;
+  });
+
+  const [effectiveLimit, setEffectiveLimit] = useState(() => {
+    if (limit) {
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(`limit_cache_${orgId}`, JSON.stringify(limit));
+        } catch {}
+      }
+      return limit;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem(`limit_cache_${orgId}`);
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return limit || null;
+  });
+
+  const [effectiveMachines, setEffectiveMachines] = useState(() => {
+    if (machines && machines.length > 0) {
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(`machines_cache_${orgId}`, JSON.stringify(machines));
+        } catch {}
+      }
+      return machines;
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem(`machines_cache_${orgId}`);
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return machines && machines.length > 0
+      ? machines
+      : [{ machineId: 1, minSerial: 1, maxSerial: 999, label: 'Machine 1' }];
+  });
+
+  useEffect(() => {
+    if (agents && agents.length > 0) {
+      setEffectiveAgents(agents);
+      try {
+        localStorage.setItem(`agents_cache_${orgId}`, JSON.stringify(agents));
+      } catch {}
+    }
+  }, [agents, orgId]);
+
+  useEffect(() => {
+    if (activeSession) {
+      setEffectiveSession(activeSession);
+      try {
+        localStorage.setItem(`session_cache_${orgId}`, JSON.stringify(activeSession));
+      } catch {}
+    }
+  }, [activeSession, orgId]);
+
+  useEffect(() => {
+    if (rate) {
+      setEffectiveRate(rate);
+      try {
+        localStorage.setItem(`rate_cache_${orgId}`, JSON.stringify(rate));
+      } catch {}
+    }
+  }, [rate, orgId]);
+
+  useEffect(() => {
+    if (limit) {
+      setEffectiveLimit(limit);
+      try {
+        localStorage.setItem(`limit_cache_${orgId}`, JSON.stringify(limit));
+      } catch {}
+    }
+  }, [limit, orgId]);
+
+  useEffect(() => {
+    if (machines && machines.length > 0) {
+      setEffectiveMachines(machines);
+      try {
+        localStorage.setItem(`machines_cache_${orgId}`, JSON.stringify(machines));
+      } catch {}
+    }
+  }, [machines, orgId]);
+
   const [totals, setTotals] = useState({});
   const [buyTotals, setBuyTotals] = useState({});
   const [vouchersCount, setVouchersCount] = useState(0);
@@ -32,21 +170,23 @@ export default function LedgerWorkspace({
   const [editingVoucher, setEditingVoucher] = useState(null);
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isLocalVouchersOpen, setIsLocalVouchersOpen] = useState(false);
   const [reportsTab, setReportsTab] = useState(null);
+
   // SessionPicker starts closed if an active session exists or has already been acknowledged
   const [isSessionPickerOpen, setIsSessionPickerOpen] = useState(() => {
     if (typeof window !== 'undefined') {
       const acknowledged = sessionStorage.getItem('session_picker_acknowledged');
       if (acknowledged) return false;
     }
-    return !activeSession;
+    return !effectiveSession;
   });
 
   useEffect(() => {
-    if (activeSession && typeof window !== 'undefined') {
+    if (effectiveSession && typeof window !== 'undefined') {
       sessionStorage.setItem('session_picker_acknowledged', 'true');
     }
-  }, [activeSession]);
+  }, [effectiveSession]);
 
   const handleCloseSessionPicker = useCallback(() => {
     if (typeof window !== 'undefined') {
@@ -57,10 +197,10 @@ export default function LedgerWorkspace({
   const { shortcuts, replaceSlash, replaceAsterisk } = useLedgerShortcuts();
 
   const refreshTotals = useCallback(async () => {
-    if (!activeSession) return;
+    if (!effectiveSession) return;
     try {
       const res = await fetch(
-        `/api/org/${orgId}/ledger/totals?onCount=${activeSession.onCount}&ampm=${activeSession.ampm}`
+        `/api/org/${orgId}/ledger/totals?onCount=${effectiveSession.onCount}&ampm=${effectiveSession.ampm}`
       );
       const data = await res.json();
       setTotals(data.totals || {});
@@ -72,7 +212,7 @@ export default function LedgerWorkspace({
     } catch {
       // keep last known totals on failure
     }
-  }, [orgId, activeSession]);
+  }, [orgId, effectiveSession]);
 
   useEffect(() => {
     refreshTotals();
@@ -83,7 +223,7 @@ export default function LedgerWorkspace({
   // covered by the optimistic bump below). See session-stream/route.js and
   // useLiveSession.js. Falls back gracefully to the fetch-based paths above
   // if the stream hasn't connected yet or drops.
-  const live = useLiveSession(orgId, activeSession?.id);
+  const live = useLiveSession(orgId, effectiveSession?.id);
   useEffect(() => {
     if (!live) return;
     setTotals(live.totals || {});
@@ -140,13 +280,13 @@ export default function LedgerWorkspace({
     <div className="w-full px-3 py-3">
       <LedgerEntry
         orgId={orgId}
-        activeSession={activeSession}
-        agents={agents}
-        rate={rate}
-        limit={limit}
-        notBuyNumbers={notBuyNumbers}
-        hotNumbers={hotNumbers}
-        luckyNumber={luckyNumber}
+        activeSession={effectiveSession}
+        agents={effectiveAgents}
+        rate={effectiveRate}
+        limit={effectiveLimit}
+        notBuyNumbers={effectiveSession?.notBuyNumbers || notBuyNumbers}
+        hotNumbers={effectiveSession?.hotNumbers || hotNumbers}
+        luckyNumber={effectiveSession?.luckyNumber || luckyNumber}
         totals={totals}
         buyTotals={buyTotals}
         vouchersCount={vouchersCount}
@@ -168,13 +308,35 @@ export default function LedgerWorkspace({
         onOpenReports={() => setReportsTab('allAgent')}
         onOpenSale1={() => setReportsTab('agent')}
         onOpenSale2={() => setReportsTab('summary')}
+        onOpenLocalVouchers={() => setIsLocalVouchersOpen(true)}
       />
+
+      {isLocalVouchersOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6"
+          onClick={() => setIsLocalVouchersOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-6xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-gray-200 dark:border-slate-800"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="overflow-y-auto p-4 sm:p-6">
+              <LocalVouchersManager
+                orgId={orgId}
+                agents={effectiveAgents}
+                activeSession={effectiveSession}
+                onClose={() => setIsLocalVouchersOpen(false)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {isSessionPickerOpen && (
         <SessionPicker
           orgId={orgId}
-          activeSession={activeSession}
-          machines={machines}
+          activeSession={effectiveSession}
+          machines={effectiveMachines}
           onClose={handleCloseSessionPicker}
         />
       )}
@@ -182,8 +344,8 @@ export default function LedgerWorkspace({
       {reportsTab && (
         <ReportsModal
           orgId={orgId}
-          activeSession={activeSession}
-          agents={agents}
+          activeSession={effectiveSession}
+          agents={effectiveAgents}
           initialTab={reportsTab}
           onClose={() => setReportsTab(null)}
         />
@@ -201,7 +363,8 @@ export default function LedgerWorkspace({
             <div className="overflow-y-auto">
               <LedgerHistory
                 orgId={orgId}
-                activeSession={activeSession}
+                activeSession={effectiveSession}
+                isBuy={false}
                 canWrite={canWrite}
                 onEdit={slip => {
                   setEditingVoucher(slip);

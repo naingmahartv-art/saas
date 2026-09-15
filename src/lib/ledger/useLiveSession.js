@@ -70,11 +70,20 @@ export default function useLiveSession(orgId, sessionInfo) {
         const totals = {};
         const buyTotals = {};
         let maxSrNo = 0;
+        let saleVouchersCount = 0;
+        let buyVouchersCount = 0;
 
         for (const docSnap of colSnap.docs) {
           const v = docSnap.data();
           if (typeof v.srNo === 'number' && v.srNo > maxSrNo) {
             maxSrNo = v.srNo;
+          }
+
+          const isBuy = v.isBuyVoucher === true || v.voucherType === 'buy' || v.agentId === 'buy_offload';
+          if (isBuy) {
+            buyVouchersCount++;
+          } else {
+            saleVouchersCount++;
           }
 
           let entries = [];
@@ -89,18 +98,23 @@ export default function useLiveSession(orgId, sessionInfo) {
 
           for (const e of entries) {
             const amt = parseFloat(e.amount) || 0;
-            if (amt > 0 && e.num) {
-              totals[e.num] = (totals[e.num] || 0) + amt;
+            if (amt > 0 && e.num !== undefined && e.num !== null) {
+              const numStr = String(e.num).padStart(2, '0');
+              if (isBuy) {
+                buyTotals[numStr] = (buyTotals[numStr] || 0) + amt;
+              } else {
+                totals[numStr] = (totals[numStr] || 0) + amt;
+              }
             }
           }
         }
 
-        const count = colSnap.docs.length > maxSrNo ? colSnap.docs.length : maxSrNo;
         setData((prev) => ({
           ...prev,
           totals,
           buyTotals,
-          vouchersCount: count,
+          vouchersCount: saleVouchersCount,
+          buyVouchersCount,
         }));
       },
       (err) => {

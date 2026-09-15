@@ -38,6 +38,7 @@ export async function GET(request, { params }) {
         ampm: resolvedAmpm,
         onCount: resolvedOnCount,
         agentCommissions: d.agentCommissions || {},
+        agentRates: d.agentRates || {},
       });
     }
 
@@ -56,7 +57,7 @@ export async function GET(request, { params }) {
 }
 
 // PUT /api/org/[orgId]/settings/session-commissions
-// Bulk updates agentCommissions for multiple sessions
+// Bulk updates agentCommissions & agentRates for sessions
 export async function PUT(request, { params }) {
   const { orgId } = await params;
   const session = await getSession();
@@ -72,11 +73,15 @@ export async function PUT(request, { params }) {
 
     const batch = getDb().batch();
     for (const item of updates) {
-      const { sessionId, agentCommissions } = item;
-      if (!sessionId || !agentCommissions) continue;
+      const { sessionId, agentCommissions, agentRates } = item;
+      if (!sessionId) continue;
+
+      const updateData = { updatedAt: Date.now() };
+      if (agentCommissions !== undefined) updateData.agentCommissions = agentCommissions;
+      if (agentRates !== undefined) updateData.agentRates = agentRates;
 
       const ref = orgSessionDoc(orgId, sessionId);
-      batch.set(ref, { agentCommissions, updatedAt: Date.now() }, { merge: true });
+      batch.set(ref, updateData, { merge: true });
     }
 
     await batch.commit();

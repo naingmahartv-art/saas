@@ -1,6 +1,8 @@
 'use client';
 import { useState } from 'react';
 import { useI18n } from '@/lib/i18n/index.js';
+import CommissionSettingsManager from './CommissionSettingsManager.js';
+import RateSettingsManager from './RateSettingsManager.js';
 
 export default function SettingsPanel({
   orgId,
@@ -9,6 +11,7 @@ export default function SettingsPanel({
   initialLimits,
   initialHotNumbers,
   initialNotBuyNumbers,
+  initialAgents = [],
 }) {
   const { t } = useI18n();
   const [ratesForm, setRatesForm] = useState({
@@ -342,6 +345,12 @@ export default function SettingsPanel({
           </>
         )}
       </section>
+
+      {/* Agent Session Commissions & History by Date */}
+      <CommissionSettingsManager orgId={orgId} agents={initialAgents} />
+
+      {/* Agent Session Rates & History by Date */}
+      <RateSettingsManager orgId={orgId} agents={initialAgents} />
     </div>
   );
 }

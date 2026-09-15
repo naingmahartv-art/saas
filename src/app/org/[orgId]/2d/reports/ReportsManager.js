@@ -1,10 +1,8 @@
 'use client';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { useI18n } from '@/lib/i18n/index.js';
 import { buildReportPdf, reportFileName } from '@/lib/reports/buildPdf.js';
 import { parseNumberExpression, MAX_ENTRIES } from '@/lib/lottery/numberParser.js';
-
-import WeeklyCommissionModal from './WeeklyCommissionModal.js';
 
 function getTokenItemsForSlip(slip, luckyNo) {
   if (slip.tokens && slip.tokens.length > 0) {
@@ -52,32 +50,67 @@ function downloadBlob(blob, filename) {
 const fmt2 = (n) =>
   Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
-function getPredefinedDates(type) {
-  const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
+const MONTH_NAMES = [
+  { value: '01', label: 'January (Jan)' },
+  { value: '02', label: 'February (Feb)' },
+  { value: '03', label: 'March (Mar)' },
+  { value: '04', label: 'April (Apr)' },
+  { value: '05', label: 'May (May)' },
+  { value: '06', label: 'June (Jun)' },
+  { value: '07', label: 'July (Jul)' },
+  { value: '08', label: 'August (Aug)' },
+  { value: '09', label: 'September (Sep)' },
+  { value: '10', label: 'October (Oct)' },
+  { value: '11', label: 'November (Nov)' },
+  { value: '12', label: 'December (Dec)' },
+];
 
-  if (type === 'weekly') {
-    const d = new Date();
-    d.setDate(d.getDate() - 6);
-    return { from: d.toISOString().slice(0, 10), to: todayStr };
-  } else if (type === 'monthly') {
-    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-    return { from: firstDay.toISOString().slice(0, 10), to: todayStr };
-  }
-  return { from: todayStr, to: todayStr };
+function getDayDates(dayStr) {
+  return { from: dayStr, to: dayStr };
+}
+
+function getWeekDates(type = 'thisWeek') {
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0 = Sun, 1 = Mon ... 5 = Fri
+  const distToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const offset = type === 'lastWeek' ? -7 : 0;
+  const mon = new Date(today);
+  mon.setDate(today.getDate() + distToMon + offset);
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  return { from: mon.toISOString().slice(0, 10), to: sun.toISOString().slice(0, 10) };
+}
+
+function getMonthDates(year, monthStr) {
+  const y = parseInt(year, 10) || new Date().getFullYear();
+  const m = parseInt(monthStr, 10) || (new Date().getMonth() + 1);
+  const firstDay = `${y}-${String(m).padStart(2, '0')}-01`;
+  const lastDayDate = new Date(y, m, 0);
+  const lastDay = `${y}-${String(m).padStart(2, '0')}-${String(lastDayDate.getDate()).padStart(2, '0')}`;
+  return { from: firstDay, to: lastDay };
 }
 
 export default function ReportsManager({ orgId, initialAgents = [] }) {
   const { t } = useI18n();
-  const [periodType, setPeriodType] = useState('weekly'); // 'weekly' | 'monthly' | 'custom'
-  const [dates, setDates] = useState(() => getPredefinedDates('weekly'));
+
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  const currentMonthStr = String(today.getMonth() + 1).padStart(2, '0');
+  const currentYear = today.getFullYear();
+
+  const [periodType, setPeriodType] = useState('daily'); // 'daily' | 'weekly' | 'monthly' | 'custom'
+  const [selectedDay, setSelectedDay] = useState(todayStr);
+  const [weekType, setWeekType] = useState('thisWeek');
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthStr);
+  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [dates, setDates] = useState(() => getDayDates(todayStr));
+
   const [selectedAgent, setSelectedAgent] = useState('');
   const [selectedSlot, setSelectedSlot] = useState(''); // '' | '12:00' | '04:00' | '09:00'
   const [activeTab, setActiveTab] = useState('summary'); // 'summary' | 'matrix' | 'byAgent' | 'details'
 
   const [loading, setLoading] = useState(false);
   const [reportSlips, setReportSlips] = useState([]);
-  const [isCommissionModalOpen, setIsCommissionModalOpen] = useState(false);
 
   const agentMapLookup = useMemo(() => {
     const map = new Map();
@@ -109,16 +142,19 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
     [orgId]
   );
 
+  // Sync date ranges when user changes periodType or day/week/month selections
   useEffect(() => {
-    if (periodType !== 'custom') {
-      const pDates = getPredefinedDates(periodType);
-      setDates(pDates);
-      loadReportData(pDates.from, pDates.to, selectedAgent, selectedSlot);
-    } else {
-      loadReportData(dates.from, dates.to, selectedAgent, selectedSlot);
+    let newDates = dates;
+    if (periodType === 'daily') {
+      newDates = getDayDates(selectedDay);
+    } else if (periodType === 'weekly') {
+      newDates = getWeekDates(weekType);
+    } else if (periodType === 'monthly') {
+      newDates = getMonthDates(selectedYear, selectedMonth);
     }
-    console.log('Loading report data for periodType:', periodType, 'dates:', dates, 'agent:', selectedAgent, 'slot:', selectedSlot);  
-  }, [periodType, selectedAgent, selectedSlot, loadReportData]);
+    setDates(newDates);
+    loadReportData(newDates.from, newDates.to, selectedAgent, selectedSlot);
+  }, [periodType, selectedDay, weekType, selectedMonth, selectedYear, selectedAgent, selectedSlot, loadReportData]);
 
   function handleCustomDateChange(field, val) {
     const next = { ...dates, [field]: val };
@@ -126,18 +162,27 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
     loadReportData(next.from, next.to, selectedAgent, selectedSlot);
   }
 
+  function handleDayShift(offsetDays) {
+    const d = new Date(selectedDay);
+    d.setDate(d.getDate() + offsetDays);
+    const newDay = d.toISOString().slice(0, 10);
+    setSelectedDay(newDay);
+  }
+
   // --- Processed Data ---
   const detailedRows = useMemo(() => {
     return reportSlips
       .map((s) => {
-        const saleAmount = s.amount || 0;
+        const isBuy = Boolean(s.isBuyVoucher || s.voucherType === 'buy' || s.agentId === 'buy_offload');
+        const rawAmount = parseFloat(s.amount) || 0;
         const ag = agentMapLookup.get(s.agentName) || agentMapLookup.get(s.agentId);
         const sComms = s.agentCommissions || {};
+        const sRates = s.agentRates || {};
         const comRate =
           ag && sComms[ag.id] !== undefined && sComms[ag.id] !== null && sComms[ag.id] !== ''
             ? parseFloat(sComms[ag.id])
-            : ag?.commission ?? 0;
-        const comAmt = saleAmount * (comRate / 100);
+            : (ag?.commission ?? (isBuy ? 16 : 0));
+        const comAmt = rawAmount * (comRate / 100);
 
         const lAmount = s.luckyNo
           ? getTokenItemsForSlip(s, s.luckyNo)
@@ -145,19 +190,37 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
               .reduce((sum, item) => sum + item.winAmount, 0)
           : 0;
 
-        const rate = ag?.rate || s.rate || 80;
+        const rate =
+          ag && sRates[ag.id] !== undefined && sRates[ag.id] !== null && sRates[ag.id] !== ''
+            ? parseFloat(sRates[ag.id])
+            : (ag?.rate || s.rate || 80);
         const winPayout = lAmount * rate;
+
+        let displayAmount = rawAmount;
+        let balanceTotal = 0;
+
+        if (isBuy) {
+          // Buy / Offload: Expense is negative (-rawAmount), Commission & Win Payout are recovered back (+ve)
+          displayAmount = -rawAmount;
+          balanceTotal = -rawAmount + comAmt + winPayout;
+        } else {
+          // Sales: Revenue is positive (+rawAmount), Commission & Win Payout are paid out (-ve)
+          displayAmount = rawAmount;
+          balanceTotal = rawAmount - (comAmt + winPayout);
+        }
+
         const comPlusL = comAmt + winPayout;
-        const balanceTotal = saleAmount - comPlusL;
 
         return {
           id: s.id || `${s.srNo}_${s.createdAt}`,
           srNo: s.srNo,
-          agentName: s.agentName,
+          agentName: s.agentName || (isBuy ? 'Buy Offload' : 'Unknown'),
           onDate: s.onDate,
           ampm: s.ampm,
           createdAt: s.createdAt,
-          saleAmount,
+          isBuy,
+          rawAmount,
+          saleAmount: displayAmount,
           comRate,
           comAmt,
           lAmount,
@@ -174,7 +237,7 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
       .sort((a, b) => (a.srNo || 0) - (b.srNo || 0));
   }, [reportSlips, agentMapLookup]);
 
-  // --- Date Range Matrix Aggregation (12:00 and 04:00 sessions only, 09:00 removed) ---
+  // --- Format 2: Date Range Matrix Aggregation (12:00, 04:00) ---
   const matrixData = useMemo(() => {
     const agentMap = new Map();
 
@@ -192,16 +255,15 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
           m12: { amount: 0, lucky: 0, winPayout: 0, comAmt: 0, net: 0, hasData: false },
           m04: { amount: 0, lucky: 0, winPayout: 0, comAmt: 0, net: 0, hasData: false },
           totalNet: 0,
-          type: 'S',
+          type: r.isBuy ? 'B' : 'S',
         });
       }
 
       const dayEntry = dateMap.get(date);
       const rawAmpm = String(r.ampm || '').toLowerCase();
-      // Map 12:00 vs 04:00 (09:00 removed)
       const slot = rawAmpm.includes('12') || rawAmpm.includes('am') ? 'm12' : 'm04';
 
-      dayEntry[slot].amount += r.saleAmount;
+      dayEntry[slot].amount += r.rawAmount;
       dayEntry[slot].lucky += r.lAmount;
       dayEntry[slot].winPayout += r.winPayout;
       dayEntry[slot].comAmt += r.comAmt;
@@ -209,7 +271,7 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
       dayEntry[slot].hasData = true;
 
       dayEntry.totalNet = dayEntry.m12.net + dayEntry.m04.net;
-      dayEntry.type = dayEntry.totalNet < 0 ? 'P' : 'S';
+      if (!r.isBuy) dayEntry.type = 'S';
     }
 
     const result = [];
@@ -263,34 +325,57 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
     return [...map.values()].sort((a, b) => a.agentName.localeCompare(b.agentName));
   }, [detailedRows]);
 
-  // --- Condensed Period Summary Table Data (Matching 2nd Screenshot) ---
-  const summaryTableData = useMemo(() => {
-    const rows = [];
-    let grandAmount = 0;
-    let grandLucky = 0;
-    let grandTotalNet = 0;
+  // --- Format 1 Report Data (Name | Amount | Lucky | Total | Type) ---
+  const summaryReportData = useMemo(() => {
+    const map = new Map();
 
-    for (const g of byAgentGroups) {
-      const type = g.balanceTotal < 0 ? 'P' : 'S';
-      rows.push({
-        agentName: g.agentName,
-        amount: g.saleAmount,
-        lucky: g.lAmount,
-        totalNet: g.balanceTotal,
-        type,
-      });
-      grandAmount += g.saleAmount;
-      grandLucky += g.lAmount;
-      grandTotalNet += g.balanceTotal;
+    for (const r of detailedRows) {
+      const key = `${r.agentName}_${r.isBuy ? 'B' : 'S'}`;
+      const group = map.get(key) || {
+        agentName: r.agentName,
+        isBuy: r.isBuy,
+        type: r.isBuy ? 'B' : 'S',
+        rawAmount: 0,
+        sAmount: 0,
+        cRate: r.comRate,
+        comAmt: 0,
+        lAmount: 0,
+        rate: r.rate,
+        winPayout: 0,
+        balanceTotal: 0,
+      };
+
+      group.rawAmount += r.rawAmount;
+      group.sAmount += r.rawAmount;
+      group.comAmt += r.comAmt;
+      group.lAmount += r.lAmount;
+      group.rate = r.rate;
+      group.winPayout += r.winPayout;
+      group.balanceTotal += r.balanceTotal;
+      group.cRate = r.comRate;
+
+      map.set(key, group);
     }
 
+    const allRows = [...map.values()].sort((a, b) => {
+      if (a.isBuy !== b.isBuy) return a.isBuy ? 1 : -1;
+      return a.agentName.localeCompare(b.agentName);
+    });
+
+    const grandTotals = allRows.reduce(
+      (acc, r) => ({
+        sAmount: acc.sAmount + r.sAmount,
+        lAmount: acc.lAmount + r.lAmount,
+        balanceTotal: acc.balanceTotal + r.balanceTotal,
+      }),
+      { sAmount: 0, lAmount: 0, balanceTotal: 0 }
+    );
+
     return {
-      rows,
-      grandAmount,
-      grandLucky,
-      grandTotalNet,
+      rows: allRows,
+      grandTotals,
     };
-  }, [byAgentGroups]);
+  }, [detailedRows]);
 
   const totals = useMemo(() => {
     return detailedRows.reduce(
@@ -311,11 +396,13 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
   function exportCsv(tabName) {
     let rows = [];
     if (tabName === 'summary') {
+      const dateLabel = dates.from === dates.to ? dates.from : `${dates.from} ~ ${dates.to}`;
+      rows.push([`Period Report (${dateLabel})`]);
       rows.push(['Name', 'Amount', 'Lucky', 'Total', 'Type']);
-      for (const r of summaryTableData.rows) {
-        rows.push([r.agentName, fmt2(r.amount), r.lucky, fmt2(r.totalNet), r.type]);
+      for (const r of summaryReportData.rows) {
+        rows.push([r.agentName, fmt2(r.sAmount), r.lAmount > 0 ? r.lAmount : '', fmt2(r.balanceTotal), r.type]);
       }
-      rows.push(['Total', fmt2(summaryTableData.grandAmount), summaryTableData.grandLucky, fmt2(summaryTableData.grandTotalNet), '']);
+      rows.push(['', fmt2(summaryReportData.grandTotals.sAmount), summaryReportData.grandTotals.lAmount > 0 ? summaryReportData.grandTotals.lAmount : '', fmt2(summaryReportData.grandTotals.balanceTotal), '']);
     } else if (tabName === 'matrix') {
       rows.push(['Date', 'Agent', '12:00 Amount', '12:00 Lucky', '12:00 Net', '04:00 Amount', '04:00 Lucky', '04:00 Net', 'Total Net', 'Type']);
       for (const ag of matrixData) {
@@ -323,11 +410,11 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
           rows.push([
             d.date,
             ag.agentName,
-            d.m12.hasData ? fmt2(d.m12.amount) : '',
-            d.m12.hasData ? d.m12.lucky || '' : '',
+            d.m12.hasData && d.m12.amount ? fmt2(d.m12.amount) : '',
+            d.m12.hasData && d.m12.lucky > 0 ? d.m12.lucky : '',
             d.m12.hasData ? fmt2(d.m12.net) : '',
-            d.m04.hasData ? fmt2(d.m04.amount) : '',
-            d.m04.hasData ? d.m04.lucky || '' : '',
+            d.m04.hasData && d.m04.amount ? fmt2(d.m04.amount) : '',
+            d.m04.hasData && d.m04.lucky > 0 ? d.m04.lucky : '',
             d.m04.hasData ? fmt2(d.m04.net) : '',
             fmt2(d.totalNet),
             d.type,
@@ -359,36 +446,48 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
     let bodyRows = [];
 
     if (tabName === 'summary') {
-      title = 'Period Summary Report';
+      const dateLabel = dates.from === dates.to ? dates.from : `${dates.from} to ${dates.to}`;
+      title = `Period Report (${dateLabel})`;
       head = [['Name', 'Amount', 'Lucky', 'Total', 'Type']];
-      bodyRows = summaryTableData.rows.map((r) => [r.agentName, fmt2(r.amount), String(r.lucky), fmt2(r.totalNet), r.type]);
-      bodyRows.push(['Total', fmt2(summaryTableData.grandAmount), String(summaryTableData.grandLucky), fmt2(summaryTableData.grandTotalNet), '']);
+      for (const r of summaryReportData.rows) {
+        bodyRows.push([
+          r.agentName,
+          fmt2(r.sAmount),
+          r.lAmount > 0 ? String(r.lAmount) : '',
+          fmt2(r.balanceTotal),
+          r.type || 'S',
+        ]);
+      }
+      bodyRows.push([
+        '',
+        fmt2(summaryReportData.grandTotals.sAmount),
+        summaryReportData.grandTotals.lAmount > 0 ? String(summaryReportData.grandTotals.lAmount) : '',
+        fmt2(summaryReportData.grandTotals.balanceTotal),
+        '',
+      ]);
     } else if (tabName === 'matrix') {
       title = 'Period Matrix Report (12:00 & 04:00)';
-      head = [['Date', 'Agent', '12:00 Amount', '12:00 Net', '04:00 Amount', '04:00 Net', 'Total Net', 'Type']];
+      head = [['Date', 'Agent', '12:00 Net', '04:00 Net', 'Total Net', 'Type']];
       for (const ag of matrixData) {
         for (const d of ag.dates) {
           bodyRows.push([
             d.date,
             ag.agentName,
-            d.m12.hasData ? fmt2(d.m12.amount) : '-',
             d.m12.hasData ? fmt2(d.m12.net) : '-',
-            d.m04.hasData ? fmt2(d.m04.amount) : '-',
             d.m04.hasData ? fmt2(d.m04.net) : '-',
             fmt2(d.totalNet),
             d.type,
           ]);
         }
-        bodyRows.push(['', `${ag.agentName} Total`, '', '', '', '', fmt2(ag.agentTotalNet), '']);
       }
-      bodyRows.push(['', 'Grand Total', '', '', '', '', fmt2(matrixGrandTotal), '']);
+      bodyRows.push(['', 'Grand Total', '', '', fmt2(matrixGrandTotal), '']);
     } else if (tabName === 'byAgent') {
-      title = 'Period Report by Agent';
+      title = 'Agent Breakdown Report';
       head = [['AgentName', 'Vouchers', 'Sale Amount', 'Com Amt', 'L Amount', 'Win Payout', 'Com + L', 'Balance Total']];
       bodyRows = byAgentGroups.map((g) => [g.agentName, String(g.voucherCount), fmt2(g.saleAmount), fmt2(g.comAmt), String(g.lAmount), fmt2(g.winPayout), fmt2(g.comPlusL), fmt2(g.balanceTotal)]);
       bodyRows.push(['Total', String(totals.vouchers), fmt2(totals.saleAmount), fmt2(totals.comAmt), String(totals.lAmount), fmt2(totals.winPayout), fmt2(totals.comPlusL), fmt2(totals.balanceTotal)]);
     } else {
-      title = 'Period Details Report';
+      title = 'Detailed Slip Logs Report';
       head = [['SrNo', 'AgentName', 'Sale Amount', 'Com Rate', 'Com Amt', 'L Amount', '*', 'Rate', '=', 'Win Payout', 'Com + L', 'Balance Total']];
       bodyRows = detailedRows.map((r) => [String(r.srNo), r.agentName, fmt2(r.saleAmount), String(r.comRate), fmt2(r.comAmt), String(r.lAmount), '*', String(r.rate), '=', fmt2(r.winPayout), fmt2(r.comPlusL), fmt2(r.balanceTotal)]);
     }
@@ -398,7 +497,7 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
       title,
       subtitle: `Date Range: ${dateRangeLabel}`,
       sections: [{ head, rows: bodyRows }],
-      orientation: 'landscape',
+      orientation: 'portrait',
     });
 
     downloadBlob(pdfBlob, reportFileName(`report-${tabName}`, dates.from, 'pdf'));
@@ -414,7 +513,7 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
               <span>📊</span> Date Range Report
             </h1>
             <p className="text-xs text-slate-400 mt-1">
-              Select Start Date & End Date to inspect 12:00 & 04:00 session totals by Agent
+              Select Day, Week, or Month to inspect session settlements and summary totals
             </p>
           </div>
 
@@ -422,14 +521,14 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
             <button
               type="button"
               onClick={() => exportCsv(activeTab)}
-              className="px-3.5 py-1.5 text-xs font-semibold bg-slate-800 text-slate-200 border border-slate-700 rounded-lg hover:bg-slate-700 hover:text-white transition"
+              className="px-3.5 py-1.5 text-xs font-semibold bg-slate-800 text-slate-200 border border-slate-700 rounded-lg hover:bg-slate-700 hover:text-white transition cursor-pointer"
             >
               Export CSV
             </button>
             <button
               type="button"
               onClick={() => exportPdf(activeTab)}
-              className="px-3.5 py-1.5 text-xs font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 shadow transition"
+              className="px-3.5 py-1.5 text-xs font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 shadow transition cursor-pointer"
             >
               Export PDF
             </button>
@@ -437,71 +536,164 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
         </div>
 
         {/* Date Selection Filter Toolbar */}
-        <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-slate-800 text-sm">
-          {/* Preset Buttons */}
+        <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-slate-800 text-sm">
+          {/* Preset Mode Buttons */}
           <div className="flex items-center bg-slate-800 p-1 rounded-xl border border-slate-700">
             <button
               type="button"
+              onClick={() => setPeriodType('daily')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
+                periodType === 'daily' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              📅 Day
+            </button>
+            <button
+              type="button"
               onClick={() => setPeriodType('weekly')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
                 periodType === 'weekly' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white'
               }`}
             >
-              Weekly
+              📅 Week
             </button>
             <button
               type="button"
               onClick={() => setPeriodType('monthly')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
                 periodType === 'monthly' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white'
               }`}
             >
-              Monthly
+              🗓️ Month
             </button>
             <button
               type="button"
               onClick={() => setPeriodType('custom')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
                 periodType === 'custom' ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white'
               }`}
             >
-              Custom Range
+              ✏️ Custom
             </button>
           </div>
 
-          {/* Date Input Range Controls */}
-          <div className="flex items-center gap-2 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700">
-            <span className="text-xs font-medium text-slate-400">Start Date:</span>
-            <input
-              type="date"
-              value={dates.from}
-              disabled={periodType !== 'custom'}
-              onChange={(e) => handleCustomDateChange('from', e.target.value)}
-              className="px-2 py-1 text-xs bg-slate-900 border border-slate-700 rounded-md text-white font-mono focus:outline-none focus:border-indigo-500 disabled:opacity-50"
-            />
-            <span className="text-xs font-medium text-slate-400">End Date:</span>
-            <input
-              type="date"
-              value={dates.to}
-              disabled={periodType !== 'custom'}
-              onChange={(e) => handleCustomDateChange('to', e.target.value)}
-              className="px-2 py-1 text-xs bg-slate-900 border border-slate-700 rounded-md text-white font-mono focus:outline-none focus:border-indigo-500 disabled:opacity-50"
-            />
-          </div>
+          {/* Conditional Date Selection Controls Based on Mode */}
+          {periodType === 'daily' && (
+            <div className="flex items-center gap-1.5 bg-slate-800/90 px-3 py-1.5 rounded-xl border border-slate-700">
+              <button
+                type="button"
+                onClick={() => handleDayShift(-1)}
+                className="px-2 py-0.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded cursor-pointer font-bold"
+                title="Previous Day"
+              >
+                ◀ Prev
+              </button>
+              <input
+                type="date"
+                value={selectedDay}
+                onChange={(e) => setSelectedDay(e.target.value)}
+                className="px-2.5 py-1 text-xs bg-slate-900 border border-slate-600 rounded-md text-white font-mono focus:outline-none focus:border-indigo-500 font-bold"
+              />
+              <button
+                type="button"
+                onClick={() => setSelectedDay(todayStr)}
+                className="px-2 py-0.5 text-xs bg-indigo-600/80 hover:bg-indigo-600 text-white rounded cursor-pointer font-semibold"
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDayShift(1)}
+                className="px-2 py-0.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded cursor-pointer font-bold"
+                title="Next Day"
+              >
+                Next ▶
+              </button>
+            </div>
+          )}
 
-          {/* Agent Dropdown Filter, Session Slot Filter & Weekly Commission Editor */}
+          {periodType === 'weekly' && (
+            <div className="flex items-center gap-2 bg-slate-800/90 px-3 py-1.5 rounded-xl border border-slate-700">
+              <button
+                type="button"
+                onClick={() => setWeekType('thisWeek')}
+                className={`px-2.5 py-1 text-xs font-bold rounded cursor-pointer ${
+                  weekType === 'thisWeek' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                }`}
+              >
+                This Week (Mon-Sun)
+              </button>
+              <button
+                type="button"
+                onClick={() => setWeekType('lastWeek')}
+                className={`px-2.5 py-1 text-xs font-bold rounded cursor-pointer ${
+                  weekType === 'lastWeek' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                }`}
+              >
+                Last Week
+              </button>
+              <span className="text-xs font-mono text-slate-300 ml-1">
+                {dates.from} ~ {dates.to}
+              </span>
+            </div>
+          )}
+
+          {periodType === 'monthly' && (
+            <div className="flex items-center gap-2 bg-slate-800/90 px-3 py-1.5 rounded-xl border border-slate-700">
+              <span className="text-xs font-medium text-slate-400">Month:</span>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="px-2.5 py-1 text-xs bg-slate-900 border border-slate-600 rounded-md text-white font-bold focus:outline-none focus:border-indigo-500"
+              >
+                {MONTH_NAMES.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+
+              <span className="text-xs font-medium text-slate-400">Year:</span>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
+                className="px-2.5 py-1 text-xs bg-slate-900 border border-slate-600 rounded-md text-white font-mono font-bold focus:outline-none focus:border-indigo-500"
+              >
+                {[currentYear, currentYear - 1, currentYear - 2].map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs font-mono text-slate-400 ml-1">
+                ({dates.from} ~ {dates.to})
+              </span>
+            </div>
+          )}
+
+          {periodType === 'custom' && (
+            <div className="flex items-center gap-2 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700">
+              <span className="text-xs font-medium text-slate-400">From:</span>
+              <input
+                type="date"
+                value={dates.from}
+                onChange={(e) => handleCustomDateChange('from', e.target.value)}
+                className="px-2 py-1 text-xs bg-slate-900 border border-slate-700 rounded-md text-white font-mono focus:outline-none focus:border-indigo-500"
+              />
+              <span className="text-xs font-medium text-slate-400">To:</span>
+              <input
+                type="date"
+                value={dates.to}
+                onChange={(e) => handleCustomDateChange('to', e.target.value)}
+                className="px-2 py-1 text-xs bg-slate-900 border border-slate-700 rounded-md text-white font-mono focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+          )}
+
+          {/* Session Slot Filter & Agent Filter */}
           <div className="flex flex-wrap items-center gap-2.5 ml-auto">
-            <button
-              type="button"
-              onClick={() => setIsCommissionModalOpen(true)}
-              className="px-3.5 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition shadow-md flex items-center gap-1.5"
-              title="Edit per-session agent commissions for Friday settlements"
-            >
-              <span>⚙️ Edit Weekly Commissions</span>
-            </button>
-
             <div className="flex items-center gap-1.5">
-              <span className="text-xs font-medium text-slate-400">Session Slot:</span>
+              <span className="text-xs font-medium text-slate-400">Slot:</span>
               <select
                 value={selectedSlot}
                 onChange={(e) => {
@@ -512,14 +704,14 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
                 className="px-3 py-1.5 text-xs border border-slate-700 bg-slate-800 text-white rounded-xl focus:outline-none focus:border-indigo-500 font-semibold"
               >
                 <option value="">🌅 All Sessions</option>
-                <option value="12:00">☀️ Morning Session (12:00 PM)</option>
-                <option value="04:00">🌆 Evening Session (04:30 PM)</option>
-                <option value="09:00">🌅 Early Morning (09:30 AM)</option>
+                <option value="12:00">☀️ 12:00 PM</option>
+                <option value="04:00">🌆 04:30 PM</option>
+                <option value="09:00">🌅 09:30 AM</option>
               </select>
             </div>
 
             <div className="flex items-center gap-1.5">
-              <span className="text-xs font-medium text-slate-400">Filter Agent:</span>
+              <span className="text-xs font-medium text-slate-400">Agent:</span>
               <select
                 value={selectedAgent}
                 onChange={(e) => setSelectedAgent(e.target.value)}
@@ -565,29 +757,29 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
           <button
             type="button"
             onClick={() => setActiveTab('summary')}
-            className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition ${
+            className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition cursor-pointer ${
               activeTab === 'summary'
                 ? 'border-indigo-600 text-indigo-600 bg-white rounded-t-xl shadow-sm'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            📈 Period Summary Table
+            📋 Report (Format 1)
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('matrix')}
-            className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition ${
+            className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition cursor-pointer ${
               activeTab === 'matrix'
                 ? 'border-indigo-600 text-indigo-600 bg-white rounded-t-xl shadow-sm'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            📋 Date Range Matrix Report
+            📊 Report (Format 2)
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('byAgent')}
-            className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition ${
+            className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition cursor-pointer ${
               activeTab === 'byAgent'
                 ? 'border-indigo-600 text-indigo-600 bg-white rounded-t-xl shadow-sm'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -598,7 +790,7 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
           <button
             type="button"
             onClick={() => setActiveTab('details')}
-            className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition ${
+            className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition cursor-pointer ${
               activeTab === 'details'
                 ? 'border-indigo-600 text-indigo-600 bg-white rounded-t-xl shadow-sm'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -615,183 +807,211 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
             <p className="text-center text-sm text-slate-400 py-12">No vouchers found in selected date range.</p>
           ) : (
             <>
-              {/* TAB 1: CONDENSED PERIOD SUMMARY TABLE (Matching 2nd Screenshot) */}
+              {/* TAB 1: FORMAT 1 REPORT (Matching Screenshot Design) */}
               {activeTab === 'summary' && (
-                <div className="max-w-4xl mx-auto space-y-6 font-mono">
-                  <div className="bg-white border border-slate-300 rounded-xl overflow-hidden shadow-sm">
-                    <table className="w-full text-xs text-left border-collapse">
-                      <thead>
-                        <tr className="bg-slate-100 text-slate-900 font-extrabold text-xs uppercase border-b-2 border-slate-300 font-sans">
-                          <th className="px-4 py-3 border-r border-slate-300">Name</th>
-                          <th className="px-4 py-3 border-r border-slate-300 text-right">Amount</th>
-                          <th className="px-4 py-3 border-r border-slate-300 text-right">Lucky</th>
-                          <th className="px-4 py-3 border-r border-slate-300 text-right">Total</th>
-                          <th className="px-3 py-3 text-center font-sans">Tag</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200 text-xs">
-                        {summaryTableData.rows.map((row) => (
-                          <tr key={row.agentName} className="hover:bg-slate-50 transition">
-                            <td className="px-4 py-2.5 font-sans font-bold text-slate-900 border-r border-slate-200">
-                              {row.agentName}
+                <div className="max-w-4xl mx-auto space-y-6">
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xs space-y-4 font-sans">
+                    {/* Header matching screenshot: Period Report (date range) on left, X Vouchers on right */}
+                    <div className="flex flex-wrap items-center justify-between gap-4 pb-1">
+                      <h2 className="text-base font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
+                        Period Report ({dates.from} ~ {dates.to})
+                      </h2>
+                      <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        {detailedRows.length} Vouchers
+                      </div>
+                    </div>
+
+                    {/* Table matching screenshot */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left border-collapse">
+                        <thead>
+                          <tr className="border-t border-b border-slate-900 dark:border-slate-100 text-slate-900 dark:text-slate-100 font-bold text-xs">
+                            <th className="py-3 px-4 text-left w-1/4">Name</th>
+                            <th className="py-3 px-4 text-right w-1/4">Amount</th>
+                            <th className="py-3 px-4 text-right w-1/5">Lucky</th>
+                            <th className="py-3 px-4 text-right w-1/4">Total</th>
+                            <th className="py-3 px-4 text-center w-12">Type</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
+                          {summaryReportData.rows.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="py-8 text-center text-slate-400">
+                                No records found for selected period
+                              </td>
+                            </tr>
+                          ) : (
+                            summaryReportData.rows.map((r, idx) => (
+                              <tr key={`${r.agentName}_${idx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                                <td className="py-2.5 px-4 font-semibold text-slate-900 dark:text-slate-100">
+                                  {r.agentName}
+                                </td>
+                                <td className="py-2.5 px-4 text-right font-mono font-bold text-slate-900 dark:text-slate-100">
+                                  {fmt2(r.sAmount)}
+                                </td>
+                                <td className="py-2.5 px-4 text-right font-mono text-slate-800 dark:text-slate-200">
+                                  {r.lAmount > 0 ? fmt2(r.lAmount) : ''}
+                                </td>
+                                <td className={`py-2.5 px-4 text-right font-mono font-bold ${r.balanceTotal < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                                  {fmt2(r.balanceTotal)}
+                                </td>
+                                <td className="py-2.5 px-4 text-center font-semibold text-slate-600 dark:text-slate-400">
+                                  {r.type || (r.isBuy ? 'B' : 'S')}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+
+                          {/* Grand Total Row with double underline */}
+                          <tr className="border-t border-slate-900 dark:border-slate-100 font-extrabold text-sm">
+                            <td className="py-4 px-4"></td>
+                            <td className="py-4 px-4 text-right font-mono font-black text-slate-900 dark:text-slate-100">
+                              {fmt2(summaryReportData.grandTotals.sAmount)}
                             </td>
-                            <td className={`px-4 py-2.5 text-right font-extrabold border-r border-slate-200 ${row.amount < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
-                              {fmt2(row.amount)}
+                            <td className="py-4 px-4 text-right font-mono font-black text-slate-900 dark:text-slate-100">
+                              {summaryReportData.grandTotals.lAmount > 0 ? fmt2(summaryReportData.grandTotals.lAmount) : ''}
                             </td>
-                            <td className="px-4 py-2.5 text-right border-r border-slate-200 text-slate-700">
-                              {row.lucky > 0 ? row.lucky : '0'}
-                            </td>
-                            <td className={`px-4 py-2.5 text-right font-black border-r border-slate-200 ${row.totalNet < 0 ? 'text-rose-600 font-sans' : 'text-slate-900 font-sans'}`}>
-                              {fmt2(row.totalNet)}
-                            </td>
-                            <td className="px-3 py-2.5 text-center font-sans">
-                              <span
-                                className={`inline-block px-2 py-0.5 rounded text-[10px] uppercase font-bold ${
-                                  row.type === 'P' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
-                                }`}
-                              >
-                                {row.type}
+                            <td className="py-4 px-4 text-right">
+                              <span className={`inline-block font-mono font-black text-base border-b-4 border-double pb-0.5 ${
+                                summaryReportData.grandTotals.balanceTotal < 0
+                                  ? 'text-rose-600 border-rose-600 dark:text-rose-400 dark:border-rose-400'
+                                  : 'text-slate-900 border-slate-900 dark:text-slate-100 dark:border-slate-100'
+                              }`}>
+                                {fmt2(summaryReportData.grandTotals.balanceTotal)}
                               </span>
                             </td>
+                            <td className="py-4 px-4"></td>
                           </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="bg-slate-100 border-t-2 border-slate-900 font-extrabold text-sm font-sans text-slate-900">
-                          <td className="px-4 py-3 border-r border-slate-300">TOTALS</td>
-                          <td className="px-4 py-3 border-r border-slate-300 text-right font-mono text-slate-900">
-                            {fmt2(summaryTableData.grandAmount)}
-                          </td>
-                          <td className="px-4 py-3 border-r border-slate-300 text-right font-mono text-slate-800">
-                            {summaryTableData.grandLucky}
-                          </td>
-                          <td className="px-4 py-3 border-r border-slate-300 text-right font-mono">
-                            <span className={`underline decoration-double text-base font-black ${summaryTableData.grandTotalNet < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
-                              {fmt2(summaryTableData.grandTotalNet)}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3"></td>
-                        </tr>
-                      </tfoot>
-                    </table>
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* TAB 2: MODERN DATE RANGE MATRIX REPORT */}
+              {/* TAB 2: FORMAT 2 REPORT (Matching Screenshot Design - 12:00 and 04:00) */}
               {activeTab === 'matrix' && (
-                <div className="space-y-8">
-                  {matrixData.map((agentGroup) => (
-                    <div
-                      key={agentGroup.agentName}
-                      className="bg-white rounded-xl border border-slate-300 shadow-sm overflow-hidden font-mono"
-                    >
-                      {/* Agent Banner Header */}
-                      <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-300 flex justify-between items-center">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-sans text-slate-500 font-semibold uppercase">Name:</span>
-                          <span className="font-extrabold text-slate-900 text-base font-sans">{agentGroup.agentName}</span>
-                        </div>
-                        <div className="text-xs font-sans font-semibold text-slate-600">
-                          Period: <span className="font-mono text-slate-900">{dates.from} ~ {dates.to}</span>
-                        </div>
-                      </div>
+                <div className="max-w-5xl mx-auto space-y-6 font-sans">
+                  <div className="bg-white border border-slate-900 rounded-sm overflow-x-auto shadow-xs">
+                    <table className="w-full text-xs text-left border-collapse min-w-[750px]">
+                      <thead>
+                        {/* Tier 1 Header */}
+                        <tr className="border-t border-b border-slate-900 bg-slate-50 font-bold text-slate-900 text-center">
+                          <th rowSpan={2} className="border-r border-slate-300 py-2.5 px-3 w-28 text-left">
+                            Date
+                          </th>
+                          <th colSpan={3} className="border-r border-slate-300 py-1.5 px-2">
+                            12:00
+                          </th>
+                          <th colSpan={3} className="border-r border-slate-300 py-1.5 px-2">
+                            04:00
+                          </th>
+                          <th rowSpan={2} className="border-r border-slate-300 py-2.5 px-3 text-right w-28">
+                            Total
+                          </th>
+                          <th rowSpan={2} className="py-2.5 px-2 text-center w-8"></th>
+                        </tr>
+                        {/* Tier 2 Header */}
+                        <tr className="border-b border-slate-900 bg-slate-50 font-bold text-slate-800 text-xs">
+                          {/* 12:00 */}
+                          <th className="border-r border-slate-200 py-1 px-2 text-right">Amount</th>
+                          <th className="border-r border-slate-200 py-1 px-2 text-right">Lucky</th>
+                          <th className="border-r border-slate-300 py-1 px-2 text-right"></th>
 
-                      {/* Matrix Table */}
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs text-center border-collapse border-b border-slate-200">
-                          <thead>
-                            <tr className="bg-slate-200 text-slate-800 font-bold border-b border-slate-300">
-                              <th className="px-3 py-2 border-r border-slate-300 text-left font-sans font-extrabold text-xs">
-                                Date
-                              </th>
-                              <th colSpan={3} className="px-3 py-2 border-r border-slate-300 bg-amber-100/60 text-slate-900">
-                                12:00 (AM Session)
-                              </th>
-                              <th colSpan={3} className="px-3 py-2 border-r border-slate-300 bg-sky-100/60 text-slate-900">
-                                04:00 (PM Session)
-                              </th>
-                              <th colSpan={2} className="px-3 py-2 bg-slate-300 text-slate-900 font-sans font-extrabold">
-                                Total / Type
-                              </th>
-                            </tr>
-                            <tr className="bg-slate-50 text-slate-600 text-[11px] font-semibold border-b border-slate-300 uppercase">
-                              <th className="px-3 py-1.5 border-r border-slate-300 text-left font-sans">Date</th>
-                              <th className="px-3 py-1.5 border-r border-slate-200 text-right bg-amber-50/50">Amount</th>
-                              <th className="px-3 py-1.5 border-r border-slate-200 text-right bg-amber-50/50">Lucky</th>
-                              <th className="px-3 py-1.5 border-r border-slate-300 text-right bg-amber-50/50">Net</th>
-                              <th className="px-3 py-1.5 border-r border-slate-200 text-right bg-sky-50/50">Amount</th>
-                              <th className="px-3 py-1.5 border-r border-slate-200 text-right bg-sky-50/50">Lucky</th>
-                              <th className="px-3 py-1.5 border-r border-slate-300 text-right bg-sky-50/50">Net</th>
-                              <th className="px-4 py-1.5 border-r border-slate-300 text-right font-bold text-slate-800">Net Total</th>
-                              <th className="px-2 py-1.5 text-center font-bold">Type</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-200 text-xs">
-                            {agentGroup.dates.map((row) => (
-                              <tr key={row.date} className="hover:bg-slate-50 transition">
-                                <td className="px-3 py-2 text-left font-sans font-medium text-slate-900 border-r border-slate-200">
-                                  {row.date}
-                                </td>
-                                <td className="px-3 py-2 text-right border-r border-slate-200 text-slate-800">
-                                  {row.m12.hasData ? fmt2(row.m12.amount) : ''}
-                                </td>
-                                <td className="px-3 py-2 text-right border-r border-slate-200 text-slate-700">
-                                  {row.m12.hasData && row.m12.lucky > 0 ? row.m12.lucky : ''}
-                                </td>
-                                <td className={`px-3 py-2 text-right border-r border-slate-300 font-bold ${row.m12.net < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
-                                  {row.m12.hasData ? fmt2(row.m12.net) : ''}
-                                </td>
-
-                                <td className="px-3 py-2 text-right border-r border-slate-200 text-slate-800">
-                                  {row.m04.hasData ? fmt2(row.m04.amount) : ''}
-                                </td>
-                                <td className="px-3 py-2 text-right border-r border-slate-200 text-slate-700">
-                                  {row.m04.hasData && row.m04.lucky > 0 ? row.m04.lucky : ''}
-                                </td>
-                                <td className={`px-3 py-2 text-right border-r border-slate-300 font-bold ${row.m04.net < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
-                                  {row.m04.hasData ? fmt2(row.m04.net) : ''}
-                                </td>
-
-                                <td className={`px-4 py-2 text-right border-r border-slate-300 font-extrabold ${row.totalNet < 0 ? 'text-rose-600 font-sans' : 'text-slate-900 font-sans'}`}>
-                                  {fmt2(row.totalNet)}
-                                </td>
-                                <td className="px-2 py-2 text-center font-sans font-bold">
-                                  <span
-                                    className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase font-bold ${
-                                      row.type === 'P' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
-                                    }`}
-                                  >
-                                    {row.type}
-                                  </span>
+                          {/* 04:00 */}
+                          <th className="border-r border-slate-200 py-1 px-2 text-right">Amount</th>
+                          <th className="border-r border-slate-200 py-1 px-2 text-right">Lucky</th>
+                          <th className="border-r border-slate-300 py-1 px-2 text-right"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {matrixData.length === 0 ? (
+                          <tr>
+                            <td colSpan={9} className="py-8 text-center text-slate-400">
+                              No records found for selected period
+                            </td>
+                          </tr>
+                        ) : (
+                          matrixData.map((agentGroup) => (
+                            <React.Fragment key={agentGroup.agentName}>
+                              {/* Agent Header Banner */}
+                              <tr className="bg-slate-100/70 border-t border-b border-slate-300 font-bold text-slate-900">
+                                <td colSpan={9} className="py-1.5 px-3">
+                                  Name : <span className="ml-2 font-extrabold">{agentGroup.agentName}</span>
                                 </td>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
 
-                      {/* Agent Subtotal Footer */}
-                      <div className="bg-slate-50 px-4 py-2.5 text-right font-sans font-bold text-sm text-slate-900 border-t border-slate-300 flex justify-between items-center">
-                        <span className="text-slate-600 text-xs font-semibold uppercase">{agentGroup.agentName} Total:</span>
-                        <span className={`text-base font-mono font-extrabold ${agentGroup.agentTotalNet < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
-                          {fmt2(agentGroup.agentTotalNet)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                              {/* Daily Rows */}
+                              {agentGroup.dates.map((row) => (
+                                <tr key={row.date} className="hover:bg-slate-50 transition">
+                                  <td className="py-1.5 px-3 border-r border-slate-200 font-mono text-slate-900">
+                                    {row.date}
+                                  </td>
 
-                  {/* Grand Total Card Banner */}
-                  <div className="border-2 border-slate-900 rounded-xl p-5 bg-slate-900 text-white flex justify-between items-center shadow-lg font-sans">
-                    <div>
-                      <span className="text-xs text-slate-400 uppercase tracking-widest font-semibold block">Overall Period Report</span>
-                      <span className="text-xl font-extrabold text-white">GRAND TOTAL</span>
-                    </div>
-                    <div className="text-right">
-                      <span className={`text-2xl font-black font-mono tracking-tight underline decoration-double ${matrixGrandTotal < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                        {fmt2(matrixGrandTotal)} MMK
-                      </span>
-                    </div>
+                                  {/* 12:00 */}
+                                  <td className="py-1.5 px-2 border-r border-slate-200 text-right font-mono text-slate-800">
+                                    {row.m12.hasData && row.m12.amount ? fmt2(row.m12.amount) : ''}
+                                  </td>
+                                  <td className="py-1.5 px-2 border-r border-slate-200 text-right font-mono text-slate-700">
+                                    {row.m12.hasData && row.m12.lucky > 0 ? fmt2(row.m12.lucky) : ''}
+                                  </td>
+                                  <td className={`py-1.5 px-2 border-r border-slate-300 text-right font-mono font-bold ${row.m12.net < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+                                    {row.m12.hasData ? fmt2(row.m12.net) : ''}
+                                  </td>
+
+                                  {/* 04:00 */}
+                                  <td className="py-1.5 px-2 border-r border-slate-200 text-right font-mono text-slate-800">
+                                    {row.m04.hasData && row.m04.amount ? fmt2(row.m04.amount) : ''}
+                                  </td>
+                                  <td className="py-1.5 px-2 border-r border-slate-200 text-right font-mono text-slate-700">
+                                    {row.m04.hasData && row.m04.lucky > 0 ? fmt2(row.m04.lucky) : ''}
+                                  </td>
+                                  <td className={`py-1.5 px-2 border-r border-slate-300 text-right font-mono font-bold ${row.m04.net < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+                                    {row.m04.hasData ? fmt2(row.m04.net) : ''}
+                                  </td>
+
+                                  {/* Total */}
+                                  <td className={`py-1.5 px-3 border-r border-slate-300 text-right font-mono font-bold ${row.totalNet < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+                                    {fmt2(row.totalNet)}
+                                  </td>
+                                  <td className="py-1.5 px-2 text-center text-xs font-semibold text-slate-700">
+                                    {row.type || 'S'}
+                                  </td>
+                                </tr>
+                              ))}
+
+                              {/* Agent Total Row */}
+                              <tr className="border-t border-b border-slate-300 font-bold text-slate-900 bg-slate-50/50">
+                                <td colSpan={7} className="py-2 px-3 text-right">
+                                  {agentGroup.agentName} <span className="ml-1">Total:</span>
+                                </td>
+                                <td className={`py-2 px-3 border-r border-slate-300 text-right font-mono font-black ${agentGroup.agentTotalNet < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+                                  {fmt2(agentGroup.agentTotalNet)}
+                                </td>
+                                <td className="py-2 px-2"></td>
+                              </tr>
+                            </React.Fragment>
+                          ))
+                        )}
+
+                        {/* Overall Grand Total Row with double underline */}
+                        {matrixData.length > 0 && (
+                          <tr className="bg-white border-t-2 border-slate-900 font-extrabold text-sm text-slate-900">
+                            <td colSpan={7} className="py-3 px-3 text-right">
+                              Grand Total:
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <span className={`inline-block font-mono font-black text-base border-b-4 border-double pb-0.5 ${
+                                matrixGrandTotal < 0 ? 'text-rose-600 border-rose-600' : 'text-slate-900 border-slate-900'
+                              }`}>
+                                {fmt2(matrixGrandTotal)}
+                              </span>
+                            </td>
+                            <td className="py-3 px-2"></td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}
@@ -896,14 +1116,6 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
         </div>
       </div>
 
-      {isCommissionModalOpen && (
-        <WeeklyCommissionModal
-          orgId={orgId}
-          agents={initialAgents}
-          onClose={() => setIsCommissionModalOpen(false)}
-          onSaved={() => loadReportData(dates.from, dates.to, selectedAgent)}
-        />
-      )}
     </div>
   );
 }

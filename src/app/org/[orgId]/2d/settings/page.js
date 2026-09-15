@@ -1,4 +1,4 @@
-import { orgDoc, orgRatesDoc, orgRestrictionDoc } from '@/lib/db/firestore.js';
+import { orgDoc, orgRatesDoc, orgRestrictionDoc, orgAgentsCol } from '@/lib/db/firestore.js';
 import { getActiveSession } from '@/lib/auth/permissions.js';
 import { getSession } from '@/lib/auth/session.js';
 import { redirect } from 'next/navigation';
@@ -18,13 +18,37 @@ export default async function SettingsPage({ params }) {
     redirect('/login');
   }
 
-  const [orgSnap, activeSession, ratesSnap, limitsSnap] = await Promise.all([
-    orgDoc(orgId).get(),
-    getActiveSession(orgId),
-    orgRatesDoc(orgId).get(),
-    orgRestrictionDoc(orgId, 'limits').get(),
-  ]);
-  if (!orgSnap.exists) redirect('/login');
+  let orgSnap = null;
+  let activeSession = null;
+  let ratesSnap = null;
+  let limitsSnap = null;
+  let agentsSnap = null;
+
+  try {
+    const fetchPromise = Promise.all([
+      orgDoc(orgId).get(),
+      getActiveSession(orgId),
+      orgRatesDoc(orgId).get(),
+      orgRestrictionDoc(orgId, 'limits').get(),
+      orgAgentsCol(orgId).orderBy('agentName', 'asc').get(),
+    ]);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Firestore timeout')), 2000)
+    );
+    const [oSnap, aSession, rSnap, lSnap, agSnap] = await Promise.race([
+      fetchPromise,
+      timeoutPromise,
+    ]);
+    orgSnap = oSnap;
+    activeSession = aSession;
+    ratesSnap = rSnap;
+    limitsSnap = lSnap;
+    agentsSnap = agSnap;
+  } catch {
+    // Offline fallback
+  }
+
+  const agents = agentsSnap?.docs ? agentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) : [];
 
   const onCount = activeSession?.onCount ?? null;
   // Hot/not-buy numbers live as array fields on the active session's own
@@ -34,7 +58,7 @@ export default async function SettingsPage({ params }) {
   const notBuyNumbersList = (activeSession?.notBuyNumbers || []).map(num => ({ id: num, num, onCount, orgId }));
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
       <SettingsPanel
         orgId={orgId}
         onCount={onCount}
@@ -42,6 +66,7 @@ export default async function SettingsPage({ params }) {
         initialLimits={limitsSnap.exists ? limitsSnap.data() : null}
         initialHotNumbers={hotNumbersList}
         initialNotBuyNumbers={notBuyNumbersList}
+        initialAgents={agents}
       />
     </div>
   );

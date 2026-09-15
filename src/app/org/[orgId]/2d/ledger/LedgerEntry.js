@@ -8,7 +8,9 @@ import AgentCombobox from './AgentCombobox.js';
 import { matchesCombo, formatCombo as rawFormatCombo } from '@/lib/ledger/shortcuts.js';
 import { useIsMac } from '@/lib/ledger/useLedgerShortcuts.js';
 import { enqueue, onQueueEvent, startAutoDrain } from '@/lib/ledger/voucherQueue.js';
+import { getLocalVoucherCounts } from '@/lib/ledger/localVoucherDb.js';
 import useLedgerFontSize from '@/lib/ledger/useLedgerFontSize.js';
+import { todayStr, getCurrentSlotKey } from '@/lib/lottery/sessionSlots.js';
 
 const ALLOWED_CHARS = /[^0-9RAGPBWNFXT+\-*/.[\]]/gi;
 
@@ -100,6 +102,7 @@ export default function LedgerEntry({
   onOpenReports,
   onOpenSale1,
   onOpenSale2,
+  onOpenLocalVouchers,
   canWrite = true,
   shortcuts,
   replaceSlash = 'P',
@@ -112,6 +115,7 @@ export default function LedgerEntry({
   const [agentId, setAgentId] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [pendingTokens, setPendingTokens] = useState([]);
+  const [voucherCounts, setVoucherCounts] = useState({ pending: 0, failed: 0, synced: 0 });
   const [editingId, setEditingId] = useState(null);
   const [editingSrNo, setEditingSrNo] = useState(null);
   const [error, setError] = useState('');
@@ -248,8 +252,20 @@ export default function LedgerEntry({
   // a rejection is dropped from the queue and needs the cashier's attention).
   useEffect(() => {
     const stopDrain = startAutoDrain(orgId);
+
+    async function fetchCounts() {
+      if (orgId) {
+        try {
+          const c = await getLocalVoucherCounts(orgId);
+          setVoucherCounts(c);
+        } catch {}
+      }
+    }
+    fetchCounts();
+
     const unsubscribe = onQueueEvent(event => {
       if (event.orgId !== orgId) return;
+      fetchCounts();
       if (event.type === 'failed') {
         setError(t('ledger.queuedSaveFailed', { tokens: (event.tokens || []).join(' '), reason: event.error }));
         return;
@@ -316,7 +332,7 @@ export default function LedgerEntry({
 
   useEffect(() => {
     setLimitValue(limit?.limitValue || 0);
-  }, [limit]);
+  }, [limit, activeSession?.id, activeSession?.onCount]);
 
   useEffect(() => {
     if (isBuyPage && !agentId) {
@@ -370,12 +386,25 @@ export default function LedgerEntry({
   }
 
   function handleQuickAmountKeyDown(e) {
+    if (e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault();
+      if (quickNumsRef.current) {
+        quickNumsRef.current.focus();
+        const len = quickNumsRef.current.value.length;
+        quickNumsRef.current.setSelectionRange(len, len);
+      }
+      return;
+    }
     if (e.key === 'Enter') {
       e.preventDefault();
       handleQuickSubmit();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      quickNumsRef.current?.focus();
+      if (quickNumsRef.current) {
+        quickNumsRef.current.focus();
+        const len = quickNumsRef.current.value.length;
+        quickNumsRef.current.setSelectionRange(len, len);
+      }
     }
   }
 
@@ -772,12 +801,20 @@ export default function LedgerEntry({
     setEditingTokenId(null);
     setEditingTokenValue('');
     setError('');
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
   }
 
   function commitTokenEdit(id) {
     const text = editingTokenValue.trim();
     if (!text) {
       removeToken(id);
+      setEditingTokenId(null);
+      setEditingTokenValue('');
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
       return;
     }
 
@@ -788,6 +825,11 @@ export default function LedgerEntry({
     }
     if (!token) {
       removeToken(id);
+      setEditingTokenId(null);
+      setEditingTokenValue('');
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
       return;
     }
 
@@ -796,6 +838,9 @@ export default function LedgerEntry({
     setEditingTokenValue('');
     setError('');
     setSuccessMsg('');
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
   }
 
   function handleClear() {
@@ -842,14 +887,6 @@ export default function LedgerEntry({
 
   async function handleSave(tokensToSave) {
     setError('');
-    if (!canWrite) {
-      setError(t('ledger.readOnlyNoSession'));
-      return;
-    }
-    if (!activeSession) {
-      setError(t('ledger.noActiveSession'));
-      return;
-    }
     if (!agentId) {
       setError(t('ledger.selectAgentError'));
       return;
@@ -862,6 +899,13 @@ export default function LedgerEntry({
       setError(t('ledger.noEntriesError'));
       return;
     }
+
+    const fallbackDate = todayStr();
+    const fallbackSlot = getCurrentSlotKey();
+    const sessionOnDate = activeSession?.onDate || fallbackDate;
+    const sessionAmpm = activeSession?.ampm || fallbackSlot;
+    const sessionOnCount = activeSession?.onCount || 1;
+    const sessionMachineId = activeSession?.machineId || 1;
 
     const tokens = tokensToSave.map(p => p.tokenText);
 
@@ -880,9 +924,9 @@ export default function LedgerEntry({
           body: JSON.stringify({
             agentId,
             tokens,
-            onCount: activeSession.onCount,
-            ampm: activeSession.ampm,
-            onDate: activeSession.onDate,
+            onCount: sessionOnCount,
+            ampm: sessionAmpm,
+            onDate: sessionOnDate,
           }),
         });
         const data = await res.json();
@@ -906,7 +950,7 @@ export default function LedgerEntry({
       return;
     }
 
-    // New voucher: no await, no spinner — it's queued to localStorage and
+    // New voucher: no await, no spinner — it's queued to localStorage/IndexedDB and
     // pushed to the server in the background (voucherQueue.js). Totals bump
     // optimistically right here, using the same parser the server uses, so
     // the exceed-limit/hot-number grid stays accurate without waiting on the
@@ -930,10 +974,10 @@ export default function LedgerEntry({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            onCount: activeSession.onCount,
-            ampm: activeSession.ampm,
-            onDate: activeSession.onDate,
-            machineId: activeSession.machineId,
+            onCount: sessionOnCount,
+            ampm: sessionAmpm,
+            onDate: sessionOnDate,
+            machineId: sessionMachineId,
             items: entries,
           }),
         });
@@ -961,10 +1005,10 @@ export default function LedgerEntry({
 
     const clientId = enqueue(orgId, {
       agentId,
-      onCount: activeSession.onCount,
-      ampm: activeSession.ampm,
-      onDate: activeSession.onDate,
-      machineId: activeSession.machineId,
+      onCount: sessionOnCount,
+      ampm: sessionAmpm,
+      onDate: sessionOnDate,
+      machineId: sessionMachineId,
       tokens,
     });
     lastQueuedClientIdRef.current = clientId;
@@ -1313,7 +1357,7 @@ export default function LedgerEntry({
         } else {
           openLimit();
         }
-      } else if (matchesCombo(e, shortcuts.reports)) {
+      } else if (matchesCombo(e, shortcuts.reports) || e.key === 'F6') {
         e.preventDefault();
         onOpenReports?.();
       } else if (matchesCombo(e, shortcuts.refresh)) {
@@ -1449,8 +1493,11 @@ export default function LedgerEntry({
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-3">
-              <p className="text-sm text-red-600 font-medium">{t('session.noSessionSelected')}</p>
+            <div className="flex items-center gap-2">
+              <span className="text-xs px-2.5 py-1 rounded-md font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 inline-flex items-center gap-1.5 border border-amber-300 dark:border-amber-800">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                Offline Standby ({t(`session.${SLOT_LABEL_KEY[getCurrentSlotKey()] || 'slot0900'}`)} · {todayStr()})
+              </span>
               {onOpenSessionPicker && (
                 <button
                   type="button"
@@ -1485,6 +1532,27 @@ export default function LedgerEntry({
             >
               <span>📈</span>
               <span>Sale 2 (F10)</span>
+            </button>
+          )}
+
+          {onOpenLocalVouchers && (
+            <button
+              type="button"
+              onClick={onOpenLocalVouchers}
+              className={`flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-lg transition border ${
+                (voucherCounts.pending > 0 || voucherCounts.failed > 0)
+                  ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border-amber-300 dark:border-amber-700 animate-pulse'
+                  : 'border-gray-300 dark:border-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800'
+              }`}
+              title="Offline / Local Vouchers"
+            >
+              <span>📦</span>
+              <span>{t('nav.localVouchers') || 'Offline Vouchers'}</span>
+              {(voucherCounts.pending > 0 || voucherCounts.failed > 0) && (
+                <span className="px-1.5 py-0.2 text-xs font-bold rounded-full bg-red-600 text-white">
+                  {voucherCounts.pending + voucherCounts.failed}
+                </span>
+              )}
             </button>
           )}
 
@@ -1626,10 +1694,11 @@ export default function LedgerEntry({
             <button
               type="button"
               onClick={onOpenReports}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 font-bold text-xs rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700 transition cursor-pointer shadow-xs"
+              title="Reports (F6)"
             >
               <span>📊</span>
-              <span>Re<u className="underline font-semibold">p</u>orts</span>
+              <span>Reports (F6)</span>
             </button>
           )}
 
@@ -1667,25 +1736,46 @@ export default function LedgerEntry({
                 value={inputValue}
                 onChange={handleChange}
                 onKeyDown={handleKeyDown}
-                disabled={!activeSession || !agentId || !canWrite}
+                disabled={!agentId}
                 placeholder={agentId ? `${t('ledger.enterNumbers')} (${formatCombo(shortcuts.focusNumber)})` : t('ledger.selectAgentFirst')}
                 className="w-full px-3 py-2 text-sm font-mono tracking-wide border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
               />
             </div>
 
-            {!canWrite && (
-              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
-                {t('ledger.readOnlyNoSession')}
-              </p>
+            {!activeSession && (
+              <div className="flex items-center gap-2 text-xs font-medium text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/40 rounded-lg px-3 py-2 mt-3">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                <span>Offline Mode: Vouchers will be saved locally in IndexedDB and automatically synced to Firestore when online.</span>
+              </div>
             )}
 
-            {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2 mt-3">{error}</p>}
+            {error && (
+              <div className="text-sm text-red-600 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 rounded-lg px-3 py-2 mt-3 space-y-1">
+                <p>{error}</p>
+                {onOpenLocalVouchers ? (
+                  <button
+                    type="button"
+                    onClick={onOpenLocalVouchers}
+                    className="text-xs font-semibold text-brand-600 dark:text-brand-400 hover:underline inline-flex items-center gap-1"
+                  >
+                    📦 {t('localVouchers.title') || 'View in Offline Vouchers'} →
+                  </button>
+                ) : (
+                  <Link
+                    href={`/org/${orgId}/2d/local-vouchers`}
+                    className="text-xs font-semibold text-brand-600 dark:text-brand-400 hover:underline inline-flex items-center gap-1"
+                  >
+                    📦 {t('localVouchers.title') || 'View in Offline Vouchers'} →
+                  </Link>
+                )}
+              </div>
+            )}
 
             <div className="flex gap-2 mt-3">
               <button
                 type="button"
                 onClick={() => handleSave(pendingTokens)}
-                disabled={saving || !activeSession || (pendingTokens.length === 0 && !editingId) || !canWrite}
+                disabled={saving || (pendingTokens.length === 0 && !editingId)}
                 className={`flex-1 text-white text-sm font-medium py-2.5 rounded-lg transition ${
                   editingId && pendingTokens.length === 0
                     ? 'bg-red-600 hover:bg-red-700 font-bold shadow-md'
@@ -1750,7 +1840,15 @@ export default function LedgerEntry({
                 </span>
               </div>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto p-2 bg-slate-50/30">
+            <div
+              onClick={(e) => {
+                if (!e.target.closest('[data-token-cell]')) {
+                  setSelectedTokenIds(new Set());
+                  setLastSelectedIndex(null);
+                }
+              }}
+              className="flex-1 min-h-0 overflow-y-auto p-2 bg-slate-50/30"
+            >
               {pendingTokens.length === 0 ? (
                 <div className="px-4 py-8 text-center text-slate-400 text-sm font-medium">{t('ledger.noEntriesYet')}</div>
               ) : visibleTokens.length === 0 ? (
@@ -1771,7 +1869,17 @@ export default function LedgerEntry({
                           {Array.from({ length: 5 }, (_, cIdx) => {
                             const globalIdx = rIdx * 5 + cIdx;
                             const p = row[cIdx];
-                            if (!p) return <td key={cIdx} className="border border-slate-150/80 dark:border-slate-800 bg-slate-50/20 px-1 py-1.5" />;
+                            if (!p) return (
+                              <td
+                                key={cIdx}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedTokenIds(new Set());
+                                  setLastSelectedIndex(null);
+                                }}
+                                className="border border-slate-150/80 dark:border-slate-800 bg-slate-50/20 px-1 py-1.5 cursor-default"
+                              />
+                            );
 
                             const isDragging = draggedTokenId === p.id;
                             const isDragOver = dragOverTokenId === p.id;
@@ -1799,6 +1907,7 @@ export default function LedgerEntry({
                                 {editingTokenId === p.id ? (
                                   <input
                                     type="text"
+                                    data-token-cell="true"
                                     value={editingTokenValue}
                                     onChange={e => setEditingTokenValue(normalizeInput(e.target.value, replaceSlash, replaceAsterisk))}
                                     onKeyDown={e => {
@@ -1817,6 +1926,7 @@ export default function LedgerEntry({
                                 ) : (
                                   <button
                                     type="button"
+                                    data-token-cell="true"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleCellSelect(p, globalIdx, e);
@@ -1826,7 +1936,11 @@ export default function LedgerEntry({
                                       startTokenEdit(p);
                                     }}
                                     onKeyDown={(e) => {
-                                      if (e.key === 'Delete' || e.key === 'Backspace') {
+                                      if (e.key === 'Enter') {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        startTokenEdit(p);
+                                      } else if (e.key === 'Delete' || e.key === 'Backspace') {
                                         e.stopPropagation();
                                         e.preventDefault();
                                         removeSelectedTokens();
@@ -1837,7 +1951,7 @@ export default function LedgerEntry({
                                         ? 'text-white font-extrabold'
                                         : 'text-slate-900 dark:text-slate-100 hover:text-indigo-700 dark:hover:text-indigo-300'
                                     }`}
-                                    title="Click to select, Ctrl+Click / Shift+Click for multi-select, press Delete key to remove"
+                                    title="Click to select, double-click to edit cell inline, press Delete to remove"
                                   >
                                     {p.tokenText}
                                   </button>
@@ -2157,6 +2271,10 @@ export default function LedgerEntry({
                   value={quickEntryNums}
                   onChange={handleQuickNumsChange}
                   onKeyDown={handleQuickNumsKeyDown}
+                  onFocus={e => {
+                    const len = e.target.value.length;
+                    e.target.setSelectionRange(len, len);
+                  }}
                   placeholder="Enter Numbers Here"
                   className="w-full px-3 py-2 text-sm font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />

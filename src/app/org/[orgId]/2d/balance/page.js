@@ -14,15 +14,29 @@ export default async function BalancePage({ params }) {
     redirect('/login');
   }
 
-  const [agentsSnap, balanceSnap, receiveSnap] = await Promise.all([
-    orgAgentsCol(orgId).orderBy('agentName', 'asc').get(),
-    orgBalanceCol(orgId).get(),
-    orgReceiveCol(orgId).get(),
-  ]);
+  let agentsList = [];
+  let balances = [];
+  let receives = [];
 
-  const agentsList = agentsSnap.docs.map(d => d.data());
-  const balances = balanceSnap.docs.map(d => d.data()).sort(byDateDesc);
-  const receives = receiveSnap.docs.map(d => d.data()).sort(byDateDesc);
+  try {
+    const fetchPromise = Promise.all([
+      orgAgentsCol(orgId).orderBy('agentName', 'asc').get(),
+      orgBalanceCol(orgId).get(),
+      orgReceiveCol(orgId).get(),
+    ]);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Firestore timeout')), 2000)
+    );
+    const [agentsSnap, balanceSnap, receiveSnap] = await Promise.race([
+      fetchPromise,
+      timeoutPromise,
+    ]);
+    agentsList = agentsSnap.docs.map(d => d.data());
+    balances = balanceSnap.docs.map(d => d.data()).sort(byDateDesc);
+    receives = receiveSnap.docs.map(d => d.data()).sort(byDateDesc);
+  } catch {
+    // Offline fallback
+  }
 
   const netByAgent = {};
   for (const row of balances) {

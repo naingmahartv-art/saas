@@ -6,6 +6,9 @@ import LanguageSwitcher from '@/components/LanguageSwitcher.js';
 import ThemeToggle from '@/components/ThemeToggle.js';
 import { useI18n } from '@/lib/i18n/index.js';
 
+import { getLocalVoucherCounts } from '@/lib/ledger/localVoucherDb.js';
+import { onQueueEvent } from '@/lib/ledger/voucherQueue.js';
+
 const STORAGE_KEY = 'sidebar_collapsed';
 
 const ICONS = {
@@ -37,6 +40,13 @@ const ICONS = {
       <polyline points="14 2 14 8 20 8" />
       <line x1="16" y1="13" x2="8" y2="13" />
       <line x1="16" y1="17" x2="8" y2="17" />
+    </>
+  ),
+  localVouchers: (
+    <>
+      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+      <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+      <line x1="12" y1="22.08" x2="12" y2="12" />
     </>
   ),
   reports: (
@@ -109,12 +119,13 @@ const ROLE_LABEL = {
 };
 
 const NAV_SEGMENTS = [
-  { key: 'ledger',    segment: 'ledger' },
-  { key: 'agents',    segment: 'agents' },
-  { key: 'reports',   segment: 'reports' },
-  { key: 'balance',   segment: 'balance' },
-  { key: 'settings',  segment: 'settings' },
-  { key: 'account',   segment: 'user-settings' },
+  { key: 'ledger',        segment: 'ledger' },
+  { key: 'localVouchers', segment: 'local-vouchers' },
+  { key: 'agents',        segment: 'agents' },
+  { key: 'reports',       segment: 'reports' },
+  { key: 'balance',       segment: 'balance' },
+  { key: 'settings',      segment: 'settings' },
+  { key: 'account',       segment: 'user-settings' },
 ];
 
 export default function Sidebar2D({ orgId, orgName, userName, role }) {
@@ -122,6 +133,7 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
   const router = useRouter();
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
+  const [voucherCounts, setVoucherCounts] = useState({ pending: 0, failed: 0, synced: 0 });
 
   const [isElectron, setIsElectron] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
@@ -133,6 +145,25 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
     } catch {
       // localStorage unavailable
     }
+
+    async function fetchCounts() {
+      if (orgId) {
+        try {
+          const counts = await getLocalVoucherCounts(orgId);
+          setVoucherCounts(counts);
+        } catch {
+          // ignore
+        }
+      }
+    }
+    fetchCounts();
+
+    const unsubQueue = onQueueEvent((event) => {
+      if (event.orgId === orgId) {
+        fetchCounts();
+      }
+    });
+
     if (
       process.env.NEXT_PUBLIC_APP_MODE === 'electron' ||
       (typeof window !== 'undefined' &&
@@ -141,16 +172,19 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
       setIsElectron(true);
     }
 
+    let unsubUpdates;
     if (typeof window !== 'undefined' && window.electronAPI?.onUpdateStatus) {
-      const unsub = window.electronAPI.onUpdateStatus((info) => {
+      unsubUpdates = window.electronAPI.onUpdateStatus((info) => {
         setUpdateInfo(info);
         setUpdateModalOpen(true);
       });
-      return () => {
-        if (typeof unsub === 'function') unsub();
-      };
     }
-  }, []);
+
+    return () => {
+      unsubQueue();
+      if (typeof unsubUpdates === 'function') unsubUpdates();
+    };
+  }, [orgId]);
 
   function handleCheckUpdates() {
     setUpdateModalOpen(true);
@@ -254,19 +288,34 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
         {navSegments.map(({ key, segment }) => {
           const href = `${base}/${segment}`;
           const active = pathname === href || pathname?.startsWith(href + '/');
+          const unSyncedCount = key === 'localVouchers' ? (voucherCounts.pending + voucherCounts.failed) : 0;
           return (
             <Link
               key={segment}
               href={href}
               title={collapsed ? t(`nav.${key}`) : undefined}
-              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition ${
+              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition relative ${
                 active
                   ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300 font-semibold'
                   : 'text-gray-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-slate-200'
               } ${collapsed ? 'justify-center px-0' : ''}`}
             >
-              <Icon name={key} className={active ? 'text-brand-600 dark:text-brand-400' : 'text-gray-400 dark:text-slate-500'} />
-              {!collapsed && <span>{t(`nav.${key}`)}</span>}
+              <div className="relative">
+                <Icon name={key} className={active ? 'text-brand-600 dark:text-brand-400' : 'text-gray-400 dark:text-slate-500'} />
+                {collapsed && unSyncedCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-white dark:border-slate-900" />
+                )}
+              </div>
+              {!collapsed && (
+                <div className="flex items-center justify-between flex-1 min-w-0">
+                  <span className="truncate">{t(`nav.${key}`)}</span>
+                  {unSyncedCount > 0 && (
+                    <span className="ml-auto px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 border border-red-200 dark:border-red-800">
+                      {unSyncedCount}
+                    </span>
+                  )}
+                </div>
+              )}
             </Link>
           );
         })}

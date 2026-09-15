@@ -49,7 +49,7 @@ export async function assertCashierWriteAllowed(session, orgId) {
   if (session.role !== 'cashier') return null;
   const active = await hasActiveSession(orgId);
   if (!active) {
-    return { error: 'No active session — read-only until a new session starts', status: 403 };
+    return { error: 'No active session — voucher will sync when a session starts', status: 503 };
   }
   return null;
 }

@@ -109,18 +109,41 @@ export async function GET(request, { params }) {
 
   const totals = {};
   const buyTotals = {};
+  let saleVouchersCount = 0;
+  let buyVouchersCount = 0;
 
   for (const doc of vouchersSnap.docs) {
     const v = doc.data();
+    const isBuy = v.isBuyVoucher === true || v.voucherType === 'buy' || v.agentId === 'buy_offload';
+
+    if (isBuy) {
+      buyVouchersCount++;
+    } else {
+      saleVouchersCount++;
+    }
+
     let entries = [];
     if (v.tokens && v.tokens.length > 0) entries = expandTokens(v.tokens);
     else if (v.details) entries = v.details.map((d) => ({ num: d.num1, amount: d.value }));
 
     for (const e of entries) {
       const amt = parseFloat(e.amount) || 0;
-      if (amt > 0) totals[e.num] = (totals[e.num] || 0) + amt;
+      if (amt > 0 && e.num !== undefined && e.num !== null) {
+        const numStr = String(e.num).padStart(2, '0');
+        if (isBuy) {
+          buyTotals[numStr] = (buyTotals[numStr] || 0) + amt;
+        } else {
+          totals[numStr] = (totals[numStr] || 0) + amt;
+        }
+      }
     }
   }
 
-  return NextResponse.json({ totals, buyTotals, luckyNumber, vouchersCount });
+  return NextResponse.json({
+    totals,
+    buyTotals,
+    luckyNumber,
+    vouchersCount: saleVouchersCount,
+    buyVouchersCount,
+  });
 }

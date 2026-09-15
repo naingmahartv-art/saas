@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { useI18n } from '@/lib/i18n/index.js';
 import { buildReportPdf, reportFileName } from '@/lib/reports/buildPdf.js';
 import { parseNumberExpression, MAX_ENTRIES } from '@/lib/lottery/numberParser.js';
@@ -98,19 +98,38 @@ const PDF_EN = {
 
 export default function ReportsModal({ orgId, activeSession, agents, onClose, initialTab = 'allAgent', isBuyPage = false }) {
   const { t } = useI18n();
-  const [tab, setTab] = useState(initialTab);
+  const [tab, setTab] = useState(() => initialTab);
   const [statusMsg, setStatusMsg] = useState('');
+
+  const dateLabel = useMemo(() => {
+    const raw = activeSession?.onDate || new Date().toISOString().slice(0, 10);
+    const parts = raw.split('-');
+    if (parts.length === 3) {
+      const year = parts[0];
+      const month = parseInt(parts[1], 10);
+      const day = parseInt(parts[2], 10);
+      return `${month}/${day}/${year}`;
+    }
+    return raw;
+  }, [activeSession]);
 
   const sessionLabel = activeSession
     ? `${t(`session.${SLOT_LABEL_KEY[activeSession.ampm] || 'slot0900'}`)} · ${activeSession.onDate}`
     : '';
-  const dateLabel = activeSession?.onDate || new Date().toISOString().slice(0, 10);
 
   // --- Report by Agent ---
-  const [selectedAgentId, setSelectedAgentId] = useState('');
+  const [selectedAgentId, setSelectedAgentId] = useState(() => (isBuyPage ? (agents[0]?.id || 'buy_offload') : (agents[0]?.id || '')));
   const [agentSlips, setAgentSlips] = useState([]);
   const [agentLoading, setAgentLoading] = useState(false);
-  const selectedAgent = agents.find(a => a.id === selectedAgentId);
+
+  const selectedAgent = useMemo(() => {
+    if (!selectedAgentId) return null;
+    if (selectedAgentId === 'buy_offload') {
+      return { id: 'buy_offload', agentName: 'Buy Offload (အဝယ်စာရင်း)', commission: 0 };
+    }
+    return agents.find(a => a.id === selectedAgentId) || { id: selectedAgentId, agentName: selectedAgentId, commission: 0 };
+  }, [selectedAgentId, agents]);
+
   const selectedAgentCommission = useMemo(() => {
     if (!selectedAgent) return 0;
     const sComms = activeSession?.agentCommissions || {};
@@ -120,12 +139,19 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
     return selectedAgent.commission ?? 0;
   }, [selectedAgent, activeSession]);
 
-  const loadAgentReport = useCallback(async (agentName) => {
-    if (!agentName) { setAgentSlips([]); return; }
+  const loadAgentReport = useCallback(async (ag) => {
+    if (!ag) { setAgentSlips([]); return; }
     setAgentLoading(true);
     try {
-      const buyFilter = isBuyPage ? '&isBuy=true' : '&isBuy=false';
-      const res = await fetch(`/api/org/${orgId}/ledger?agentName=${encodeURIComponent(agentName)}${buyFilter}`);
+      let url = `/api/org/${orgId}/ledger?isBuy=${isBuyPage ? 'true' : 'false'}`;
+      if (ag.id === 'buy_offload') {
+        url += `&agentName=${encodeURIComponent('Buy Offload (အဝယ်စာရင်း)')}`;
+      } else if (ag.agentName) {
+        url += `&agentName=${encodeURIComponent(ag.agentName)}`;
+      } else if (ag.id) {
+        url += `&agentId=${encodeURIComponent(ag.id)}`;
+      }
+      const res = await fetch(url);
       const data = await res.json();
       setAgentSlips(data.slips || []);
     } catch {
@@ -146,7 +172,9 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
   }, [orgId, activeSession, isBuyPage]);
 
   useEffect(() => {
-    if (tab === 'agent' && selectedAgent) loadAgentReport(selectedAgent.agentName);
+    if (tab === 'agent' && selectedAgent) {
+      loadAgentReport(selectedAgent);
+    }
   }, [tab, selectedAgent, loadAgentReport]);
 
   const sortedAgentSlips = useMemo(
@@ -229,15 +257,14 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
     if (tab === 'payout') loadPayout();
   }, [tab, loadPayout]);
 
-  // --- All Agent Report ---
+  // --- All Agent Report (Sale & Buy Settlement) ---
   const [allAgentSlips, setAllAgentSlips] = useState([]);
   const [allAgentLoading, setAllAgentLoading] = useState(false);
 
   const loadAllAgentData = useCallback(async () => {
     setAllAgentLoading(true);
     try {
-      const buyFilter = isBuyPage ? '?isBuy=true' : '?isBuy=false';
-      const res = await fetch(`/api/org/${orgId}/ledger${buyFilter}`);
+      const res = await fetch(`/api/org/${orgId}/ledger?all=true`);
       const data = await res.json();
       setAllAgentSlips(data.slips || []);
     } catch {
@@ -257,7 +284,7 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
         // ignore
       }
     }
-  }, [orgId, activeSession, payoutData, isBuyPage]);
+  }, [orgId, activeSession, payoutData]);
 
   useEffect(() => {
     if (tab === 'allAgent') loadAllAgentData();
@@ -276,14 +303,15 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
 
   const allAgentRows = useMemo(() => {
     return allAgentSlips.map(s => {
-      const saleAmount = s.amount || 0;
+      const isBuy = Boolean(s.isBuyVoucher || s.voucherType === 'buy' || s.agentId === 'buy_offload');
+      const rawAmount = parseFloat(s.amount) || 0;
       const ag = agentMap.get(s.agentName) || agentMap.get(s.agentId);
       const sComms = activeSession?.agentCommissions || {};
       const comRate =
         ag && sComms[ag.id] !== undefined && sComms[ag.id] !== null && sComms[ag.id] !== ''
           ? parseFloat(sComms[ag.id])
-          : ag?.commission ?? 0;
-      const comAmt = saleAmount * (comRate / 100);
+          : (ag?.commission ?? (isBuy ? 16 : 0));
+      const comAmt = rawAmount * (comRate / 100);
 
       const lAmount = luckyNo
         ? getTokenItemsForSlip(s, luckyNo)
@@ -293,13 +321,28 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
 
       const rate = ag?.rate || activeSession?.rate || 80;
       const winPayout = lAmount * rate;
+
+      let displayAmount = rawAmount;
+      let balanceTotal = 0;
+
+      if (isBuy) {
+        // Buy / Offload: Expense is negative (-rawAmount), Commission & Win Payout are recovered back (+ve)
+        displayAmount = -rawAmount;
+        balanceTotal = -rawAmount + comAmt + winPayout;
+      } else {
+        // Sales: Revenue is positive (+rawAmount), Commission & Win Payout are paid out (-ve)
+        displayAmount = rawAmount;
+        balanceTotal = rawAmount - (comAmt + winPayout);
+      }
+
       const comPlusL = comAmt + winPayout;
-      const balanceTotal = saleAmount - comPlusL;
 
       return {
         srNo: s.srNo,
-        agentName: s.agentName,
-        saleAmount,
+        agentName: s.agentName || (isBuy ? 'Buy Offload' : 'Unknown'),
+        isBuy,
+        rawAmount,
+        saleAmount: displayAmount,
         comRate,
         comAmt,
         lAmount,
@@ -311,18 +354,74 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
     }).sort((a, b) => (a.srNo || 0) - (b.srNo || 0));
   }, [allAgentSlips, agentMap, luckyNo, activeSession]);
 
-  const allAgentTotals = useMemo(() => {
-    return allAgentRows.reduce(
+  const summaryReportData = useMemo(() => {
+    const saleMap = new Map();
+    const buyMap = new Map();
+
+    for (const r of allAgentRows) {
+      const targetMap = r.isBuy ? buyMap : saleMap;
+      const group = targetMap.get(r.agentName) || {
+        agentName: r.agentName,
+        isBuy: r.isBuy,
+        rawAmount: 0,
+        sAmount: 0,
+        cRate: r.comRate,
+        comAmt: 0,
+        lAmount: 0,
+        rate: r.rate,
+        winPayout: 0,
+        balanceTotal: 0,
+      };
+
+      group.rawAmount += r.rawAmount;
+      group.sAmount += r.saleAmount; // Positive for Sale, Negative for Buy
+      group.comAmt += r.comAmt;
+      group.lAmount += r.lAmount;
+      group.rate = r.rate;
+      group.winPayout += r.winPayout;
+      group.balanceTotal += r.balanceTotal;
+      group.cRate = r.comRate;
+
+      targetMap.set(r.agentName, group);
+    }
+
+    const saleRows = [...saleMap.values()].sort((a, b) => a.agentName.localeCompare(b.agentName));
+    const buyRows = [...buyMap.values()].sort((a, b) => a.agentName.localeCompare(b.agentName));
+
+    const saleTotals = saleRows.reduce(
       (acc, r) => ({
-        saleAmount: acc.saleAmount + r.saleAmount,
-        comAmt: acc.comAmt + r.comAmt,
+        sAmount: acc.sAmount + r.sAmount,
         lAmount: acc.lAmount + r.lAmount,
-        winPayout: acc.winPayout + r.winPayout,
-        comPlusL: acc.comPlusL + r.comPlusL,
         balanceTotal: acc.balanceTotal + r.balanceTotal,
       }),
-      { saleAmount: 0, comAmt: 0, lAmount: 0, winPayout: 0, comPlusL: 0, balanceTotal: 0 }
+      { sAmount: 0, lAmount: 0, balanceTotal: 0 }
     );
+
+    const buyTotals = buyRows.reduce(
+      (acc, r) => ({
+        sAmount: acc.sAmount + r.sAmount,
+        lAmount: acc.lAmount + r.lAmount,
+        balanceTotal: acc.balanceTotal + r.balanceTotal,
+      }),
+      { sAmount: 0, lAmount: 0, balanceTotal: 0 }
+    );
+
+    const grandTotals = {
+      sAmount: saleTotals.sAmount + buyTotals.sAmount,
+      lAmount: saleTotals.lAmount + buyTotals.lAmount,
+      balanceTotal: saleTotals.balanceTotal + buyTotals.balanceTotal,
+    };
+
+    const allRows = [...saleRows, ...buyRows];
+
+    return {
+      rows: allRows,
+      saleRows,
+      saleTotals,
+      buyRows,
+      buyTotals,
+      grandTotals,
+    };
   }, [allAgentRows]);
 
   // --- Export builders ---
@@ -425,21 +524,29 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
   }
 
   function buildPayoutPdfBlob() {
-    return buildReportPdf({
-      title: PDF_EN.payoutReport,
-      subtitle: `${sessionLabel} — ${PDF_EN.luckyNumber}: ${payoutData.luckyNo}`,
-      sections: [
-        {
-          head: [[PDF_EN.totalBet, PDF_EN.totalPayout, PDF_EN.profit]],
-          rows: [[payoutData.totalBet.toLocaleString(), payoutData.totalPayout.toLocaleString(), payoutData.profit.toLocaleString()]],
-        },
-        {
-          heading: PDF_EN.perAgent,
-          head: [[PDF_EN.agent, PDF_EN.totalBet, PDF_EN.winnerBet, PDF_EN.payout, PDF_EN.net]],
-          rows: payoutData.perAgent.map(a => [a.agentName, a.totalBet.toLocaleString(), a.winnerBet.toLocaleString(), a.payout.toLocaleString(), a.net.toLocaleString()]),
-        },
-      ],
-    });
+    if (!payoutData || !payoutData.luckyNo) return null;
+    const sections = [
+      {
+        heading: `${PDF_EN.luckyNumber} : ${payoutData.luckyNo}`,
+        head: [[PDF_EN.agent, PDF_EN.totalBet, PDF_EN.winnerBet, PDF_EN.payout, PDF_EN.net]],
+        rows: payoutData.perAgent.map(a => [
+          a.agentName,
+          a.totalBet.toLocaleString(),
+          a.winnerBet.toLocaleString(),
+          a.payout.toLocaleString(),
+          a.net.toLocaleString(),
+        ]),
+      },
+      {
+        head: [[PDF_EN.totalBet, PDF_EN.totalPayout, PDF_EN.profit]],
+        rows: [[
+          payoutData.totalBet.toLocaleString(),
+          payoutData.totalPayout.toLocaleString(),
+          payoutData.profit.toLocaleString(),
+        ]],
+      },
+    ];
+    return buildReportPdf({ title: PDF_EN.payoutReport, subtitle: sessionLabel, sections });
   }
 
   function exportPayoutPdf() {
@@ -453,102 +560,79 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
   }
 
   function exportAllAgentCsv() {
-    if (allAgentRows.length === 0) return;
-    const rows = [[
-      t('reports.srNoCol'),
-      t('reports.agentCol'),
-      t('reports.saleAmountCol'),
-      t('reports.comRateCol'),
-      t('reports.comAmtCol'),
-      t('reports.lAmountCol'),
-      '*',
-      t('reports.rateCol'),
-      '=',
-      t('reports.winPayoutCol'),
-      t('reports.comPlusLCol'),
-      t('reports.balanceTotalCol'),
-    ]];
-    for (const r of allAgentRows) {
-      rows.push([
-        r.srNo,
-        r.agentName,
-        fmt2(r.saleAmount),
-        r.comRate,
-        fmt2(r.comAmt),
-        r.lAmount,
-        '*',
-        r.rate,
-        '=',
-        fmt2(r.winPayout),
-        fmt2(r.comPlusL),
-        fmt2(r.balanceTotal),
-      ]);
+    const rows = [];
+    rows.push([`Date : ${dateLabel}`]);
+    rows.push(['Agent Name', 'S-Amount', 'C-Rate', 'L-Amount', 'Rate', 'Balance Total']);
+    rows.push(['Sale Section (အရောင်းစာရင်း)']);
+    for (const r of summaryReportData.saleRows) {
+      rows.push([r.agentName, fmt2(r.sAmount), r.cRate || '', r.lAmount > 0 ? r.lAmount : '', r.rate || 80, fmt2(r.balanceTotal)]);
     }
-    rows.push([
-      t('common.total'),
-      '',
-      fmt2(allAgentTotals.saleAmount),
-      '',
-      fmt2(allAgentTotals.comAmt),
-      allAgentTotals.lAmount,
-      '',
-      '',
-      '',
-      fmt2(allAgentTotals.winPayout),
-      fmt2(allAgentTotals.comPlusL),
-      fmt2(allAgentTotals.balanceTotal),
-    ]);
-    downloadBlob(new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8;' }), reportFileName('all-agent', dateLabel, 'csv'));
+    rows.push(['Sale Subtotal', fmt2(summaryReportData.saleTotals.sAmount), '', summaryReportData.saleTotals.lAmount > 0 ? summaryReportData.saleTotals.lAmount : '', '', fmt2(summaryReportData.saleTotals.balanceTotal)]);
+    rows.push(['Buy Section (အဝယ်စာရင်း)']);
+    for (const r of summaryReportData.buyRows) {
+      rows.push([r.agentName, fmt2(r.sAmount), r.cRate || '', r.lAmount > 0 ? r.lAmount : '', r.rate || 80, fmt2(r.balanceTotal)]);
+    }
+    rows.push(['Buy Subtotal', fmt2(summaryReportData.buyTotals.sAmount), '', summaryReportData.buyTotals.lAmount > 0 ? summaryReportData.buyTotals.lAmount : '', '', fmt2(summaryReportData.buyTotals.balanceTotal)]);
+    rows.push(['Grand Total', fmt2(summaryReportData.grandTotals.sAmount), '', summaryReportData.grandTotals.lAmount > 0 ? summaryReportData.grandTotals.lAmount : '', '', fmt2(summaryReportData.grandTotals.balanceTotal)]);
+
+    downloadBlob(new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8;' }), reportFileName('sales-buy-settlement-report', dateLabel, 'csv'));
   }
 
   function buildAllAgentPdfBlob() {
-    const head = [[
-      PDF_EN.srNo,
-      PDF_EN.agent,
-      PDF_EN.saleAmount,
-      PDF_EN.comRate,
-      PDF_EN.comAmt,
-      PDF_EN.lAmount,
-      '*',
-      PDF_EN.rate,
-      '=',
-      PDF_EN.winPayout,
-      PDF_EN.comPlusL,
-      PDF_EN.balanceTotal,
-    ]];
+    const head = [['Agent Name', 'S-Amount', 'C-Rate', 'L-Amount', 'Rate', 'Balance Total']];
+    const bodyRows = [];
 
-    const bodyRows = allAgentRows.map(r => [
-      String(r.srNo),
-      r.agentName,
-      fmt2(r.saleAmount),
-      String(r.comRate),
-      fmt2(r.comAmt),
-      String(r.lAmount),
-      '*',
-      String(r.rate),
-      '=',
-      fmt2(r.winPayout),
-      fmt2(r.comPlusL),
-      fmt2(r.balanceTotal),
+    bodyRows.push(['Sale Section (အရောင်းစာရင်း)', '', '', '', '', '']);
+    for (const r of summaryReportData.saleRows) {
+      bodyRows.push([
+        r.agentName,
+        fmt2(r.sAmount),
+        String(r.cRate || ''),
+        r.lAmount > 0 ? String(r.lAmount) : '',
+        String(r.rate || 80),
+        fmt2(r.balanceTotal),
+      ]);
+    }
+    bodyRows.push([
+      'Sale Subtotal',
+      fmt2(summaryReportData.saleTotals.sAmount),
+      '',
+      summaryReportData.saleTotals.lAmount > 0 ? String(summaryReportData.saleTotals.lAmount) : '',
+      '',
+      fmt2(summaryReportData.saleTotals.balanceTotal),
+    ]);
+
+    bodyRows.push(['Buy Section (အဝယ်စာရင်း)', '', '', '', '', '']);
+    for (const r of summaryReportData.buyRows) {
+      bodyRows.push([
+        r.agentName,
+        fmt2(r.sAmount),
+        String(r.cRate || ''),
+        r.lAmount > 0 ? String(r.lAmount) : '',
+        String(r.rate || 80),
+        fmt2(r.balanceTotal),
+      ]);
+    }
+    bodyRows.push([
+      'Buy Subtotal',
+      fmt2(summaryReportData.buyTotals.sAmount),
+      '',
+      summaryReportData.buyTotals.lAmount > 0 ? String(summaryReportData.buyTotals.lAmount) : '',
+      '',
+      fmt2(summaryReportData.buyTotals.balanceTotal),
     ]);
 
     bodyRows.push([
-      PDF_EN.total,
+      'Grand Total',
+      fmt2(summaryReportData.grandTotals.sAmount),
       '',
-      fmt2(allAgentTotals.saleAmount),
+      summaryReportData.grandTotals.lAmount > 0 ? String(summaryReportData.grandTotals.lAmount) : '0',
       '',
-      fmt2(allAgentTotals.comAmt),
-      String(allAgentTotals.lAmount),
-      '',
-      '',
-      '',
-      fmt2(allAgentTotals.winPayout),
-      fmt2(allAgentTotals.comPlusL),
-      fmt2(allAgentTotals.balanceTotal),
+      fmt2(summaryReportData.grandTotals.balanceTotal),
     ]);
 
     return buildReportPdf({
-      title: PDF_EN.allAgentReport,
+      title: isBuyPage ? 'Buy Offload Settlement Report' : 'Sales & Settlement Report',
       subtitle: `Date : ${dateLabel}${sessionLabel ? ` · ${sessionLabel}` : ''}`,
       sections: [{ head, rows: bodyRows }],
       orientation: 'landscape',
@@ -556,20 +640,24 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
   }
 
   function exportAllAgentPdf() {
-    if (allAgentRows.length === 0) return;
-    downloadBlob(buildAllAgentPdfBlob(), reportFileName('all-agent', dateLabel, 'pdf'));
+    downloadBlob(buildAllAgentPdfBlob(), reportFileName('sales-buy-report', dateLabel, 'pdf'));
   }
 
   function shareAllAgentPdf() {
-    if (allAgentRows.length === 0) return;
-    shareOrDownload(buildAllAgentPdfBlob(), reportFileName('all-agent', dateLabel, 'pdf'), t, setStatusMsg);
+    shareOrDownload(buildAllAgentPdfBlob(), reportFileName('sales-buy-report', dateLabel, 'pdf'), t, setStatusMsg);
   }
 
-  const isSaleModal = tab === 'agent' || tab === 'summary' || initialTab === 'agent' || initialTab === 'summary';
-  const TABS = [
-    { key: 'payout', label: t('reports.tabPayout') },
-    ...(isSaleModal ? [] : [{ key: 'allAgent', label: t('reports.tabAllAgent') }]),
-  ];
+  const isSingleFormat = true;
+
+  const TABS = useMemo(() => {
+    if (initialTab === 'agent') {
+      return [{ key: 'agent', label: isBuyPage ? 'Buy 1 (Format 1 - By Agent)' : 'Sale 1 (Format 1 - By Agent)' }];
+    }
+    if (initialTab === 'summary') {
+      return [{ key: 'summary', label: isBuyPage ? 'Buy 2 (Format 2 - Summary)' : 'Sale 2 (Format 2 - Summary)' }];
+    }
+    return [{ key: 'allAgent', label: '📊 Sales & Buy Report' }];
+  }, [initialTab, isBuyPage]);
 
   return (
     <div
@@ -581,20 +669,28 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
         onClick={e => e.stopPropagation()}
       >
         <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1">
-            {TABS.map(tb => (
-              <button
-                key={tb.key}
-                type="button"
-                onClick={() => setTab(tb.key)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition ${
-                  tab === tb.key ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                {tb.label}
-              </button>
-            ))}
-          </div>
+          {isSingleFormat ? (
+            <div className="flex items-center gap-2">
+              <span className="text-base font-bold text-slate-900">
+                {TABS[0]?.label}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1">
+              {TABS.map(tb => (
+                <button
+                  key={tb.key}
+                  type="button"
+                  onClick={() => setTab(tb.key)}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-lg transition ${
+                    tab === tb.key ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {tb.label}
+                </button>
+              ))}
+            </div>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -627,6 +723,7 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
                       className="flex-1 max-w-md px-3.5 py-2 text-sm font-semibold border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-800 shadow-sm transition"
                     >
                       <option value="">-- {t('ledger.selectAgentPlaceholder')} --</option>
+                      {isBuyPage && <option value="buy_offload">Buy Offload (အဝယ်စာရင်း)</option>}
                       {agents.map(a => (
                         <option key={a.id} value={a.id}>{a.agentName}</option>
                       ))}
@@ -661,25 +758,42 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
                 </div>
 
                 {/* Quick Agent Selection Pills */}
-                {agents.length > 0 && (
-                  <div className="flex items-center gap-1.5 overflow-x-auto pt-1 pb-0.5">
-                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0 mr-1">Quick:</span>
-                    {agents.slice(0, 10).map(a => (
-                      <button
-                        key={a.id}
-                        type="button"
-                        onClick={() => setSelectedAgentId(a.id)}
-                        className={`px-2.5 py-1 text-xs font-medium rounded-full transition whitespace-nowrap ${
-                          selectedAgentId === a.id
-                            ? 'bg-indigo-600 text-white font-semibold shadow-sm'
-                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        {a.agentName}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div className="flex flex-wrap items-center gap-2 pt-1 pb-0.5">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider shrink-0">Agents:</span>
+                  {isBuyPage && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTab('agent');
+                        setSelectedAgentId('buy_offload');
+                      }}
+                      className={`px-3 py-1 text-xs font-bold rounded-lg border transition shadow-xs flex items-center gap-1 cursor-pointer ${
+                        selectedAgentId === 'buy_offload'
+                          ? 'bg-purple-600 text-white border-purple-700 shadow-sm'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      📦 Buy Offload (အဝယ်စာရင်း)
+                    </button>
+                  )}
+                  {agents.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => {
+                        setTab('agent');
+                        setSelectedAgentId(a.id);
+                      }}
+                      className={`px-2.5 py-1 text-xs font-medium rounded-full transition whitespace-nowrap cursor-pointer ${
+                        selectedAgentId === a.id
+                          ? 'bg-indigo-600 text-white font-semibold shadow-sm'
+                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {a.agentName}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {!selectedAgent ? (
@@ -934,16 +1048,34 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
           )}
 
           {tab === 'allAgent' && (
-            <div>
-              <div className="flex items-center justify-between gap-2 mb-4">
-                <div className="text-sm font-semibold text-gray-700">
-                  Date : {dateLabel}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-bold text-slate-800 font-sans">
+                  Date : <span className="font-mono">{dateLabel}</span>
                 </div>
                 {allAgentRows.length > 0 && (
                   <div className="flex items-center gap-2 ml-auto">
-                    <button type="button" onClick={exportAllAgentCsv} className="text-xs text-gray-500 hover:text-gray-700 font-medium px-2 py-1 rounded hover:bg-gray-100 transition">{t('ledger.exportCsv')}</button>
-                    <button type="button" onClick={exportAllAgentPdf} className="text-xs text-gray-500 hover:text-gray-700 font-medium px-2 py-1 rounded hover:bg-gray-100 transition">{t('reports.exportPdf')}</button>
-                    <button type="button" onClick={shareAllAgentPdf} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-1 rounded hover:bg-indigo-50 transition">{t('ledger.shareMessage')}</button>
+                    <button
+                      type="button"
+                      onClick={exportAllAgentCsv}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 shadow-sm transition"
+                    >
+                      📥 {t('ledger.exportCsv')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={exportAllAgentPdf}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 shadow-sm transition"
+                    >
+                      📄 {t('reports.exportPdf')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={shareAllAgentPdf}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow transition"
+                    >
+                      📤 {t('ledger.shareMessage')}
+                    </button>
                   </div>
                 )}
               </div>
@@ -953,62 +1085,151 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
               ) : allAgentRows.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-10">{t('reports.noVouchers')}</p>
               ) : (
-                <div className="border border-gray-200 rounded-lg overflow-x-auto">
-                  <table className="w-full text-xs text-left border-collapse min-w-[750px]">
-                    <thead>
-                      <tr className="bg-gray-100 text-gray-800 font-semibold border-b border-gray-300">
-                        <th className="px-2.5 py-2 border-r border-gray-200 text-center">{t('reports.srNoCol')}</th>
-                        <th className="px-2.5 py-2 border-r border-gray-200">{t('reports.agentCol')}</th>
-                        <th className="px-2.5 py-2 border-r border-gray-200 text-right">{t('reports.saleAmountCol')}</th>
-                        <th className="px-2.5 py-2 border-r border-gray-200 text-center">{t('reports.comRateCol')}</th>
-                        <th className="px-2.5 py-2 border-r border-gray-200 text-right">{t('reports.comAmtCol')}</th>
-                        <th className="px-2 py-2 text-right">{t('reports.lAmountCol')}</th>
-                        <th className="px-1 py-2 text-center text-gray-400 font-normal">*</th>
-                        <th className="px-2 py-2 text-center">{t('reports.rateCol')}</th>
-                        <th className="px-1 py-2 text-center text-gray-400 font-normal">=</th>
-                        <th className="px-2.5 py-2 border-r border-gray-200 text-right">{t('reports.winPayoutCol')}</th>
-                        <th className="px-2.5 py-2 border-r border-gray-200 text-right">{t('reports.comPlusLCol')}</th>
-                        <th className="px-2.5 py-2 text-right">{t('reports.balanceTotalCol')}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200 bg-white font-mono">
-                      {allAgentRows.map((r, i) => (
-                        <tr key={i} className="hover:bg-gray-50 transition">
-                          <td className="px-2.5 py-1.5 border-r border-gray-200 text-center">{r.srNo}</td>
-                          <td className="px-2.5 py-1.5 border-r border-gray-200 font-sans font-medium text-gray-800">{r.agentName}</td>
-                          <td className="px-2.5 py-1.5 border-r border-gray-200 text-right">{fmt2(r.saleAmount)}</td>
-                          <td className="px-2.5 py-1.5 border-r border-gray-200 text-center font-sans">{r.comRate}</td>
-                          <td className="px-2.5 py-1.5 border-r border-gray-200 text-right">{fmt2(r.comAmt)}</td>
-                          <td className="px-2 py-1.5 text-right">{r.lAmount}</td>
-                          <td className="px-1 py-1.5 text-center text-gray-400 font-sans">*</td>
-                          <td className="px-2 py-1.5 text-center font-sans">{r.rate}</td>
-                          <td className="px-1 py-1.5 text-center text-gray-400 font-sans">=</td>
-                          <td className="px-2.5 py-1.5 border-r border-gray-200 text-right">{fmt2(r.winPayout)}</td>
-                          <td className="px-2.5 py-1.5 border-r border-gray-200 text-right">{fmt2(r.comPlusL)}</td>
-                          <td className={`px-2.5 py-1.5 text-right font-bold ${r.balanceTotal < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
-                            {fmt2(r.balanceTotal)}
+                <div className="max-w-4xl mx-auto space-y-4 font-sans">
+                  {/* Clean Simple Table Container */}
+                  <div className="bg-white border border-slate-900 rounded-sm overflow-hidden">
+                    <table className="w-full text-xs text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-900 bg-slate-50 text-slate-900 font-bold text-xs">
+                          <th className="px-4 py-2.5 border-r border-slate-300 text-left w-1/4">Agent Name</th>
+                          <th className="px-4 py-2.5 border-r border-slate-300 text-right w-1/6">S-Amount</th>
+                          <th className="px-3 py-2.5 border-r border-slate-300 text-center w-1/12">C-Rate</th>
+                          <th className="px-4 py-2.5 border-r border-slate-300 text-right w-1/6">L-Amount</th>
+                          <th className="px-3 py-3.5 border-r border-slate-300 text-center w-1/12">Rate</th>
+                          <th className="px-4 py-2.5 text-right w-1/4">Balance Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 text-xs">
+                        {/* --- UPPER SECTION: SALE SECTION (ta&mif; / အရောင်းစာရင်း) --- */}
+                        <tr className="bg-slate-100/70 border-b border-slate-300">
+                          <td colSpan={6} className="px-4 py-1.5 font-bold text-slate-800 text-xs">
+                            အရောင်းစာရင်း
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-gray-100 font-bold text-gray-800 border-t-2 border-gray-300">
-                        <td colSpan={2} className="px-2.5 py-2 border-r border-gray-200 text-center font-sans">{t('common.total')}</td>
-                        <td className="px-2.5 py-2 border-r border-gray-200 text-right font-mono">{fmt2(allAgentTotals.saleAmount)}</td>
-                        <td className="px-2.5 py-2 border-r border-gray-200"></td>
-                        <td className="px-2.5 py-2 border-r border-gray-200 text-right font-mono">{fmt2(allAgentTotals.comAmt)}</td>
-                        <td className="px-2 py-2 text-right font-mono">{allAgentTotals.lAmount}</td>
-                        <td className="px-1 py-2"></td>
-                        <td className="px-2 py-2"></td>
-                        <td className="px-1 py-2"></td>
-                        <td className="px-2.5 py-2 border-r border-gray-200 text-right font-mono">{fmt2(allAgentTotals.winPayout)}</td>
-                        <td className="px-2.5 py-2 border-r border-gray-200 text-right font-mono">{fmt2(allAgentTotals.comPlusL)}</td>
-                        <td className={`px-2.5 py-2 text-right font-mono ${allAgentTotals.balanceTotal < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
-                          {fmt2(allAgentTotals.balanceTotal)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                        {summaryReportData.saleRows.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="py-4 text-center text-slate-400">
+                              No sales records found
+                            </td>
+                          </tr>
+                        ) : (
+                          summaryReportData.saleRows.map((r, idx) => (
+                            <tr key={`sale_${r.agentName}_${idx}`} className="hover:bg-slate-50 transition">
+                              <td className="px-4 py-2 border-r border-slate-200 font-semibold text-slate-900">
+                                {r.agentName}
+                              </td>
+                              <td className="px-4 py-2 border-r border-slate-200 text-right font-mono font-bold text-slate-900">
+                                {fmt2(r.sAmount)}
+                              </td>
+                              <td className="px-3 py-2 border-r border-slate-200 text-center font-mono text-slate-700">
+                                {r.cRate || ''}
+                              </td>
+                              <td className="px-4 py-2 border-r border-slate-200 text-right font-mono text-slate-800">
+                                {r.lAmount > 0 ? fmt2(r.lAmount) : ''}
+                              </td>
+                              <td className="px-3 py-2 border-r border-slate-200 text-center font-mono text-slate-700">
+                                {r.rate || 80}
+                              </td>
+                              <td className={`px-4 py-2 text-right font-mono font-bold ${r.balanceTotal < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+                                {fmt2(r.balanceTotal)}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+
+                        {/* SALE SUBTOTAL ROW */}
+                        <tr className="bg-slate-50 font-bold border-t border-b border-slate-300 text-slate-900">
+                          <td className="px-4 py-2 border-r border-slate-200"></td>
+                          <td className="px-4 py-2 border-r border-slate-200 text-right font-mono font-black text-slate-900">
+                            {fmt2(summaryReportData.saleTotals.sAmount)}
+                          </td>
+                          <td className="px-3 py-2 border-r border-slate-200 text-center"></td>
+                          <td className="px-4 py-2 border-r border-slate-200 text-right font-mono font-black text-slate-900">
+                            {summaryReportData.saleTotals.lAmount > 0 ? fmt2(summaryReportData.saleTotals.lAmount) : ''}
+                          </td>
+                          <td className="px-3 py-2 border-r border-slate-200 text-center"></td>
+                          <td className={`px-4 py-2 text-right font-mono font-black ${summaryReportData.saleTotals.balanceTotal < 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+                            {fmt2(summaryReportData.saleTotals.balanceTotal)}
+                          </td>
+                        </tr>
+
+                        {/* --- LOWER SECTION: BUY SECTION (t0,f / အဝယ်စာရင်း) --- */}
+                        <tr className="bg-slate-100/70 border-b border-slate-300">
+                          <td colSpan={6} className="px-4 py-1.5 font-bold text-slate-800 text-xs">
+                            အဝယ်စာရင်း
+                          </td>
+                        </tr>
+                        {summaryReportData.buyRows.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="py-4 text-center text-slate-400">
+                              No buy / offload records found
+                            </td>
+                          </tr>
+                        ) : (
+                          summaryReportData.buyRows.map((r, idx) => (
+                            <tr key={`buy_${r.agentName}_${idx}`} className="hover:bg-slate-50 transition">
+                              <td className="px-4 py-2 border-r border-slate-200 font-semibold text-slate-900">
+                                {r.agentName}
+                              </td>
+                              <td className="px-4 py-2 border-r border-slate-200 text-right font-mono font-bold text-rose-600">
+                                {fmt2(r.sAmount)}
+                              </td>
+                              <td className="px-3 py-2 border-r border-slate-200 text-center font-mono text-slate-700">
+                                {r.cRate || ''}
+                              </td>
+                              <td className="px-4 py-2 border-r border-slate-200 text-right font-mono text-slate-800">
+                                {r.lAmount > 0 ? fmt2(r.lAmount) : ''}
+                              </td>
+                              <td className="px-3 py-2 border-r border-slate-200 text-center font-mono text-slate-700">
+                                {r.rate || 80}
+                              </td>
+                              <td className="px-4 py-2 text-right font-mono font-bold text-slate-900">
+                                {fmt2(r.balanceTotal)}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+
+                        {/* BUY SUBTOTAL ROW */}
+                        <tr className="bg-slate-50 font-bold border-t border-b border-slate-300 text-slate-900">
+                          <td className="px-4 py-2 border-r border-slate-200"></td>
+                          <td className="px-4 py-2 border-r border-slate-200 text-right font-mono font-black text-rose-600">
+                            {fmt2(summaryReportData.buyTotals.sAmount)}
+                          </td>
+                          <td className="px-3 py-2 border-r border-slate-200 text-center"></td>
+                          <td className="px-4 py-2 border-r border-slate-200 text-right font-mono font-black text-slate-900">
+                            {summaryReportData.buyTotals.lAmount > 0 ? fmt2(summaryReportData.buyTotals.lAmount) : ''}
+                          </td>
+                          <td className="px-3 py-2 border-r border-slate-200 text-center"></td>
+                          <td className="px-4 py-2 text-right font-mono font-black text-slate-900">
+                            {fmt2(summaryReportData.buyTotals.balanceTotal)}
+                          </td>
+                        </tr>
+
+                        {/* --- GRAND TOTAL ROW (AT BOTTOM WITH DOUBLE UNDERLINE) --- */}
+                        <tr className="bg-white font-extrabold border-t-2 border-slate-900 text-sm">
+                          <td className="px-4 py-3 border-r border-slate-200"></td>
+                          <td className="px-4 py-3 border-r border-slate-200 text-right font-mono font-black text-base text-slate-900">
+                            {fmt2(summaryReportData.grandTotals.sAmount)}
+                          </td>
+                          <td className="px-3 py-3 border-r border-slate-200 text-center"></td>
+                          <td className="px-4 py-3 border-r border-slate-200 text-right font-mono font-black text-base text-slate-900">
+                            {summaryReportData.grandTotals.lAmount > 0 ? fmt2(summaryReportData.grandTotals.lAmount) : '0'}
+                          </td>
+                          <td className="px-3 py-3 border-r border-slate-200 text-center"></td>
+                          <td className="px-4 py-3 text-right">
+                            <span className={`inline-block font-mono font-black text-base border-b-4 border-double pb-0.5 ${
+                              summaryReportData.grandTotals.balanceTotal < 0
+                                ? 'text-rose-600 border-rose-600'
+                                : 'text-slate-900 border-slate-900'
+                            }`}>
+                              {fmt2(summaryReportData.grandTotals.balanceTotal)}
+                            </span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
             </div>
