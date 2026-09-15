@@ -8,7 +8,7 @@ import AgentCombobox from './AgentCombobox.js';
 import { matchesCombo, formatCombo as rawFormatCombo } from '@/lib/ledger/shortcuts.js';
 import { useIsMac } from '@/lib/ledger/useLedgerShortcuts.js';
 import { enqueue, onQueueEvent, startAutoDrain } from '@/lib/ledger/voucherQueue.js';
-import { getLocalVoucherCounts } from '@/lib/ledger/localVoucherDb.js';
+import { getLocalVoucherCounts, saveLocalVoucher, deleteLocalVoucher } from '@/lib/ledger/localVoucherDb.js';
 import useLedgerFontSize from '@/lib/ledger/useLedgerFontSize.js';
 import { todayStr, getCurrentSlotKey } from '@/lib/lottery/sessionSlots.js';
 
@@ -856,30 +856,41 @@ export default function LedgerEntry({
 
   async function handleDeleteVoucher(vId) {
     const targetId = vId || editingId;
-    if (!targetId || !activeSession) return;
+    if (!targetId) return;
+    const fallbackDate = todayStr();
+    const fallbackSlot = getCurrentSlotKey();
+    const sessionOnDate = activeSession?.onDate || fallbackDate;
+    const sessionAmpm = activeSession?.ampm || fallbackSlot;
+    const sessionOnCount = activeSession?.onCount || 1;
+    const delNo = editingSrNo;
+
     setSaving(true);
     setError('');
     try {
-      const q = `onCount=${encodeURIComponent(activeSession.onCount)}&ampm=${encodeURIComponent(activeSession.ampm)}&onDate=${encodeURIComponent(activeSession.onDate)}`;
-      const res = await fetch(`/api/org/${orgId}/ledger/${targetId}?${q}`, {
-        method: 'DELETE',
+      await deleteLocalVoucher(targetId, orgId);
+      enqueue(orgId, {
+        id: targetId,
+        voucherId: targetId,
+        action: 'delete',
+        voucherType: isBuyPage ? 'buy' : 'sale',
+        isBuyVoucher: isBuyPage,
+        onCount: sessionOnCount,
+        ampm: sessionAmpm,
+        onDate: sessionOnDate,
+        srNo: delNo,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || 'Failed to delete voucher');
-        return;
-      }
-      const deletedSrNo = editingSrNo || data.srNo;
+
       setPendingTokens([]);
       setInputValue('');
       setAgentId('');
       setWarnings([]);
-      setSuccessMsg(`Voucher #${deletedSrNo || ''} deleted successfully!`);
+      setSuccessMsg(`Voucher #${delNo || ''} deleted successfully!`);
       setEditingId(null);
       setEditingSrNo(null);
       if (onSaved) onSaved();
+      setTimeout(() => setSuccessMsg(''), 4000);
     } catch {
-      setError(t('common.networkError'));
+      setError(t('common.failedToSave'));
     } finally {
       setSaving(false);
     }
@@ -909,41 +920,84 @@ export default function LedgerEntry({
 
     const tokens = tokensToSave.map(p => p.tokenText);
 
-    // Editing an existing voucher is a deliberate, lower-frequency action —
-    // it stays a normal awaited save, unlike new-voucher creation below.
+    // Update existing voucher: save to offline DB and enqueue to sync in background
     if (editingId) {
       if (tokensToSave.length === 0) {
         await handleDeleteVoucher(editingId);
         return;
       }
+
+      let entries;
+      try {
+        entries = tokens.flatMap(text => {
+          const { entries: parsed, error: parseError } = parseNumberExpression(text, { maxEntries: MAX_ENTRIES });
+          if (parseError) throw new Error(parseError);
+          return parsed;
+        });
+      } catch (err) {
+        setError(err.message);
+        return;
+      }
+
+      const amount = entries.reduce((sum, it) => sum + (parseFloat(it.amount || it.value) || 0), 0);
+      const updateNo = editingSrNo;
+      const targetAgent = agents.find(a => a.id === agentId);
+      const agentName = targetAgent?.agentName || (isBuyPage ? 'Buy Offload' : agentId);
+
       setSaving(true);
       try {
-        const res = await fetch(`/api/org/${orgId}/ledger/${editingId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId,
-            tokens,
-            onCount: sessionOnCount,
-            ampm: sessionAmpm,
-            onDate: sessionOnDate,
-          }),
+        await saveLocalVoucher({
+          id: editingId,
+          clientId: editingId,
+          voucherId: editingId,
+          orgId,
+          agentId,
+          agentName,
+          tokens,
+          entries,
+          items: entries,
+          amount,
+          onCount: sessionOnCount,
+          ampm: sessionAmpm,
+          onDate: sessionOnDate,
+          machineId: sessionMachineId,
+          voucherType: isBuyPage ? 'buy' : 'sale',
+          isBuyVoucher: isBuyPage,
+          action: 'update',
+          status: 'pending',
+          srNo: updateNo,
         });
-        const data = await res.json();
-        if (!res.ok) {
-          setError(data.error || t('common.failedToSave'));
-          return;
-        }
+
+        enqueue(orgId, {
+          id: editingId,
+          voucherId: editingId,
+          agentId,
+          agentName,
+          tokens,
+          entries,
+          items: entries,
+          amount,
+          onCount: sessionOnCount,
+          ampm: sessionAmpm,
+          onDate: sessionOnDate,
+          machineId: sessionMachineId,
+          voucherType: isBuyPage ? 'buy' : 'sale',
+          isBuyVoucher: isBuyPage,
+          action: 'update',
+          srNo: updateNo,
+        });
+
         setPendingTokens([]);
         setInputValue('');
         setAgentId('');
         setWarnings([]);
-        setSuccessMsg(t('ledger.updatedSrNo', { n: editingSrNo }));
+        setSuccessMsg(t('ledger.updatedSrNo', { n: updateNo }));
         setEditingId(null);
         setEditingSrNo(null);
         if (onSaved) onSaved();
-      } catch {
-        setError(t('common.networkError'));
+        setTimeout(() => setSuccessMsg(''), 4000);
+      } catch (err) {
+        setError(err.message || t('common.failedToSave'));
       } finally {
         setSaving(false);
       }

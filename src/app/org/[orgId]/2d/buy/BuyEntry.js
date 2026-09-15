@@ -536,6 +536,7 @@ export default function BuyEntry({
             onCount: vOnCount,
             ampm: vAmpm,
             onDate: vOnDate,
+            srNo: delNo,
           });
 
           setPendingTokens([]);
@@ -566,6 +567,7 @@ export default function BuyEntry({
           voucherId: editingId,
           orgId,
           agentId: agentId || 'buy_offload',
+          agentName: 'Buy Offload (အဝယ်စာရင်း)',
           tokens,
           items,
           entries: items,
@@ -578,12 +580,14 @@ export default function BuyEntry({
           isBuyVoucher: true,
           action: 'update',
           status: 'pending',
+          srNo: updateNo,
         });
 
         enqueue(orgId, {
           id: editingId,
           voucherId: editingId,
           agentId: agentId || 'buy_offload',
+          agentName: 'Buy Offload (အဝယ်စာရင်း)',
           tokens,
           items,
           entries: items,
@@ -595,6 +599,7 @@ export default function BuyEntry({
           voucherType: 'buy',
           isBuyVoucher: true,
           action: 'update',
+          srNo: updateNo,
         });
 
         setPendingTokens([]);

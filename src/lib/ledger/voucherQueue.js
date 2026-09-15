@@ -60,6 +60,7 @@ export function enqueue(orgId, voucher) {
     isBuyVoucher: isBuy,
     action: voucher.action || 'create', // 'create' | 'update' | 'delete'
     status: 'pending',
+    srNo: voucher.srNo || null,
     createdAt: voucher.createdAt || Date.now(),
   };
 
@@ -221,15 +222,20 @@ export async function drainQueue(orgId) {
       const data = await res.json().catch(() => ({}));
 
       if (res.ok) {
-        // Successfully saved on server — update status to synced (never delete)
-        await updateLocalVoucher(item.id, {
-          status: 'synced',
-          srNo: data.srNo ?? item.srNo,
-          syncedAt: Date.now(),
-          error: null,
-        }, orgId);
+        if (item.action === 'delete') {
+          await deleteLocalVoucher(item.id, orgId);
+          emit({ type: 'deleted', orgId, clientId: item.id });
+        } else {
+          // Successfully saved or updated on server — update status to synced
+          await updateLocalVoucher(item.id, {
+            status: 'synced',
+            srNo: data.srNo ?? item.srNo,
+            syncedAt: Date.now(),
+            error: null,
+          }, orgId);
 
-        emit({ type: 'saved', orgId, clientId: item.id, srNo: data.srNo ?? item.srNo });
+          emit({ type: 'saved', orgId, clientId: item.id, srNo: data.srNo ?? item.srNo });
+        }
       } else {
         const status = res.status;
         if (status >= 500 || status === 429) {

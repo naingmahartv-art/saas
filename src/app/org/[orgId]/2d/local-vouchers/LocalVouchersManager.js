@@ -391,6 +391,7 @@ export default function LocalVouchersManager({ orgId, agents = EMPTY_AGENTS, act
             <thead className="bg-gray-50 dark:bg-slate-800/50 text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider border-b border-gray-100 dark:border-slate-800">
               <tr>
                 <th className="py-3 px-4">{t('localVouchers.statusCol')}</th>
+                <th className="py-3 px-4">{t('localVouchers.actionTypeCol')}</th>
                 <th className="py-3 px-4">{t('localVouchers.timeCol')}</th>
                 <th className="py-3 px-4">{t('localVouchers.sessionCol')}</th>
                 <th className="py-3 px-4">{t('localVouchers.agentCol')}</th>
@@ -403,13 +404,13 @@ export default function LocalVouchersManager({ orgId, agents = EMPTY_AGENTS, act
             <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-gray-400 dark:text-slate-500">
+                  <td colSpan={9} className="py-8 text-center text-gray-400 dark:text-slate-500">
                     Loading vouchers…
                   </td>
                 </tr>
               ) : filteredVouchers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-gray-400 dark:text-slate-500">
+                  <td colSpan={9} className="py-12 text-center text-gray-400 dark:text-slate-500">
                     <div className="space-y-2">
                       <p className="text-2xl">📦</p>
                       <p>{t('localVouchers.noVouchers')}</p>
@@ -424,6 +425,8 @@ export default function LocalVouchersManager({ orgId, agents = EMPTY_AGENTS, act
                   const isSyncing = v.status === 'syncing';
                   const isFailed = v.status === 'failed';
                   const isSynced = v.status === 'synced';
+                  const actionType = v.action || 'create';
+                  const isBuy = v.voucherType === 'buy' || v.isBuyVoucher;
 
                   return (
                     <tr
@@ -457,6 +460,25 @@ export default function LocalVouchersManager({ orgId, agents = EMPTY_AGENTS, act
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300 border border-red-200 dark:border-red-800">
                             <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                             Failed
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Operation / Action */}
+                      <td className="py-3 px-4 whitespace-nowrap text-xs">
+                        {actionType === 'update' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                            ✏️ {t('localVouchers.actionUpdate')} {v.srNo ? `#${v.srNo}` : ''}
+                            <span className="text-[10px] opacity-75 font-normal">({isBuy ? t('localVouchers.typeBuy') : t('localVouchers.typeSale')})</span>
+                          </span>
+                        ) : actionType === 'delete' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                            🗑️ {t('localVouchers.actionDelete')} {v.srNo ? `#${v.srNo}` : ''}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200 dark:border-sky-800">
+                            ➕ {t('localVouchers.actionCreate')}
+                            <span className="text-[10px] opacity-75 font-normal">({isBuy ? t('localVouchers.typeBuy') : t('localVouchers.typeSale')})</span>
                           </span>
                         )}
                       </td>
@@ -562,6 +584,15 @@ export default function LocalVouchersManager({ orgId, agents = EMPTY_AGENTS, act
             {/* Metadata Grid */}
             <div className="grid grid-cols-2 gap-3 bg-gray-50 dark:bg-slate-800/60 p-3.5 rounded-xl text-xs">
               <div>
+                <span className="text-gray-400 block">{t('localVouchers.actionTypeCol')}</span>
+                <span className="font-semibold text-gray-800 dark:text-slate-200 capitalize flex items-center gap-1.5">
+                  {selectedVoucher.action === 'update' ? `✏️ ${t('localVouchers.actionUpdate')}` : selectedVoucher.action === 'delete' ? `🗑️ ${t('localVouchers.actionDelete')}` : `➕ ${t('localVouchers.actionCreate')}`}
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-slate-300">
+                    {selectedVoucher.voucherType === 'buy' || selectedVoucher.isBuyVoucher ? t('localVouchers.typeBuy') : t('localVouchers.typeSale')}
+                  </span>
+                </span>
+              </div>
+              <div>
                 <span className="text-gray-400 block">Agent</span>
                 <span className="font-semibold text-gray-800 dark:text-slate-200">
                   {agentMap.get(selectedVoucher.agentId) || selectedVoucher.agentId || '—'}
@@ -583,6 +614,12 @@ export default function LocalVouchersManager({ orgId, agents = EMPTY_AGENTS, act
                 <span className="text-gray-400 block">Server Sr No.</span>
                 <span className="font-semibold text-emerald-600 dark:text-emerald-400">
                   {selectedVoucher.srNo ? `#${selectedVoucher.srNo}` : 'Not yet assigned'}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-400 block">Status</span>
+                <span className="font-semibold text-gray-800 dark:text-slate-200 capitalize">
+                  {selectedVoucher.status}
                 </span>
               </div>
               {selectedVoucher.error && (
