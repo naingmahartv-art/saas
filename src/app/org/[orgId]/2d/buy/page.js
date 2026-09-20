@@ -62,6 +62,7 @@ export default async function BuyPage({ params }) {
 
   const notBuyList = activeSession?.notBuyNumbers || [];
   const hotList = activeSession?.hotNumbers || [];
+  const luckyNumber = activeSession?.luckyNumber || activeSession?.luckyNo || null;
   const isUpperRole = ['super_admin', 'org_admin', 'supervisor'].includes(session.role);
   const isSessionOpen = activeSession?.isActive === true;
   const canWrite = isUpperRole || isSessionOpen;
