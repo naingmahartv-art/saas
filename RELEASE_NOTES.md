@@ -1,62 +1,70 @@
-# Release Notes — SaaS Platform v1.2.6
+# Release Notes - SaaS Platform v1.2.8
 
-**Release Date:** September 1, 2026  
-**Build Target:** Windows (`SaaS-Platform-Setup-1.2.6.exe`)
-
----
-
-## 🚀 What's New & Highlights
-
-### 1. 📊 2D Reports Page Redesign (`/2d/reports`)
-- **Report Format 1 (Period Settlement Report)**:
-  - Clean, minimalist bordered layout matching official accounting standards.
-  - Columns: `Name` | `Amount` | `Lucky` | `Total` | `Type` (`S` / `B`).
-  - Clear header with date range and voucher counts.
-  - Negative net amounts highlighted in red.
-  - Accounting **double-underline** on the final Grand Total settlement.
-  - Granular period filtering: **Day** (date picker), **Week**, and **Month** (month dropdown selector).
-
-- **Report Format 2 (Date Range Matrix)**:
-  - Grouped by Agent with prominent `Name : <Agent Name>` headers.
-  - Displays daily breakdowns for active trading sessions (**12:00** and **04:00**):
-    - Sub-columns: `Amount` | `Lucky` | `Net`.
-  - Daily Net Total and Slip Type indicator.
-  - Subtotal row for each agent (`<Agent Name> Total:`).
-  - Summary **Grand Total** with double-underline at the bottom.
-  - Integrated per-session commission rates and win-multiplier rates for each agent.
-  - Removed `09:00` session columns per requirements.
-
-- **Export Updates**:
-  - Full CSV and PDF export support updated for both Format 1 and Format 2 structures.
+**Release Date:** September 20, 2026  
+**Build Artifacts:** `SaaS-Platform-Setup-1.2.8.exe` (Windows x64)
 
 ---
 
-### 2. 📑 2D Ledger (`/2d/ledger`) & Buy Page Reports Modal (`F6`)
-- **Two-Section Accounting Format**:
-  - **Upper Section (`ta&mif;` / အရောင်းစာရင်း)**: Agent Sales, Commission %, Lucky wins, Multiplier Rate, and Balance Total + Sale Subtotal.
-  - **Lower Section (`t0,f` / အဝယ်စာရင်း)**: Offload/Buy entries, Commission recovery, Lucky wins, and Balance Total + Buy Subtotal.
-  - Grand settlement total with double-underline.
+## 🌟 Highlights & Major Features
+
+### 1. Dynamic User Roles & Granular Permission Matrix
+* **Custom Role Management UI (`/org/[orgId]/admin/roles`)**:
+  * Organizations can now define custom roles (e.g. `Auditor`, `Accountant`, `Floor Supervisor`) or customize default templates (`cashier`, `supervisor`, `org_admin`).
+  * 10 distinct permission categories with 38 granular capabilities spanning Sale Ledger, Buy Offload, Voucher History, Agent Management, Session Controls, Financial Settlements, Local Storage Queue, and Audit Logs.
+* **Real-time API & Middleware Enforcement**:
+  * Write endpoints (`/api/org/[orgId]/ledger/*`, `/api/org/[orgId]/agents/*`, etc.) enforce granular permissions dynamically against Firestore custom role definitions.
+  * Attempted actions without proper permissions are immediately rejected with `403 Forbidden`.
+* **Dynamic Member Assignment**:
+  * Resolved user creation validation in `/api/organizations/[orgId]/users` to support assigning any organization-defined custom role.
 
 ---
 
-### 3. ⚙️ Agent Session Commissions & Rates Support
-- Added support for per-session commission and rate customization for each agent.
-- Range report API (`/api/org/[orgId]/reports/range`) and settlement calculations automatically resolve:
-  - **Commission**: `session.agentCommissions[agentId]` $\rightarrow$ `agent.commission` $\rightarrow$ default (`16%` for Buy / `0%` for Sales).
-  - **Rate**: `session.agentRates[agentId]` $\rightarrow$ `agent.rate` $\rightarrow$ session `rate` $\rightarrow$ default `80`.
+### 2. Finished / Closed Session Voucher Policy
+* **Cashier Role (Lower Role)**:
+  * Automatically switches to **Strict Read-Only Mode** when a lottery session closes (`isActive: false`).
+  * Entry form inputs, touch keypad, and delete buttons are disabled with clear status badge: `Session Closed (Read Only)`.
+  * Backend endpoints reject write attempts on finished sessions with `403 Forbidden`.
+* **Supervisor & Admin Roles (Upper Roles)**:
+  * Retain full historical auditing and override rights on finished sessions.
+  * UI displays an amber badge: `Finished Session (Admin Edit)`.
 
 ---
 
-### 4. ⌨️ Quick Entry Modal Usability
-- **`Shift + Tab` Navigation**:
-  - Pressing `Shift + Tab` in the **Amount** field returns focus to the **Numbers** field without selecting all text.
-  - Cursor is positioned directly at the **end of the existing numbers** for fast appending and editing.
-- **`Escape` Key**:
-  - Pressing `Escape` in Amount returns focus to the end of Numbers textbox.
-- Implemented across both `/2d/ledger` and `/2d/buy` Quick Entry modals.
+### 3. Local Vouchers & Per-Session Offline Sync UI
+* **Per-Session Queue Separation (`/org/[orgId]/2d/local-vouchers`)**:
+  * Added **Session Selector dropdown** and **Interactive Session Status Pills** to filter local vouchers by specific date and time slot (e.g., `12:00 PM #1`, `04:30 PM #2`).
+  * Displays per-session breakdown of Synced (`✓`), Pending (`⏳`), and Failed (`⚠️`) records.
+* **Offline-to-Online Auto Reconnection Sync**:
+  * Automatic background drain loop syncs pending local vouchers to Firestore in chronological order when network reconnects.
+  * Sequential Server Serial Numbers (`srNo`) are automatically assigned and confirmed.
 
 ---
 
-### 5. 📦 Desktop Build & Packaging
-- Upgraded desktop shell version to **`1.2.6`**.
-- Built standalone Windows installer: `electron-app/dist/SaaS-Platform-Setup-1.2.6.exe`.
+## 🐛 Bug Fixes & Stability Improvements
+
+1. **Fixed `luckyNumber is not defined` ReferenceError**:
+   - Resolved runtime crash in `2D Ledger` and `Buy Workspace` server page components.
+2. **Dynamic Custom Role Validation**:
+   - Fixed `Role must be one of: org_admin, supervisor, cashier` error when registering members with newly created custom roles.
+3. **App Routing & Middleware for Custom Roles**:
+   - Updated `middleware.js` and `canAccessOrgApp` in `permissions.js` to ensure users with custom roles can seamlessly access authorized application sections.
+4. **Desktop Auto-Update & Native Engine**:
+   - Upgraded desktop shell dependencies and updated release metadata in `latest.yml`.
+
+---
+
+## 🧪 Quality Assurance & Verification Matrix
+
+* **Automated Test Suite**:
+  - `scripts/run-all-scenarios.js`: **24 / 24 Scenarios Verified Passed**.
+  - Verified online creation, complex shorthand token expansion (`19R100`, `0F300`, `[12]500`), editing, deletion, closed session guards, offline queueing, and reconnection sync.
+* **Manual QA Test Plan**:
+  - Exported standard human testing test cases in `public/human_testing_test_cases.csv`.
+
+---
+
+## 📦 Download & Installation
+
+* **Windows Installer**: `electron-app/dist/SaaS-Platform-Setup-1.2.8.exe`
+* **Size**: 97.5 MB
+* **Architecture**: Windows x64 (NSIS one-click installer)
