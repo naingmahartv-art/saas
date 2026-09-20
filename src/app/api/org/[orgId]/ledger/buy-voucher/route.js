@@ -9,7 +9,7 @@ import {
 } from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth';
 import { parseNumberExpression } from '@/lib/lottery/numberParser.js';
-import { assertCashierWriteAllowed, getClientIp } from '@/lib/auth/permissions.js';
+import { assertCashierWriteAllowed, getClientIp, assertPermission } from '@/lib/auth/permissions.js';
 import { logActivity } from '@/lib/db/log-activity.js';
 
 function expandTokens(tokens) {
@@ -33,6 +33,11 @@ export async function POST(request, { params }) {
     const session = await getSession();
     if (!session || (session.orgId !== orgId && session.role !== 'super_admin')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const permError = await assertPermission(session, orgId, 'buy.create');
+    if (permError) {
+      return NextResponse.json({ error: permError.error }, { status: permError.status });
     }
 
     const { onCount, ampm, onDate, machineId, agentId, tokens, items } = await request.json();

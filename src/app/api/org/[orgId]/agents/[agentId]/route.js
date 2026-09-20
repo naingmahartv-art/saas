@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
 import { orgAgentsCol, orgAgentDoc } from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth/session.js';
+import { assertPermission } from '@/lib/auth/permissions.js';
 
 // PUT /api/org/[orgId]/agents/[agentId] — update an agent
 export async function PUT(request, { params }) {
@@ -8,6 +8,11 @@ export async function PUT(request, { params }) {
   const session = await getSession();
   if (!session || (session.orgId !== orgId && session.role !== 'super_admin')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const permError = await assertPermission(session, orgId, 'agents.edit');
+  if (permError) {
+    return NextResponse.json({ error: permError.error }, { status: permError.status });
   }
 
   const { agentName, address, phone, commission, rate } = await request.json();
@@ -47,6 +52,11 @@ export async function DELETE(request, { params }) {
   const session = await getSession();
   if (!session || (session.orgId !== orgId && session.role !== 'super_admin')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const permError = await assertPermission(session, orgId, 'agents.delete');
+  if (permError) {
+    return NextResponse.json({ error: permError.error }, { status: permError.status });
   }
 
   await orgAgentDoc(orgId, agentId).delete();

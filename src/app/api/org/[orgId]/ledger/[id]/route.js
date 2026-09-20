@@ -4,7 +4,7 @@ import { getDb, orgSessionDoc, orgSessionVoucherDoc, orgAgentDoc, sessionId as b
 import { applyRtdbDelta } from '@/lib/db/rtdb.js';
 import { getSession } from '@/lib/auth';
 import { parseNumberExpression } from '@/lib/lottery/numberParser.js';
-import { assertCashierWriteAllowed, getClientIp } from '@/lib/auth/permissions.js';
+import { assertCashierWriteAllowed, getClientIp, assertPermission } from '@/lib/auth/permissions.js';
 import { logActivity } from '@/lib/db/log-activity.js';
 
 function expandTokens(tokens) {
@@ -35,6 +35,11 @@ export async function PUT(request, { params }) {
   const session = await getSession();
   if (!session || (session.orgId !== orgId && session.role !== 'super_admin')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const permError = await assertPermission(session, orgId, 'ledger.update');
+  if (permError) {
+    return NextResponse.json({ error: permError.error }, { status: permError.status });
   }
 
   const body = await request.json();
@@ -171,6 +176,11 @@ export async function DELETE(request, { params }) {
   const session = await getSession();
   if (!session || (session.orgId !== orgId && session.role !== 'super_admin')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const permError = await assertPermission(session, orgId, 'ledger.delete');
+  if (permError) {
+    return NextResponse.json({ error: permError.error }, { status: permError.status });
   }
 
   const { searchParams } = new URL(request.url);

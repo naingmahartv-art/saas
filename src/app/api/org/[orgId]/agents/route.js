@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
 import { orgAgentsCol } from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth/session.js';
+import { assertPermission } from '@/lib/auth/permissions.js';
 
 // GET /api/org/[orgId]/agents — list all agents for the org
 export async function GET(request, { params }) {
@@ -23,6 +24,11 @@ export async function POST(request, { params }) {
   const session = await getSession();
   if (!session || (session.orgId !== orgId && session.role !== 'super_admin')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const permError = await assertPermission(session, orgId, 'agents.create');
+  if (permError) {
+    return NextResponse.json({ error: permError.error }, { status: permError.status });
   }
 
   const { agentName, address, phone, commission, rate } = await request.json();

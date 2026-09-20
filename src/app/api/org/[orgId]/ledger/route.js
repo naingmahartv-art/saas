@@ -10,7 +10,7 @@ import {
 import { applyRtdbDelta } from '@/lib/db/rtdb.js';
 import { getSession } from '@/lib/auth';
 import { parseNumberExpression } from '@/lib/lottery/numberParser.js';
-import { assertCashierWriteAllowed, getClientIp, getActiveSession } from '@/lib/auth/permissions.js';
+import { assertCashierWriteAllowed, getClientIp, getActiveSession, assertPermission } from '@/lib/auth/permissions.js';
 import { logActivity } from '@/lib/db/log-activity.js';
 import { isBeforeCutover, getLegacyLedgerSlips } from '@/lib/db/legacy-reports.js';
 
@@ -93,6 +93,11 @@ export async function POST(request, { params }) {
     const session = await getSession();
     if (!session || (session.orgId !== orgId && session.role !== 'super_admin')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const permError = await assertPermission(session, orgId, 'ledger.create');
+    if (permError) {
+      return NextResponse.json({ error: permError.error }, { status: permError.status });
     }
 
     const { agentId, onCount, ampm, onDate, machineId, tokens, clientId } = await request.json();
