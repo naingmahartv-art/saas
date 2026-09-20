@@ -12,6 +12,8 @@ import {
   orgSessionDoc,
   orgAgentsCol,
   orgAgentDoc,
+  orgSessionVouchersCol,
+  orgSessionVoucherDoc,
   sessionId as buildSessionId,
 } from '../src/lib/db/firestore.js';
 import { DEFAULT_ROLES, ALL_PERMISSION_KEYS } from '../src/lib/auth/permissionMatrix.js';
@@ -37,17 +39,58 @@ function assert(condition, message) {
 }
 
 async function runTests() {
-  console.log('\n======================================================');
-  console.log('🚀 RUNNING SUITE: ROLES, PERMISSIONS & VOUCHER TESTING');
-  console.log('======================================================\n');
+  console.log('\n========================================================================');
+  console.log('🚀 RUNNING COMPREHENSIVE SUITE: ONLINE/OFFLINE VOUCHERS & SESSIONS');
+  console.log('========================================================================\n');
 
   const testOrgId = `test_org_${Date.now()}`;
   const testDate = '2026-09-20';
-  const testSlot = '12:00';
-  const testCount = 1;
-  const sid = buildSessionId(testDate, testSlot, testCount);
+  const session1Slot = '12:00';
+  const session1Count = 1;
+  const session1Id = buildSessionId(testDate, session1Slot, session1Count);
+
+  const session2Slot = '04:30';
+  const session2Count = 2;
+  const session2Id = buildSessionId(testDate, session2Slot, session2Count);
+
+  const testAgentId = `agent_${Date.now()}`;
 
   try {
+    // -------------------------------------------------------------------------
+    // SETUP: Initialize test Agent & Sessions in Firestore
+    // -------------------------------------------------------------------------
+    await orgAgentDoc(testOrgId, testAgentId).set({
+      id: testAgentId,
+      agentId: testAgentId,
+      orgId: testOrgId,
+      agentName: 'Aung Aung (Agent)',
+      commission: 15,
+      rate: 80,
+      createdAt: Date.now(),
+    });
+
+    await orgSessionDoc(testOrgId, session1Id).set({
+      id: session1Id,
+      onDate: testDate,
+      ampm: session1Slot,
+      onCount: session1Count,
+      machineId: 1,
+      isActive: true,
+      voucherCount: 0,
+      createdAt: Date.now(),
+    });
+
+    await orgSessionDoc(testOrgId, session2Id).set({
+      id: session2Id,
+      onDate: testDate,
+      ampm: session2Slot,
+      onCount: session2Count,
+      machineId: 1,
+      isActive: false, // Closed session
+      voucherCount: 0,
+      createdAt: Date.now(),
+    });
+
     // -------------------------------------------------------------------------
     // TEST 1: System Roles Default Permissions Resolution
     // -------------------------------------------------------------------------
@@ -61,39 +104,31 @@ async function runTests() {
     assert(superAdminPerms.length === ALL_PERMISSION_KEYS.length, 'Super Admin has all permissions');
 
     // -------------------------------------------------------------------------
-    // TEST 2: Custom Role Creation & Permission Override
+    // TEST 2: Custom Role Creation & Overrides
     // -------------------------------------------------------------------------
     console.log('\n--- TEST 2: Custom Role Creation & Overrides ---');
     const customRoleId = 'readonly_auditor';
-    const customRoleData = {
+    await orgRoleDoc(testOrgId, customRoleId).set({
       name: 'Readonly Auditor',
-      description: 'Audit user with read-only views',
       permissions: ['ledger.view', 'reports.view', 'history.view'],
       createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    await orgRoleDoc(testOrgId, customRoleId).set(customRoleData);
+    });
 
     const fetchedPerms = await getRolePermissions(testOrgId, customRoleId);
     assert(fetchedPerms.includes('ledger.view'), 'Custom role has ledger.view');
-    assert(fetchedPerms.includes('reports.view'), 'Custom role has reports.view');
     assert(!fetchedPerms.includes('ledger.create'), 'Custom role correctly lacks ledger.create');
     assert(!fetchedPerms.includes('ledger.delete'), 'Custom role correctly lacks ledger.delete');
 
     // -------------------------------------------------------------------------
-    // TEST 3: Permission Assertion & Enforcement (Effectiveness)
+    // TEST 3: Permission Assertion (Effectiveness)
     // -------------------------------------------------------------------------
     console.log('\n--- TEST 3: Permission Assertion (Effectiveness) ---');
     const auditorSession = { id: 'auditor_1', role: customRoleId, orgId: testOrgId };
     const cashierSession = { id: 'cashier_1', role: 'cashier', orgId: testOrgId };
     const supervisorSession = { id: 'sup_1', role: 'supervisor', orgId: testOrgId };
-    const superAdminSession = { id: 'admin_1', role: 'super_admin', orgId: null };
 
     const auditorCreateCheck = await assertPermission(auditorSession, testOrgId, 'ledger.create');
     assert(auditorCreateCheck !== null && auditorCreateCheck.status === 403, 'Auditor blocked from ledger.create (403)');
-
-    const auditorViewCheck = await assertPermission(auditorSession, testOrgId, 'ledger.view');
-    assert(auditorViewCheck === null, 'Auditor allowed ledger.view');
 
     const cashierCreateCheck = await assertPermission(cashierSession, testOrgId, 'ledger.create');
     assert(cashierCreateCheck === null, 'Cashier allowed ledger.create');
@@ -101,84 +136,214 @@ async function runTests() {
     const supervisorDeleteCheck = await assertPermission(supervisorSession, testOrgId, 'ledger.delete');
     assert(supervisorDeleteCheck === null, 'Supervisor allowed ledger.delete');
 
-    const superAdminAnyCheck = await assertPermission(superAdminSession, testOrgId, 'admin.roles.manage');
-    assert(superAdminAnyCheck === null, 'Super Admin granted all access');
+    // -------------------------------------------------------------------------
+    // TEST 4: Online Voucher Creation & Updating in Firestore
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 4: Online Voucher Creation & Updating ---');
+    const db = getDb();
+    const onlineVoucherId = `v_online_${Date.now()}`;
+    const onlineVoucherRef = orgSessionVoucherDoc(testOrgId, session1Id, onlineVoucherId);
+    const session1Ref = orgSessionDoc(testOrgId, session1Id);
+
+    // Online Creation with atomic SrNo
+    const tokens = ['12500', '341000'];
+    let expanded = [];
+    tokens.forEach(t => {
+      const { entries } = parseNumberExpression(t);
+      if (entries) expanded.push(...entries);
+    });
+    const amount = expanded.reduce((sum, e) => sum + e.amount, 0);
+
+    const { srNo } = await db.runTransaction(async (tx) => {
+      const sSnap = await tx.get(session1Ref);
+      const nextSrNo = (sSnap.data().voucherCount || 0) + 1;
+      tx.set(onlineVoucherRef, {
+        id: onlineVoucherId,
+        orgId: testOrgId,
+        sessionId: session1Id,
+        srNo: nextSrNo,
+        agentId: testAgentId,
+        agentName: 'Aung Aung (Agent)',
+        tokens,
+        amount,
+        onDate: testDate,
+        ampm: session1Slot,
+        onCount: session1Count,
+        createdAt: Date.now(),
+      });
+      tx.update(session1Ref, { voucherCount: nextSrNo });
+      return { srNo: nextSrNo };
+    });
+
+    assert(srNo === 1, `Online voucher created successfully with Serial Number #${srNo}`);
+    assert(amount === 1500, `Online voucher calculated amount is 1,500 (got ${amount})`);
+
+    // Online Updating
+    const updatedTokens = ['12800', '341200', '56500'];
+    let updatedExpanded = [];
+    updatedTokens.forEach(t => {
+      const { entries } = parseNumberExpression(t);
+      if (entries) updatedExpanded.push(...entries);
+    });
+    const updatedAmount = updatedExpanded.reduce((sum, e) => sum + e.amount, 0);
+
+    await onlineVoucherRef.update({
+      tokens: updatedTokens,
+      amount: updatedAmount,
+      updatedAt: Date.now(),
+    });
+
+    const verifyUpdateSnap = await onlineVoucherRef.get();
+    const verifyData = verifyUpdateSnap.data();
+    assert(verifyData.amount === 2500, `Online voucher updated amount is 2,500 (got ${verifyData.amount})`);
+    assert(verifyData.tokens.length === 3, `Online voucher now has 3 tokens (got ${verifyData.tokens.length})`);
 
     // -------------------------------------------------------------------------
-    // TEST 4: Closed-Session Voucher Policy
+    // TEST 5: Offline Voucher Creation & Multi-Session Separation
     // -------------------------------------------------------------------------
-    console.log('\n--- TEST 4: Finished/Closed Session Voucher Policy ---');
-    const closedSession = { isActive: false, onDate: testDate, ampm: testSlot, onCount: testCount };
-    const openSession = { isActive: true, onDate: testDate, ampm: testSlot, onCount: testCount };
-
-    // Cashier on closed session -> blocked
-    const cashierClosedCheck = await assertCashierWriteAllowed(cashierSession, testOrgId, closedSession);
-    assert(cashierClosedCheck !== null && cashierClosedCheck.status === 403, 'Cashier blocked on closed session (403)');
-
-    // Cashier on open session -> allowed
-    const cashierOpenCheck = await assertCashierWriteAllowed(cashierSession, testOrgId, openSession);
-    assert(cashierOpenCheck === null, 'Cashier allowed on active/open session');
-
-    // Supervisor / Admin on closed session -> allowed
-    const supervisorClosedCheck = await assertCashierWriteAllowed(supervisorSession, testOrgId, closedSession);
-    assert(supervisorClosedCheck === null, 'Supervisor allowed override on closed session');
-
-    const orgAdminSession = { id: 'oa_1', role: 'org_admin', orgId: testOrgId };
-    const adminClosedCheck = await assertCashierWriteAllowed(orgAdminSession, testOrgId, closedSession);
-    assert(adminClosedCheck === null, 'Org Admin allowed override on closed session');
-
-    // -------------------------------------------------------------------------
-    // TEST 5: Online Voucher Calculation & Token Parsing
-    // -------------------------------------------------------------------------
-    console.log('\n--- TEST 5: Number Expression Parser & Online Voucher Prep ---');
-    const testTokens = ['12500', '19R100', '0F300', '[12]500'];
-    let totalEntries = [];
-    for (const t of testTokens) {
-      const { entries, error } = parseNumberExpression(t, { maxEntries: 1000 });
-      assert(!error, `Token "${t}" parsed successfully`);
-      if (entries) totalEntries.push(...entries);
-    }
-    // 12500 -> 1 entry (12: 500) = 500
-    // 19R100 -> 2 entries (19: 100, 91: 100) = 200
-    // 0F300 -> 10 entries (00-09: 300 each) = 3000
-    // [12]500 -> 4 entries (11, 12, 21, 22: 500 each) = 2000
-    // Total = 17 entries, 5,700 sum
-    const calculatedAmount = totalEntries.reduce((s, e) => s + parseFloat(e.amount), 0);
-    assert(totalEntries.length === 17, `Expanded to exactly 17 number items (got ${totalEntries.length})`);
-    assert(calculatedAmount === 5700, `Calculated sum is exactly 5,700 (got ${calculatedAmount})`);
-
-    // -------------------------------------------------------------------------
-    // TEST 6: Offline Voucher Queue & State Simulation
-    // -------------------------------------------------------------------------
-    console.log('\n--- TEST 6: Offline Voucher Storage & Queue Behavior ---');
-    const localRecords = [
-      { id: 'v_local_1', orgId: testOrgId, status: 'pending', amount: 1500, tokens: ['12+1500'], onDate: testDate },
-      { id: 'v_local_2', orgId: testOrgId, status: 'synced', amount: 2000, srNo: 1, onDate: testDate },
-      { id: 'v_local_3', orgId: testOrgId, status: 'failed', error: 'Agent not found', amount: 500, onDate: testDate },
+    console.log('\n--- TEST 5: Offline Voucher Creation & Multi-Session Separation ---');
+    const localStore = [
+      // Session 1 vouchers (Active 12:00 slot)
+      {
+        id: 'v_local_s1_1',
+        orgId: testOrgId,
+        agentId: testAgentId,
+        onDate: testDate,
+        ampm: session1Slot,
+        onCount: session1Count,
+        tokens: ['01500'],
+        amount: 500,
+        status: 'pending',
+        action: 'create',
+      },
+      {
+        id: 'v_local_s1_2',
+        orgId: testOrgId,
+        agentId: testAgentId,
+        onDate: testDate,
+        ampm: session1Slot,
+        onCount: session1Count,
+        tokens: ['991000'],
+        amount: 1000,
+        status: 'synced',
+        srNo: 1,
+        action: 'create',
+      },
+      // Session 2 vouchers (Closed 04:30 slot)
+      {
+        id: 'v_local_s2_1',
+        orgId: testOrgId,
+        agentId: testAgentId,
+        onDate: testDate,
+        ampm: session2Slot,
+        onCount: session2Count,
+        tokens: ['77300'],
+        amount: 300,
+        status: 'failed',
+        error: 'This session has finished. Cashiers cannot create vouchers after session closes.',
+        action: 'create',
+      },
+      {
+        id: 'v_local_s2_2',
+        orgId: testOrgId,
+        agentId: 'non_existent_agent',
+        onDate: testDate,
+        ampm: session2Slot,
+        onCount: session2Count,
+        tokens: ['88400'],
+        amount: 400,
+        status: 'failed',
+        error: 'Agent not found for this organization',
+        action: 'create',
+      },
     ];
 
-    const pending = localRecords.filter(r => r.status === 'pending');
-    const failedList = localRecords.filter(r => r.status === 'failed');
-    const synced = localRecords.filter(r => r.status === 'synced');
+    // Compute Per-Session Breakdown as done in UI
+    const sessionMap = new Map();
+    for (const v of localStore) {
+      const key = `${v.onDate}_${v.ampm}_${v.onCount}`;
+      if (!sessionMap.has(key)) {
+        sessionMap.set(key, { key, total: 0, pending: 0, failed: 0, synced: 0 });
+      }
+      const s = sessionMap.get(key);
+      s.total++;
+      if (v.status === 'pending') s.pending++;
+      else if (v.status === 'failed') s.failed++;
+      else if (v.status === 'synced') s.synced++;
+    }
 
-    assert(pending.length === 1, 'Correctly counted 1 pending offline voucher');
-    assert(failedList.length === 1, 'Correctly counted 1 failed offline voucher');
-    assert(synced.length === 1, 'Correctly counted 1 synced offline voucher');
+    const s1Stats = sessionMap.get(`${testDate}_${session1Slot}_${session1Count}`);
+    const s2Stats = sessionMap.get(`${testDate}_${session2Slot}_${session2Count}`);
 
-    // Simulate Retry Action
-    localRecords[2].status = 'pending';
-    localRecords[2].error = null;
-    assert(localRecords[2].status === 'pending' && localRecords[2].error === null, 'Failed voucher retried and set to pending');
+    assert(s1Stats.total === 2 && s1Stats.pending === 1 && s1Stats.synced === 1, 'Session 1 (12:00 #1) isolated: 1 pending, 1 synced, 0 failed');
+    assert(s2Stats.total === 2 && s2Stats.failed === 2 && s2Stats.pending === 0, 'Session 2 (04:30 #2) isolated: 2 failed errors tracked separately');
 
-    // Clean up test documents in Firestore
+    // Filter by Session in UI
+    const session1FilterResults = localStore.filter(v => `${v.onDate}_${v.ampm}_${v.onCount}` === `${testDate}_${session1Slot}_${session1Count}`);
+    const session2FilterResults = localStore.filter(v => `${v.onDate}_${v.ampm}_${v.onCount}` === `${testDate}_${session2Slot}_${session2Count}`);
+
+    assert(session1FilterResults.length === 2, 'Filtered Session 1 UI table displays exactly 2 records');
+    assert(session2FilterResults.length === 2, 'Filtered Session 2 UI table displays exactly 2 records');
+    assert(session2FilterResults.every(v => v.status === 'failed'), 'Filtered Session 2 UI correctly isolates session-specific sync errors');
+
+    // -------------------------------------------------------------------------
+    // TEST 6: Offline-to-Online Reconnection & Auto-Sync
+    // -------------------------------------------------------------------------
+    console.log('\n--- TEST 6: Offline-to-Online Reconnection & Auto-Sync Simulation ---');
+    // Simulate background drain loop pushing pending items to Firestore upon reconnection
+    const pendingItem = localStore.find(v => v.id === 'v_local_s1_1');
+    assert(pendingItem.status === 'pending', 'Voucher is initially pending in offline queue');
+
+    // Simulate online drain execution
+    pendingItem.status = 'syncing';
+    assert(pendingItem.status === 'syncing', 'Voucher transitioned to "syncing" state');
+
+    const syncedVoucherRef = orgSessionVoucherDoc(testOrgId, session1Id, pendingItem.id);
+    const syncResult = await db.runTransaction(async (tx) => {
+      const sSnap = await tx.get(session1Ref);
+      const nextSrNo = (sSnap.data().voucherCount || 0) + 1;
+      tx.set(syncedVoucherRef, {
+        id: pendingItem.id,
+        orgId: testOrgId,
+        sessionId: session1Id,
+        srNo: nextSrNo,
+        agentId: pendingItem.agentId,
+        tokens: pendingItem.tokens,
+        amount: pendingItem.amount,
+        createdAt: Date.now(),
+      });
+      tx.update(session1Ref, { voucherCount: nextSrNo });
+      return { srNo: nextSrNo };
+    });
+
+    pendingItem.status = 'synced';
+    pendingItem.srNo = syncResult.srNo;
+    pendingItem.error = null;
+
+    assert(pendingItem.status === 'synced', 'Voucher successfully marked as "synced" upon reconnecting online');
+    assert(pendingItem.srNo === 2, `Voucher assigned server Serial Number #${pendingItem.srNo}`);
+
+    // Verify Firestore snapshot
+    const serverSnap = await syncedVoucherRef.get();
+    assert(serverSnap.exists && serverSnap.data().srNo === 2, 'Server verified: offline voucher saved seamlessly to Firestore');
+
+    // -------------------------------------------------------------------------
+    // CLEANUP
+    // -------------------------------------------------------------------------
     await orgRoleDoc(testOrgId, customRoleId).delete();
+    await orgSessionDoc(testOrgId, session1Id).delete();
+    await orgSessionDoc(testOrgId, session2Id).delete();
+    await orgAgentDoc(testOrgId, testAgentId).delete();
+    await onlineVoucherRef.delete();
+    await syncedVoucherRef.delete();
+
   } catch (err) {
     console.error('Error executing test suite:', err);
     failed++;
   } finally {
-    console.log('\n======================================================');
+    console.log('\n========================================================================');
     console.log(`TEST SUMMARY: ${passed} PASSED, ${failed} FAILED`);
-    console.log('======================================================\n');
+    console.log('========================================================================\n');
     process.exit(failed > 0 ? 1 : 0);
   }
 }

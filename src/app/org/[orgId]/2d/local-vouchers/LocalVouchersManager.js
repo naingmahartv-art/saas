@@ -21,12 +21,41 @@ export default function LocalVouchersManager({ orgId, agents, initialAgents, act
   const [agentsList, setAgentsList] = useState(effectiveInitial);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'pending' | 'failed' | 'synced'
+  const [selectedSession, setSelectedSession] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [retryingId, setRetryingId] = useState(null);
   const [retryingAll, setRetryingAll] = useState(false);
   const [selectedVoucher, setSelectedVoucher] = useState(null);
   const [notification, setNotification] = useState(null);
   const [isOnline, setIsOnline] = useState(true);
+
+  // Extract all distinct lottery sessions present in local storage
+  const availableSessions = useMemo(() => {
+    const sessionMap = new Map();
+    for (const v of vouchers) {
+      if (!v.onDate) continue;
+      const key = `${v.onDate}_${v.ampm || '12:00'}_${v.onCount || 1}`;
+      if (!sessionMap.has(key)) {
+        sessionMap.set(key, {
+          key,
+          onDate: v.onDate,
+          ampm: v.ampm || '12:00',
+          onCount: v.onCount || 1,
+          label: `${v.onDate} ${v.ampm || '12:00'} #${v.onCount || 1}`,
+          pending: 0,
+          failed: 0,
+          synced: 0,
+          total: 0,
+        });
+      }
+      const stats = sessionMap.get(key);
+      stats.total++;
+      if (v.status === 'pending' || v.status === 'syncing') stats.pending++;
+      else if (v.status === 'failed') stats.failed++;
+      else if (v.status === 'synced') stats.synced++;
+    }
+    return Array.from(sessionMap.values()).sort((a, b) => b.key.localeCompare(a.key));
+  }, [vouchers]);
 
   // Load agents from props or IndexedDB local DB
   useEffect(() => {
@@ -143,6 +172,10 @@ export default function LocalVouchersManager({ orgId, agents, initialAgents, act
       list = list.filter(v => v.status === 'synced');
     }
 
+    if (selectedSession !== 'all') {
+      list = list.filter(v => `${v.onDate}_${v.ampm || '12:00'}_${v.onCount || 1}` === selectedSession);
+    }
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       list = list.filter(v => {
@@ -155,7 +188,7 @@ export default function LocalVouchersManager({ orgId, agents, initialAgents, act
     }
 
     return list;
-  }, [vouchers, activeTab, searchQuery, agentMap]);
+  }, [vouchers, activeTab, selectedSession, searchQuery, agentMap]);
 
   async function handleRetryOne(voucher) {
     setRetryingId(voucher.id);
@@ -332,8 +365,8 @@ export default function LocalVouchersManager({ orgId, agents, initialAgents, act
         </div>
       )}
 
-      {/* Filter Tabs & Search */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+      {/* Filter Tabs, Session Selector & Search */}
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5 p-1 bg-gray-100 dark:bg-slate-800/80 rounded-xl">
           <button
             type="button"
@@ -381,19 +414,91 @@ export default function LocalVouchersManager({ orgId, agents, initialAgents, act
           </button>
         </div>
 
-        <div className="relative">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search agent, tokens, Sr No…"
-            className="w-full sm:w-64 pl-9 pr-3 py-1.5 text-sm bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500"
-          />
-          <svg className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Session Selector Dropdown */}
+          <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
+            <select
+              value={selectedSession}
+              onChange={(e) => setSelectedSession(e.target.value)}
+              className="w-full sm:w-auto px-3 py-1.5 text-xs sm:text-sm bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 font-medium text-gray-700 dark:text-slate-200 shadow-sm"
+            >
+              <option value="all">📅 All Sessions ({availableSessions.length})</option>
+              {availableSessions.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label} ({s.total} {s.failed > 0 ? `· ⚠️ ${s.failed} error` : s.pending > 0 ? `· ⏳ ${s.pending} pending` : '· ✅ synced'})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="relative flex-1 sm:flex-initial">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search agent, tokens, Sr No…"
+              className="w-full sm:w-56 pl-9 pr-3 py-1.5 text-sm bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
+            />
+            <svg className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
         </div>
       </div>
+
+      {/* Per-Session Sync / Error Status Pills Bar */}
+      {availableSessions.length > 1 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
+          <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 whitespace-nowrap">
+            Sessions:
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedSession('all')}
+            className={`px-2.5 py-1 text-xs rounded-lg font-medium transition whitespace-nowrap ${
+              selectedSession === 'all'
+                ? 'bg-brand-600 text-white shadow-sm'
+                : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-400 hover:bg-gray-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            All ({vouchers.length})
+          </button>
+          {availableSessions.map((s) => {
+            const isSelected = selectedSession === s.key;
+            const hasError = s.failed > 0;
+            const hasPending = s.pending > 0;
+            return (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => setSelectedSession(s.key)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg font-medium transition whitespace-nowrap border ${
+                  isSelected
+                    ? 'bg-brand-50 border-brand-500 text-brand-700 dark:bg-brand-950/60 dark:text-brand-300 font-semibold'
+                    : 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800'
+                }`}
+              >
+                <span>{s.label}</span>
+                {hasError && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 font-bold">
+                    {s.failed} err
+                  </span>
+                )}
+                {hasPending && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 font-bold">
+                    {s.pending} pend
+                  </span>
+                )}
+                {!hasError && !hasPending && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
+                    {s.synced} ✓
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Vouchers Table */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 overflow-hidden shadow-sm">
