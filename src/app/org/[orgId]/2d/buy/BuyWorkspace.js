@@ -7,11 +7,12 @@ import ReportsModal from '../ledger/ReportsModal.js';
 import useLedgerShortcuts from '@/lib/ledger/useLedgerShortcuts.js';
 import useLiveSession from '@/lib/ledger/useLiveSession.js';
 import { matchesCombo } from '@/lib/ledger/shortcuts.js';
+import { saveLocalAgentsBulk, getLocalAgents } from '@/lib/ledger/localVoucherDb.js';
 
 export default function BuyWorkspace({
   orgId,
   activeSession,
-  agents,
+  agents = [],
   rate,
   limit,
   notBuyNumbers: initialNotBuyNumbers,
@@ -20,8 +21,24 @@ export default function BuyWorkspace({
   machines,
   canWrite,
 }) {
+  const [effectiveAgents, setEffectiveAgents] = useState(agents || []);
   const [totals, setTotals] = useState({});
   const [buyTotals, setBuyTotals] = useState({});
+
+  useEffect(() => {
+    async function syncAgents() {
+      if (agents && agents.length > 0) {
+        setEffectiveAgents(agents);
+        await saveLocalAgentsBulk(orgId, agents);
+      } else {
+        const localList = await getLocalAgents(orgId);
+        if (localList && localList.length > 0) {
+          setEffectiveAgents(localList);
+        }
+      }
+    }
+    syncAgents();
+  }, [agents, orgId]);
   const [luckyNumber, setLuckyNumber] = useState(initialLuckyNumber);
   const [hotNumbers, setHotNumbers] = useState(initialHotNumbers);
   const [notBuyNumbers, setNotBuyNumbers] = useState(initialNotBuyNumbers);
@@ -109,7 +126,7 @@ export default function BuyWorkspace({
       <BuyEntry
         orgId={orgId}
         activeSession={activeSession}
-        agents={agents}
+        agents={effectiveAgents}
         rate={rate}
         limit={limit}
         notBuyNumbers={notBuyNumbers}
@@ -149,7 +166,7 @@ export default function BuyWorkspace({
         <ReportsModal
           orgId={orgId}
           activeSession={activeSession}
-          agents={agents}
+          agents={effectiveAgents}
           initialTab={reportsTab}
           isBuyPage={true}
           onClose={() => setReportsTab(null)}

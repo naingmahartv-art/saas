@@ -5,6 +5,8 @@ import { useI18n } from '@/lib/i18n/index.js';
 import {
   getLocalVouchers,
   pruneSyncedLocalVouchers,
+  getLocalAgents,
+  saveLocalAgentsBulk,
 } from '@/lib/ledger/localVoucherDb.js';
 import {
   retryVoucher,
@@ -12,21 +14,11 @@ import {
   onQueueEvent,
   startAutoDrain,
 } from '@/lib/ledger/voucherQueue.js';
-const EMPTY_AGENTS = [];
-
-export default function LocalVouchersManager({ orgId, agents = EMPTY_AGENTS, activeSession, onClose }) {
+export default function LocalVouchersManager({ orgId, agents, initialAgents, activeSession, onClose }) {
   const { t } = useI18n();
   const [vouchers, setVouchers] = useState([]);
-  const [agentsList, setAgentsList] = useState(() => {
-    if (agents && agents.length > 0) return agents;
-    if (typeof window !== 'undefined') {
-      try {
-        const cached = localStorage.getItem(`agents_cache_${orgId}`);
-        if (cached) return JSON.parse(cached);
-      } catch {}
-    }
-    return [];
-  });
+  const effectiveInitial = (initialAgents && initialAgents.length > 0) ? initialAgents : (agents && agents.length > 0) ? agents : [];
+  const [agentsList, setAgentsList] = useState(effectiveInitial);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'pending' | 'failed' | 'synced'
   const [searchQuery, setSearchQuery] = useState('');
@@ -36,36 +28,55 @@ export default function LocalVouchersManager({ orgId, agents = EMPTY_AGENTS, act
   const [notification, setNotification] = useState(null);
   const [isOnline, setIsOnline] = useState(true);
 
-  // Load agents from props or fallback to localStorage cache
+  // Load agents from props or IndexedDB local DB
   useEffect(() => {
-    if (agents && agents.length > 0) {
-      setAgentsList(agents);
-      try {
-        localStorage.setItem(`agents_cache_${orgId}`, JSON.stringify(agents));
-      } catch {}
-      return;
-    }
+    async function loadAgents() {
+      if (effectiveInitial && effectiveInitial.length > 0) {
+        setAgentsList(effectiveInitial);
+        await saveLocalAgentsBulk(orgId, effectiveInitial);
+      } else {
+        // Read from IndexedDB first
+        const local = await getLocalAgents(orgId);
+        if (local && local.length > 0) {
+          setAgentsList(local);
+        }
+      }
 
-    // Try fetching from API if online
-    if (typeof navigator === 'undefined' || navigator.onLine !== false) {
-      fetch(`/api/org/${orgId}/agents`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.agents && Array.isArray(data.agents)) {
+      // Fetch from API to ensure up to date
+      try {
+        const res = await fetch(`/api/org/${orgId}/agents`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.agents && Array.isArray(data.agents) && data.agents.length > 0) {
             setAgentsList(data.agents);
-            try {
-              localStorage.setItem(`agents_cache_${orgId}`, JSON.stringify(data.agents));
-            } catch {}
+            await saveLocalAgentsBulk(orgId, data.agents);
           }
-        })
-        .catch(() => {});
+        }
+      } catch {}
     }
-  }, [orgId, agents]);
+    loadAgents();
+
+    const handleAgentsUpdate = (e) => {
+      if (e.detail?.orgId === orgId) {
+        getLocalAgents(orgId).then((list) => {
+          if (list && list.length > 0) setAgentsList(list);
+        });
+      }
+    };
+    window.addEventListener('local_agents_updated', handleAgentsUpdate);
+    return () => window.removeEventListener('local_agents_updated', handleAgentsUpdate);
+  }, [orgId, initialAgents, agents]);
 
   const agentMap = useMemo(() => {
     const map = new Map();
+    map.set('buy_offload', 'Buy Offload');
     for (const a of agentsList) {
-      if (a.agentId) map.set(a.agentId, a.agentName || a.agentId);
+      if (!a) continue;
+      const name = a.agentName || a.name || a.agent_name || '';
+      if (!name) continue;
+      if (a.id) map.set(String(a.id), name);
+      if (a.agentId) map.set(String(a.agentId), name);
+      if (a._id) map.set(String(a._id), name);
     }
     return map;
   }, [agentsList]);
@@ -419,7 +430,9 @@ export default function LocalVouchersManager({ orgId, agents = EMPTY_AGENTS, act
                 </tr>
               ) : (
                 filteredVouchers.map((v) => {
-                  const agentName = agentMap.get(v.agentId) || v.agentId || '—';
+                  const agentName = (v.agentId === 'buy_offload' || v.isBuyVoucher)
+                    ? 'Buy Offload'
+                    : (agentMap.get(String(v.agentId)) || agentMap.get(String(v.id)) || (v.agentName && v.agentName !== v.agentId ? v.agentName : null) || '—');
                   const totalAmt = calculateVoucherTotal(v.tokens);
                   const isPending = v.status === 'pending';
                   const isSyncing = v.status === 'syncing';
@@ -595,7 +608,9 @@ export default function LocalVouchersManager({ orgId, agents = EMPTY_AGENTS, act
               <div>
                 <span className="text-gray-400 block">Agent</span>
                 <span className="font-semibold text-gray-800 dark:text-slate-200">
-                  {agentMap.get(selectedVoucher.agentId) || selectedVoucher.agentId || '—'}
+                  {(selectedVoucher.agentId === 'buy_offload' || selectedVoucher.isBuyVoucher)
+                    ? 'Buy Offload'
+                    : (agentMap.get(String(selectedVoucher.agentId)) || agentMap.get(String(selectedVoucher.id)) || (selectedVoucher.agentName && selectedVoucher.agentName !== selectedVoucher.agentId ? selectedVoucher.agentName : null) || '—')}
                 </span>
               </div>
               <div>

@@ -20,7 +20,11 @@
     "results": "Results",
     "balance": "Balance",
     "users": "Users",
-    "settings": "Settings",
+    "roles": "Roles & Permissions",
+    "passwordRequests": "Password Requests",
+    "logs": "Audit Logs",
+    "adminPanel": "Admin Panel",
+    "openApp": "← Open 2D App",
     "signOut": "Sign out",
     "switchApp": "← Switch App"
   },

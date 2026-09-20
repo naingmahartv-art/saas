@@ -85,7 +85,7 @@ export async function middleware(request) {
       }
     } else if (section === '2d' || section === '3d' || section === 'select-app') {
       // App routes: any authenticated role belonging to this org
-      if (!ALL_ROLES.includes(session.role)) {
+      if (!session.role) {
         return NextResponse.redirect(new URL('/login', request.url));
       }
     }

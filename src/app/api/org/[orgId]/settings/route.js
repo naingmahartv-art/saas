@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { orgRatesDoc, orgRestrictionDoc } from '@/lib/db/firestore.js';
+import { orgRatesDoc, orgRestrictionDoc, orgDoc } from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth/session.js';
 
 // GET /api/org/[orgId]/settings — load all settings for the org
@@ -10,18 +10,25 @@ export async function GET(request, { params }) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const [ratesSnap, limitsSnap] = await Promise.all([
+  const [ratesSnap, limitsSnap, orgSnap] = await Promise.all([
     orgRatesDoc(orgId).get(),
     orgRestrictionDoc(orgId, 'limits').get(),
+    orgDoc(orgId).get(),
   ]);
 
+  const orgData = orgSnap?.exists ? orgSnap.data() : {};
+  const operatingMode = orgData.operatingMode || (orgData.isOfflineMode ? 'offline' : 'online');
+  const isOfflineMode = operatingMode === 'offline' || Boolean(orgData.isOfflineMode);
+
   return NextResponse.json({
-    rates: ratesSnap.exists ? ratesSnap.data() : null,
-    limits: limitsSnap.exists ? limitsSnap.data() : null,
+    rates: ratesSnap?.exists ? ratesSnap.data() : null,
+    limits: limitsSnap?.exists ? limitsSnap.data() : null,
+    operatingMode,
+    isOfflineMode,
   });
 }
 
-// POST /api/org/[orgId]/settings — upsert rates
+// POST /api/org/[orgId]/settings — upsert rates and operatingMode
 export async function POST(request, { params }) {
   const { orgId } = await params;
   const session = await getSession();
@@ -29,15 +36,31 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { num1Rate, num2Rate } = await request.json();
+  const body = await request.json();
+  const { num1Rate, num2Rate, operatingMode, isOfflineMode } = body;
+  const now = Date.now();
 
-  if (num1Rate === undefined || num2Rate === undefined) {
-    return NextResponse.json({ error: 'num1Rate and num2Rate are required' }, { status: 400 });
+  let updatedRates = null;
+  if (num1Rate !== undefined && num2Rate !== undefined) {
+    updatedRates = { orgId, num1Rate: parseFloat(num1Rate) || 0, num2Rate: parseFloat(num2Rate) || 0, updatedAt: now };
+    await orgRatesDoc(orgId).set(updatedRates, { merge: true });
   }
 
-  const now = Date.now();
-  const updated = { orgId, num1Rate: parseFloat(num1Rate) || 0, num2Rate: parseFloat(num2Rate) || 0, updatedAt: now };
-  await orgRatesDoc(orgId).set(updated, { merge: true });
+  let updatedMode = null;
+  if (operatingMode !== undefined || isOfflineMode !== undefined) {
+    const mode = operatingMode || (isOfflineMode ? 'offline' : 'online');
+    const isOffline = mode === 'offline' || Boolean(isOfflineMode);
+    updatedMode = { operatingMode: mode, isOfflineMode: isOffline };
 
-  return NextResponse.json({ success: true, rates: updated });
+    await Promise.all([
+      orgDoc(orgId).set({ ...updatedMode, updatedAt: now }, { merge: true }),
+      orgRestrictionDoc(orgId, 'operatingMode').set({ orgId, ...updatedMode, updatedAt: now }, { merge: true }),
+    ]);
+  }
+
+  return NextResponse.json({
+    success: true,
+    rates: updatedRates,
+    ...(updatedMode || {}),
+  });
 }

@@ -64,6 +64,8 @@ export const orgPasswordResetRequestsCol = (orgId) => orgDoc(orgId).collection('
 export const orgUserPreferencesCol = (orgId) => orgDoc(orgId).collection('userPreferences');
 export const orgActivityLogsCol = (orgId) => orgDoc(orgId).collection('activityLogs');
 export const orgSubscriptionsCol = (orgId) => orgDoc(orgId).collection('subscriptions');
+export const orgRolesCol = (orgId) => orgDoc(orgId).collection('roles');
+export const orgRoleDoc = (orgId, roleId) => orgRolesCol(orgId).doc(roleId);
 
 export const orgSessionsCol = (orgId) => orgDoc(orgId).collection('sessions');
 export const orgSessionDoc = (orgId, sessionId) => orgSessionsCol(orgId).doc(sessionId);

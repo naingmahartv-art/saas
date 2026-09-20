@@ -13,6 +13,8 @@ export default function SettingsPanel({
   initialHotNumbers,
   initialNotBuyNumbers,
   initialAgents = [],
+  initialOperatingMode,
+  initialIsOfflineMode,
 }) {
   const { t } = useI18n();
   const [ratesForm, setRatesForm] = useState({
@@ -35,9 +37,22 @@ export default function SettingsPanel({
   const [notBuyError, setNotBuyError] = useState('');
 
   // Offline / Standalone mode
-  const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const [isOfflineMode, setIsOfflineMode] = useState(() => {
+    if (initialIsOfflineMode !== undefined && initialIsOfflineMode !== null) {
+      return initialIsOfflineMode;
+    }
+    return getOfflineMode(orgId);
+  });
+  const [operatingModeSaving, setOperatingModeSaving] = useState(false);
+  const [operatingModeMsg, setOperatingModeMsg] = useState('');
+
   useEffect(() => {
-    setIsOfflineMode(getOfflineMode(orgId));
+    if (initialIsOfflineMode !== undefined && initialIsOfflineMode !== null) {
+      setOfflineMode(orgId, initialIsOfflineMode);
+      setIsOfflineMode(initialIsOfflineMode);
+    } else {
+      setIsOfflineMode(getOfflineMode(orgId));
+    }
     const handleModeChange = (e) => {
       if (e.detail?.orgId === orgId) {
         setIsOfflineMode(Boolean(e.detail?.enabled));
@@ -45,12 +60,33 @@ export default function SettingsPanel({
     };
     window.addEventListener('offline_mode_change', handleModeChange);
     return () => window.removeEventListener('offline_mode_change', handleModeChange);
-  }, [orgId]);
+  }, [orgId, initialIsOfflineMode]);
 
-  const handleToggleOfflineMode = (e) => {
+  const handleToggleOfflineMode = async (e) => {
     const nextVal = e.target.checked;
     setOfflineMode(orgId, nextVal);
     setIsOfflineMode(nextVal);
+    setOperatingModeSaving(true);
+    setOperatingModeMsg('');
+
+    try {
+      const res = await fetch(`/api/org/${orgId}/settings/operating-mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          operatingMode: nextVal ? 'offline' : 'online',
+          isOfflineMode: nextVal,
+        }),
+      });
+      if (res.ok) {
+        setOperatingModeMsg(t('session.saveSuccess') || 'Saved in DB');
+        setTimeout(() => setOperatingModeMsg(''), 3000);
+      }
+    } catch (err) {
+      console.warn('Could not reach server to save operating mode, saved locally:', err);
+    } finally {
+      setOperatingModeSaving(false);
+    }
   };
 
   // Local data cleanup
@@ -402,6 +438,16 @@ export default function SettingsPanel({
             <p className="text-xs text-gray-500 max-w-2xl leading-relaxed">
               {t('settings.operatingModeDesc')}
             </p>
+            {operatingModeSaving && (
+              <p className="text-xs text-brand-600 dark:text-brand-400 mt-1 font-medium animate-pulse">
+                Saving operating mode to DB…
+              </p>
+            )}
+            {operatingModeMsg && !operatingModeSaving && (
+              <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 font-medium">
+                ✓ {operatingModeMsg}
+              </p>
+            )}
           </div>
           <label className="relative inline-flex items-center cursor-pointer shrink-0">
             <input
@@ -409,6 +455,7 @@ export default function SettingsPanel({
               checked={isOfflineMode}
               onChange={handleToggleOfflineMode}
               className="sr-only peer"
+              disabled={operatingModeSaving}
             />
             <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none ring-2 ring-transparent peer-focus:ring-amber-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
           </label>

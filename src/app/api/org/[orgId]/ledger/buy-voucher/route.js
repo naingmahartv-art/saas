@@ -62,11 +62,13 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'No valid numbers specified' }, { status: 400 });
     }
 
-    const lockError = await assertCashierWriteAllowed(session, orgId);
-    if (lockError) return NextResponse.json({ error: lockError.error }, { status: lockError.status });
-
     const sid = buildSessionId(onDate, ampm, onCount);
     const sessionRef = orgSessionDoc(orgId, sid);
+    const sessionSnap = await sessionRef.get();
+    const sessionData = sessionSnap.exists ? sessionSnap.data() : null;
+
+    const lockError = await assertCashierWriteAllowed(session, orgId, sessionData);
+    if (lockError) return NextResponse.json({ error: lockError.error }, { status: lockError.status });
 
     let targetAgentId = 'buy_offload';
     let targetAgentName = 'Buy Offload (အဝယ်စာရင်း)';

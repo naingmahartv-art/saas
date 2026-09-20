@@ -2,6 +2,13 @@
 import { useState, useEffect } from 'react';
 import { useI18n } from '@/lib/i18n/index.js';
 import SessionPicker from '../ledger/SessionPicker.js';
+import {
+  saveLocalAgent,
+  saveLocalAgentsBulk,
+  getLocalAgents,
+  deleteLocalAgent,
+  getOfflineMode,
+} from '@/lib/ledger/localVoucherDb.js';
 
 const emptyForm = {
   agentName: '',
@@ -28,6 +35,22 @@ export default function AgentManager({ orgId, initialAgents, activeSession, mach
   const [isSessionPickerOpen, setIsSessionPickerOpen] = useState(false);
   const [copying, setCopying] = useState(false);
   const [copySuccessMsg, setCopySuccessMsg] = useState('');
+
+  // Sync / load agents with IndexedDB local DB
+  useEffect(() => {
+    async function initLocalAgents() {
+      if (initialAgents && initialAgents.length > 0) {
+        setAgents(initialAgents);
+        await saveLocalAgentsBulk(orgId, initialAgents);
+      } else {
+        const localList = await getLocalAgents(orgId);
+        if (localList && localList.length > 0) {
+          setAgents(localList);
+        }
+      }
+    }
+    initLocalAgents();
+  }, [orgId, initialAgents]);
 
   useEffect(() => {
     setSessionCommissions(activeSession?.agentCommissions || {});
@@ -119,44 +142,67 @@ export default function AgentManager({ orgId, initialAgents, activeSession, mach
     setLoading(true);
     setError('');
 
-    const url = editingId
-      ? `/api/org/${orgId}/agents/${editingId}`
-      : `/api/org/${orgId}/agents`;
-    const method = editingId ? 'PUT' : 'POST';
+    const isOffline = getOfflineMode(orgId) || (typeof navigator !== 'undefined' && navigator.onLine === false);
+    const targetAgentId = editingId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ag_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`);
+
+    let savedAgent = {
+      id: targetAgentId,
+      agentId: targetAgentId,
+      orgId,
+      agentName: form.agentName.trim(),
+      address: form.address.trim(),
+      phone: form.phone.trim(),
+      commission: form.commission !== '' ? parseFloat(form.commission) : 0,
+      rate: form.rate !== '' ? parseFloat(form.rate) : 80,
+      status: 'active',
+      updatedAt: Date.now(),
+    };
 
     try {
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          agentName: form.agentName,
-          address: form.address,
-          phone: form.phone,
-          commission: form.commission,
-          rate: form.rate,
-        }),
-      });
-      const data = await res.json();
+      if (!isOffline) {
+        const url = editingId
+          ? `/api/org/${orgId}/agents/${editingId}`
+          : `/api/org/${orgId}/agents`;
+        const method = editingId ? 'PUT' : 'POST';
 
-      if (!res.ok) {
-        setError(data.error || t('agents.saveFailed'));
-        return;
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agentName: form.agentName,
+            address: form.address,
+            phone: form.phone,
+            commission: form.commission,
+            rate: form.rate,
+          }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          setError(data.error || t('agents.saveFailed'));
+          setLoading(false);
+          return;
+        }
+
+        if (data.agent) {
+          savedAgent = { ...savedAgent, ...data.agent, orgId };
+        }
       }
 
-      const savedAgent = data.agent;
-      const targetAgentId = editingId || savedAgent.id;
+      // Always persist to IndexedDB local DB
+      await saveLocalAgent(savedAgent);
 
-      // Update local agent list
+      // Update local React agent list
       if (editingId) {
-        setAgents(prev => prev.map(a => (a.id === editingId ? savedAgent : a)));
+        setAgents(prev => prev.map(a => (a.id === editingId || a.agentId === editingId ? savedAgent : a)));
       } else {
         setAgents(prev =>
           [...prev, savedAgent].sort((a, b) => a.agentName.localeCompare(b.agentName))
         );
       }
 
-      // If activeSession exists, update this session's commission & rate
-      if (activeSession && targetAgentId) {
+      // If activeSession exists and online, update session commissions
+      if (activeSession && targetAgentId && !isOffline) {
         const newComms = {
           ...sessionCommissions,
           [targetAgentId]: form.commission !== '' ? parseFloat(form.commission) : (savedAgent.commission ?? 0),
@@ -188,8 +234,18 @@ export default function AgentManager({ orgId, initialAgents, activeSession, mach
       }
 
       cancelEdit();
-    } catch {
-      setError(t('common.networkError'));
+    } catch (err) {
+      // Fallback: save to local IndexedDB even if network failed
+      console.warn('Network error while saving agent, saving locally:', err);
+      await saveLocalAgent(savedAgent);
+      if (editingId) {
+        setAgents(prev => prev.map(a => (a.id === editingId || a.agentId === editingId ? savedAgent : a)));
+      } else {
+        setAgents(prev =>
+          [...prev, savedAgent].sort((a, b) => a.agentName.localeCompare(b.agentName))
+        );
+      }
+      cancelEdit();
     } finally {
       setLoading(false);
     }
@@ -198,9 +254,13 @@ export default function AgentManager({ orgId, initialAgents, activeSession, mach
   async function handleDelete(agentId, agentName) {
     if (!confirm(t('agents.deleteConfirm', { name: agentName }))) return;
     try {
-      await fetch(`/api/org/${orgId}/agents/${agentId}`, { method: 'DELETE' });
-      setAgents(prev => prev.filter(a => a.id !== agentId));
+      await deleteLocalAgent(orgId, agentId);
+      setAgents(prev => prev.filter(a => a.id !== agentId && a.agentId !== agentId));
       if (editingId === agentId) cancelEdit();
+
+      if (!getOfflineMode(orgId) && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+        await fetch(`/api/org/${orgId}/agents/${agentId}`, { method: 'DELETE' }).catch(() => {});
+      }
     } catch {
       alert(t('agents.deleteFailed'));
     }

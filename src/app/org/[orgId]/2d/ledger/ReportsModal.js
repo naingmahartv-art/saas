@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo, Fragment } from 'reac
 import { useI18n } from '@/lib/i18n/index.js';
 import { buildReportPdf, reportFileName } from '@/lib/reports/buildPdf.js';
 import { parseNumberExpression, MAX_ENTRIES } from '@/lib/lottery/numberParser.js';
-import { getLocalVouchers, getOfflineMode } from '@/lib/ledger/localVoucherDb.js';
+import { getLocalVouchers, getOfflineMode, cacheRemoteVouchersIntoLocalDb } from '@/lib/ledger/localVoucherDb.js';
 
 const SLOT_LABEL_KEY = { '09:00': 'slot0900', '12:00': 'slot1200', '04:00': 'slot0400' };
 
@@ -179,7 +179,8 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
     if (!ag) { setAgentSlips([]); return; }
     setAgentLoading(true);
 
-    if (getOfflineMode(orgId)) {
+    const isOfflineForced = getOfflineMode(orgId) || (typeof navigator !== 'undefined' && !navigator.onLine);
+    if (isOfflineForced) {
       await loadLocalAgentReport(ag);
       setAgentLoading(false);
       return;
@@ -200,7 +201,11 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
         await loadLocalAgentReport(ag);
         return;
       }
-      setAgentSlips(data.slips || []);
+      const slips = data.slips || [];
+      setAgentSlips(slips);
+      if (slips.length > 0) {
+        cacheRemoteVouchersIntoLocalDb(orgId, slips).catch(() => {});
+      }
     } catch {
       await loadLocalAgentReport(ag);
     } finally {
@@ -290,7 +295,8 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
 
   const loadSummary = useCallback(async () => {
     setSummaryLoading(true);
-    if (getOfflineMode(orgId)) {
+    const isOfflineForced = getOfflineMode(orgId) || (typeof navigator !== 'undefined' && !navigator.onLine);
+    if (isOfflineForced) {
       await loadLocalSummary();
       setSummaryLoading(false);
       return;
@@ -303,7 +309,11 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
         await loadLocalSummary();
         return;
       }
-      setSummarySlips(data.slips || []);
+      const slips = data.slips || [];
+      setSummarySlips(slips);
+      if (slips.length > 0) {
+        cacheRemoteVouchersIntoLocalDb(orgId, slips).catch(() => {});
+      }
     } catch {
       await loadLocalSummary();
     } finally {
@@ -404,7 +414,8 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
 
   const loadAllAgentData = useCallback(async () => {
     setAllAgentLoading(true);
-    if (getOfflineMode(orgId)) {
+    const isOfflineForced = getOfflineMode(orgId) || (typeof navigator !== 'undefined' && !navigator.onLine);
+    if (isOfflineForced) {
       await loadLocalAllAgentData();
       setAllAgentLoading(false);
       return;
@@ -416,7 +427,11 @@ export default function ReportsModal({ orgId, activeSession, agents, onClose, in
         await loadLocalAllAgentData();
         return;
       }
-      setAllAgentSlips(data.slips || []);
+      const slips = data.slips || [];
+      setAllAgentSlips(slips);
+      if (slips.length > 0) {
+        cacheRemoteVouchersIntoLocalDb(orgId, slips).catch(() => {});
+      }
     } catch {
       await loadLocalAllAgentData();
     } finally {

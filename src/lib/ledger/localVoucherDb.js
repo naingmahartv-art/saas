@@ -1,8 +1,9 @@
 'use client';
 
 const DB_NAME = 'lottery_local_vouchers_db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_NAME = 'local_vouchers';
+const AGENTS_STORE_NAME = 'local_agents';
 
 let dbPromise = null;
 
@@ -39,6 +40,26 @@ function getDb() {
           }
           if (!store.indexNames.contains('voucherType')) {
             store.createIndex('voucherType', 'voucherType', { unique: false });
+          }
+
+          // local_agents store
+          let agentsStore;
+          if (!db.objectStoreNames.contains(AGENTS_STORE_NAME)) {
+            agentsStore = db.createObjectStore(AGENTS_STORE_NAME, { keyPath: 'id' });
+          } else {
+            agentsStore = event.target.transaction.objectStore(AGENTS_STORE_NAME);
+          }
+          if (!agentsStore.indexNames.contains('orgId')) {
+            agentsStore.createIndex('orgId', 'orgId', { unique: false });
+          }
+          if (!agentsStore.indexNames.contains('agentName')) {
+            agentsStore.createIndex('agentName', 'agentName', { unique: false });
+          }
+          if (!agentsStore.indexNames.contains('agentId')) {
+            agentsStore.createIndex('agentId', 'agentId', { unique: false });
+          }
+          if (!agentsStore.indexNames.contains('orgId_agentName')) {
+            agentsStore.createIndex('orgId_agentName', ['orgId', 'agentName'], { unique: false });
           }
         };
         request.onsuccess = () => resolve(request.result);
@@ -302,6 +323,10 @@ export async function cacheRemoteVouchersIntoLocalDb(orgId, remoteDocs) {
           machineId: v.machineId || null,
           voucherType: isBuy ? 'buy' : 'sale',
           isBuyVoucher: isBuy,
+          luckyNo: v.luckyNo || v.winningNumber || null,
+          rate: typeof v.rate === 'number' ? v.rate : null,
+          agentCommissions: v.agentCommissions || null,
+          agentRates: v.agentRates || null,
           status: 'synced',
           srNo: v.srNo ?? null,
           createdAt: v.createdAt ? (v.createdAt._seconds ? v.createdAt._seconds * 1000 : Number(v.createdAt)) : Date.now(),
@@ -421,17 +446,44 @@ export function getOfflineMode(orgId) {
 }
 
 export function setOfflineMode(orgId, enabled) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || !orgId) return;
   try {
-    localStorage.setItem(`standalone_offline_mode_${orgId}`, enabled ? 'true' : 'false');
-    window.dispatchEvent(
-      new CustomEvent('offline_mode_change', {
-        detail: { orgId, enabled: Boolean(enabled) },
-      })
-    );
+    const current = localStorage.getItem(`standalone_offline_mode_${orgId}`) === 'true';
+    const next = Boolean(enabled);
+    localStorage.setItem(`standalone_offline_mode_${orgId}`, next ? 'true' : 'false');
+    if (current !== next) {
+      window.dispatchEvent(
+        new CustomEvent('offline_mode_change', {
+          detail: { orgId, enabled: next },
+        })
+      );
+    }
   } catch (err) {
     console.error('Failed to set offline mode:', err);
   }
+}
+
+/**
+ * Sync offline mode preference from DB when online, with fallback to local storage.
+ */
+export async function syncOfflineModeWithDb(orgId) {
+  if (typeof window === 'undefined' || !orgId) return getOfflineMode(orgId);
+  try {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return getOfflineMode(orgId);
+    }
+    const res = await fetch(`/api/org/${orgId}/settings/operating-mode`);
+    if (res.ok) {
+      const data = await res.json();
+      if (typeof data.isOfflineMode === 'boolean') {
+        setOfflineMode(orgId, data.isOfflineMode);
+        return data.isOfflineMode;
+      }
+    }
+  } catch {
+    // Offline / network failure fallback
+  }
+  return getOfflineMode(orgId);
 }
 
 /**
@@ -466,4 +518,185 @@ export async function migrateLegacyLocalStorageQueue(orgId) {
     console.warn('Migration from localStorage queue skipped/failed:', err);
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Local Agents Store (IndexedDB 'local_agents' table)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const agentsFallbackKey = (orgId) => `local_agents_fallback_${orgId}`;
+
+function readAgentsFallback(orgId) {
+  try {
+    const raw = localStorage.getItem(agentsFallbackKey(orgId)) || localStorage.getItem(`agents_cache_${orgId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeAgentsFallback(orgId, items) {
+  try {
+    localStorage.setItem(agentsFallbackKey(orgId), JSON.stringify(items));
+    localStorage.setItem(`agents_cache_${orgId}`, JSON.stringify(items));
+  } catch (err) {
+    console.error('Failed to write to agent fallback storage:', err);
+  }
+}
+
+/**
+ * Save / Upsert a single agent into IndexedDB `local_agents` store.
+ */
+export async function saveLocalAgent(agent) {
+  if (!agent || !agent.orgId) return null;
+  const agentRecord = {
+    id: agent.id || agent.agentId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ag_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`),
+    agentId: agent.agentId || agent.id || '',
+    orgId: agent.orgId,
+    agentName: agent.agentName || '',
+    address: agent.address || '',
+    phone: agent.phone || '',
+    commission: agent.commission !== undefined ? Number(agent.commission) : 0,
+    rate: agent.rate !== undefined ? Number(agent.rate) : 80,
+    status: agent.status || 'active',
+    updatedAt: agent.updatedAt || Date.now(),
+  };
+  if (!agentRecord.agentId) agentRecord.agentId = agentRecord.id;
+
+  const db = await getDb();
+  if (db) {
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(AGENTS_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(AGENTS_STORE_NAME);
+        const req = store.put(agentRecord);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    } catch (err) {
+      console.warn('Failed to put agent to IndexedDB, updating fallback:', err);
+    }
+  }
+
+  // Update fallback
+  const list = readAgentsFallback(agent.orgId);
+  const idx = list.findIndex(a => (a.id === agentRecord.id || a.agentId === agentRecord.agentId));
+  if (idx >= 0) {
+    list[idx] = agentRecord;
+  } else {
+    list.push(agentRecord);
+  }
+  list.sort((a, b) => (a.agentName || '').localeCompare(b.agentName || ''));
+  writeAgentsFallback(agent.orgId, list);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('local_agents_updated', { detail: { orgId: agent.orgId, agent: agentRecord } })
+    );
+  }
+
+  return agentRecord;
+}
+
+/**
+ * Bulk save / sync agents into IndexedDB `local_agents`.
+ */
+export async function saveLocalAgentsBulk(orgId, agents) {
+  if (!orgId || !Array.isArray(agents)) return;
+  const normalized = agents.map(a => ({
+    id: a.id || a.agentId || `ag_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    agentId: a.agentId || a.id || '',
+    orgId,
+    agentName: a.agentName || '',
+    address: a.address || '',
+    phone: a.phone || '',
+    commission: a.commission !== undefined ? Number(a.commission) : 0,
+    rate: a.rate !== undefined ? Number(a.rate) : 80,
+    status: a.status || 'active',
+    updatedAt: a.updatedAt || Date.now(),
+  })).map(a => ({ ...a, agentId: a.agentId || a.id }));
+
+  const db = await getDb();
+  if (db) {
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(AGENTS_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(AGENTS_STORE_NAME);
+        normalized.forEach(item => store.put(item));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (err) {
+      console.warn('Failed to bulk put agents in IndexedDB:', err);
+    }
+  }
+
+  writeAgentsFallback(orgId, normalized);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('local_agents_updated', { detail: { orgId, agents: normalized } })
+    );
+  }
+}
+
+/**
+ * Get all agents for an organization from IndexedDB `local_agents` (with fallback).
+ */
+export async function getLocalAgents(orgId) {
+  if (!orgId) return [];
+  const db = await getDb();
+  if (db) {
+    try {
+      const items = await new Promise((resolve, reject) => {
+        const tx = db.transaction(AGENTS_STORE_NAME, 'readonly');
+        const store = tx.objectStore(AGENTS_STORE_NAME);
+        const index = store.index('orgId');
+        const req = index.getAll(orgId);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      });
+      if (items && items.length > 0) {
+        items.sort((a, b) => (a.agentName || '').localeCompare(b.agentName || ''));
+        writeAgentsFallback(orgId, items);
+        return items;
+      }
+    } catch (err) {
+      console.warn('Failed to get agents from IndexedDB, using fallback:', err);
+    }
+  }
+
+  const fallback = readAgentsFallback(orgId);
+  fallback.sort((a, b) => (a.agentName || '').localeCompare(b.agentName || ''));
+  return fallback;
+}
+
+/**
+ * Delete an agent from IndexedDB `local_agents`.
+ */
+export async function deleteLocalAgent(orgId, agentId) {
+  if (!orgId || !agentId) return;
+  const db = await getDb();
+  if (db) {
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(AGENTS_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(AGENTS_STORE_NAME);
+        const req = store.delete(agentId);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    } catch (err) {
+      console.warn('Failed to delete agent from IndexedDB:', err);
+    }
+  }
+
+  const list = readAgentsFallback(orgId).filter(a => a.id !== agentId && a.agentId !== agentId);
+  writeAgentsFallback(orgId, list);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('local_agents_updated', { detail: { orgId, deletedAgentId: agentId } })
+    );
+  }
+}
+
 

@@ -6,7 +6,7 @@ import LanguageSwitcher from '@/components/LanguageSwitcher.js';
 import ThemeToggle from '@/components/ThemeToggle.js';
 import { useI18n } from '@/lib/i18n/index.js';
 
-import { getLocalVoucherCounts } from '@/lib/ledger/localVoucherDb.js';
+import { getLocalVoucherCounts, setOfflineMode } from '@/lib/ledger/localVoucherDb.js';
 import { onQueueEvent } from '@/lib/ledger/voucherQueue.js';
 
 const STORAGE_KEY = 'sidebar_collapsed';
@@ -128,7 +128,7 @@ const NAV_SEGMENTS = [
   { key: 'account',       segment: 'user-settings' },
 ];
 
-export default function Sidebar2D({ orgId, orgName, userName, role }) {
+export default function Sidebar2D({ orgId, orgName, userName, role, isOfflineMode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useI18n();
@@ -138,6 +138,12 @@ export default function Sidebar2D({ orgId, orgName, userName, role }) {
   const [isElectron, setIsElectron] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof isOfflineMode === 'boolean' && orgId) {
+      setOfflineMode(orgId, isOfflineMode);
+    }
+  }, [orgId, isOfflineMode]);
 
   useEffect(() => {
     try {

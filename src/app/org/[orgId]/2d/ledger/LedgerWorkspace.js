@@ -4,10 +4,10 @@ import LedgerEntry from './LedgerEntry.js';
 import LedgerHistory from './LedgerHistory.js';
 import SessionPicker from './SessionPicker.js';
 import ReportsModal from './ReportsModal.js';
-import LocalVouchersManager from '../local-vouchers/LocalVouchersManager.js';
 import useLedgerShortcuts from '@/lib/ledger/useLedgerShortcuts.js';
 import useLiveSession from '@/lib/ledger/useLiveSession.js';
 import { matchesCombo } from '@/lib/ledger/shortcuts.js';
+import { saveLocalAgentsBulk, getLocalAgents } from '@/lib/ledger/localVoucherDb.js';
 
 // Coordinates shared state between the entry panel and the saved-voucher
 // history panel: session-wide per-number totals (drives the grid/stats in
@@ -23,6 +23,7 @@ export default function LedgerWorkspace({
   luckyNumber: initialLuckyNumber = null,
   machines = [],
   canWrite,
+  userRole,
 }) {
   const [effectiveAgents, setEffectiveAgents] = useState(() => {
     if (agents && agents.length > 0) {
@@ -117,12 +118,18 @@ export default function LedgerWorkspace({
   });
 
   useEffect(() => {
-    if (agents && agents.length > 0) {
-      setEffectiveAgents(agents);
-      try {
-        localStorage.setItem(`agents_cache_${orgId}`, JSON.stringify(agents));
-      } catch {}
+    async function syncAgents() {
+      if (agents && agents.length > 0) {
+        setEffectiveAgents(agents);
+        await saveLocalAgentsBulk(orgId, agents);
+      } else {
+        const localList = await getLocalAgents(orgId);
+        if (localList && localList.length > 0) {
+          setEffectiveAgents(localList);
+        }
+      }
     }
+    syncAgents();
   }, [agents, orgId]);
 
   useEffect(() => {
@@ -170,7 +177,6 @@ export default function LedgerWorkspace({
   const [editingVoucher, setEditingVoucher] = useState(null);
   const [refreshSignal, setRefreshSignal] = useState(0);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [isLocalVouchersOpen, setIsLocalVouchersOpen] = useState(false);
   const [reportsTab, setReportsTab] = useState(null);
 
   // SessionPicker starts closed if an active session exists or has already been acknowledged
@@ -292,6 +298,7 @@ export default function LedgerWorkspace({
         vouchersCount={vouchersCount}
         editingVoucher={editingVoucher}
         canWrite={canWrite}
+        userRole={userRole}
         shortcuts={shortcuts}
         replaceSlash={replaceSlash}
         replaceAsterisk={replaceAsterisk}
@@ -308,29 +315,7 @@ export default function LedgerWorkspace({
         onOpenReports={() => setReportsTab('allAgent')}
         onOpenSale1={() => setReportsTab('agent')}
         onOpenSale2={() => setReportsTab('summary')}
-        onOpenLocalVouchers={() => setIsLocalVouchersOpen(true)}
       />
-
-      {isLocalVouchersOpen && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6"
-          onClick={() => setIsLocalVouchersOpen(false)}
-        >
-          <div
-            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-6xl w-full max-h-[92vh] flex flex-col overflow-hidden border border-gray-200 dark:border-slate-800"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="overflow-y-auto p-4 sm:p-6">
-              <LocalVouchersManager
-                orgId={orgId}
-                agents={effectiveAgents}
-                activeSession={effectiveSession}
-                onClose={() => setIsLocalVouchersOpen(false)}
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       {isSessionPickerOpen && (
         <SessionPicker

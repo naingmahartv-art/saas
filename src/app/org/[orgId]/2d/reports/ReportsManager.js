@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo, Fragment } from 'reac
 import { useI18n } from '@/lib/i18n/index.js';
 import { buildReportPdf, reportFileName } from '@/lib/reports/buildPdf.js';
 import { parseNumberExpression, MAX_ENTRIES } from '@/lib/lottery/numberParser.js';
+import { getLocalVouchers, getOfflineMode, cacheRemoteVouchersIntoLocalDb } from '@/lib/ledger/localVoucherDb.js';
 
 function getTokenItemsForSlip(slip, luckyNo) {
   if (slip.tokens && slip.tokens.length > 0) {
@@ -111,6 +112,7 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
 
   const [loading, setLoading] = useState(false);
   const [reportSlips, setReportSlips] = useState([]);
+  const [isOfflineSource, setIsOfflineSource] = useState(false);
 
   const agentMapLookup = useMemo(() => {
     const map = new Map();
@@ -121,25 +123,85 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
     return map;
   }, [initialAgents]);
 
+  const loadLocalReportData = useCallback(
+    async (fromDate, toDate, agent, slot) => {
+      try {
+        const all = await getLocalVouchers(orgId);
+        const filtered = all
+          .filter((v) => {
+            if (fromDate && v.onDate && v.onDate < fromDate) return false;
+            if (toDate && v.onDate && v.onDate > toDate) return false;
+            if (slot && v.ampm && v.ampm !== slot) return false;
+            if (agent && v.agentName !== agent && v.agentId !== agent) return false;
+            return true;
+          })
+          .map((v) => ({
+            id: v.id,
+            srNo: v.srNo ?? (v.status === 'pending' ? 'Pending' : '-'),
+            agentId: v.agentId,
+            agentName: v.agentName || (v.isBuyVoucher || v.voucherType === 'buy' ? 'Buy Offload' : v.agentId),
+            tokens: v.tokens || [],
+            details: v.entries || v.items || [],
+            amount: typeof v.amount === 'number' ? v.amount : 0,
+            createdAt: v.createdAt,
+            onDate: v.onDate,
+            ampm: v.ampm,
+            onCount: v.onCount || 1,
+            isBuyVoucher: v.isBuyVoucher === true || v.voucherType === 'buy',
+            voucherType: v.voucherType || (v.isBuyVoucher ? 'buy' : 'sale'),
+            luckyNo: v.luckyNo || null,
+            rate: typeof v.rate === 'number' ? v.rate : 80,
+            agentCommissions: v.agentCommissions || {},
+            agentRates: v.agentRates || {},
+            status: v.status,
+          }));
+        setReportSlips(filtered);
+        setIsOfflineSource(true);
+      } catch {
+        setReportSlips([]);
+        setIsOfflineSource(true);
+      }
+    },
+    [orgId]
+  );
+
   const loadReportData = useCallback(
     async (fromDate, toDate, agent, slot) => {
       setLoading(true);
+      const isOfflineForced = getOfflineMode(orgId) || (typeof navigator !== 'undefined' && !navigator.onLine);
+      if (isOfflineForced) {
+        await loadLocalReportData(fromDate, toDate, agent, slot);
+        setLoading(false);
+        return;
+      }
+
       try {
         let url = `/api/org/${orgId}/reports/range?startDate=${fromDate}&endDate=${toDate}`;
         if (agent) url += `&agentName=${encodeURIComponent(agent)}`;
         if (slot) url += `&ampm=${encodeURIComponent(slot)}`;
         const res = await fetch(url);
+        if (!res.ok) {
+          await loadLocalReportData(fromDate, toDate, agent, slot);
+          return;
+        }
         const text = await res.text();
         let data = {};
         try { data = JSON.parse(text); } catch { data = { slips: [] }; }
-        setReportSlips(data.slips || []);
+        const slips = data.slips || [];
+        setReportSlips(slips);
+        setIsOfflineSource(false);
+
+        // Keep local offline DB synced with fetched remote vouchers
+        if (slips.length > 0) {
+          cacheRemoteVouchersIntoLocalDb(orgId, slips).catch(() => {});
+        }
       } catch {
-        setReportSlips([]);
+        await loadLocalReportData(fromDate, toDate, agent, slot);
       } finally {
         setLoading(false);
       }
     },
-    [orgId]
+    [orgId, loadLocalReportData]
   );
 
   // Sync date ranges when user changes periodType or day/week/month selections
@@ -509,9 +571,22 @@ export default function ReportsManager({ orgId, initialAgents = [] }) {
       <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-lg space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-extrabold tracking-tight text-white flex items-center gap-2">
-              <span>📊</span> Date Range Report
-            </h1>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-2xl font-extrabold tracking-tight text-white flex items-center gap-2">
+                <span>📊</span> Date Range Report
+              </h1>
+              {isOfflineSource ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                  Offline Local DB
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  Online Cloud DB
+                </span>
+              )}
+            </div>
             <p className="text-xs text-slate-400 mt-1">
               Select Day, Week, or Month to inspect session settlements and summary totals
             </p>

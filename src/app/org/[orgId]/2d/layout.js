@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/auth/session.js';
 import { orgDoc, userDoc } from '@/lib/db/firestore.js';
-import Sidebar2D from '@/components/Sidebar2D';
+import Sidebar2D from '@/components/Sidebar2D.js';
 import { canAccessOrgApp } from '@/lib/auth/permissions.js';
 
 export default async function TwoDLayout({ children, params }) {
@@ -24,8 +24,8 @@ export default async function TwoDLayout({ children, params }) {
       setTimeout(() => reject(new Error('Firestore timeout')), 2000)
     );
     const [orgSnap, meSnap] = await Promise.race([fetchPromise, timeoutPromise]);
-    org = orgSnap.exists ? orgSnap.data() : null;
-    me = meSnap.exists ? meSnap.data() : null;
+    org = orgSnap?.exists ? orgSnap.data() : null;
+    me = meSnap?.exists ? meSnap.data() : null;
     if (org && me?.status === 'suspended') {
       redirect('/suspended');
     }
@@ -34,10 +34,17 @@ export default async function TwoDLayout({ children, params }) {
   }
 
   const orgName = org?.name || session.orgName || '2D Workspace';
+  const isOfflineMode = Boolean(org?.isOfflineMode || org?.operatingMode === 'offline');
 
   return (
     <div className="min-h-screen flex bg-gray-50 dark:bg-slate-950 dark:text-slate-100">
-      <Sidebar2D orgId={orgId} orgName={orgName} userName={session.name} role={session.role} />
+      <Sidebar2D
+        orgId={orgId}
+        orgName={orgName}
+        userName={session.name}
+        role={session.role}
+        isOfflineMode={isOfflineMode}
+      />
       <main className="flex-1 min-w-0">{children}</main>
     </div>
   );

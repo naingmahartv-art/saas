@@ -62,9 +62,9 @@ export default async function LedgerPage({ params }) {
 
   const notBuyList = activeSession?.notBuyNumbers || [];
   const hotList = activeSession?.hotNumbers || [];
-  const luckyNumber = activeSession?.luckyNumber || null;
-
-  const canWrite = true;
+  const isUpperRole = ['super_admin', 'org_admin', 'supervisor'].includes(session.role);
+  const isSessionOpen = activeSession?.isActive === true;
+  const canWrite = isUpperRole || isSessionOpen;
 
   return (
     <LedgerWorkspace
@@ -78,6 +78,7 @@ export default async function LedgerPage({ params }) {
       luckyNumber={luckyNumber}
       machines={machines}
       canWrite={canWrite}
+      userRole={session.role}
     />
   );
 }

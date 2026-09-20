@@ -11,7 +11,7 @@ export function canAccessAdminPanel(role) {
 }
 
 export function canAccessOrgApp(role) {
-  return ALL_ROLES.includes(role);
+  return Boolean(role && typeof role === 'string' && role.trim().length > 0);
 }
 
 export function canManageOrgUsers(role) {
@@ -40,16 +40,36 @@ export async function hasActiveSession(orgId) {
 }
 
 /**
- * Cashiers can only create/edit voucher entries while a lottery session is
- * active; once the session is closed they're read-only until the next one
- * opens. Every other role is unrestricted. Returns an { error, status }
- * object to return as-is from the route on failure, or null when allowed.
+ * Check if the user is permitted to write (create, edit, delete) vouchers for a session.
+ * - Admin roles ('super_admin', 'org_admin') & 'supervisor' can create/edit vouchers at any time,
+ *   including past/finished sessions.
+ * - 'cashier' can ONLY create/edit vouchers while the session is OPEN and active.
  */
-export async function assertCashierWriteAllowed(session, orgId) {
-  if (session.role !== 'cashier') return null;
+export async function assertCashierWriteAllowed(session, orgId, targetSessionData = null) {
+  // Unrestricted roles: super_admin, org_admin, supervisor
+  if (['super_admin', 'org_admin', 'supervisor'].includes(session.role)) {
+    return null;
+  }
+
+  // If a specific target session is provided (e.g., editing/saving to a specific session doc)
+  if (targetSessionData) {
+    const isActive = targetSessionData.isActive === true;
+    if (!isActive) {
+      return {
+        error: 'This session has finished. Cashiers cannot create or edit vouchers after session closes.',
+        status: 403,
+      };
+    }
+    return null;
+  }
+
+  // Otherwise check if there is an active session currently open in the organization
   const active = await hasActiveSession(orgId);
   if (!active) {
-    return { error: 'No active session — voucher will sync when a session starts', status: 503 };
+    return {
+      error: 'No active session. Cashiers cannot create or edit vouchers when the session is closed.',
+      status: 403,
+    };
   }
   return null;
 }

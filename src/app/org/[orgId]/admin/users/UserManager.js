@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useI18n } from '@/lib/i18n/index.js';
 
 export default function UserManager({ orgId, orgName, initialUsers, currentUserRole }) {
@@ -11,12 +11,35 @@ export default function UserManager({ orgId, orgName, initialUsers, currentUserR
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState(null);
   const [tempPassword, setTempPassword] = useState(null); // { userName, password } | null
+  const [dynamicRoles, setDynamicRoles] = useState([]);
+
+  useEffect(() => {
+    async function loadRoles() {
+      try {
+        const res = await fetch(`/api/org/${orgId}/roles`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.roles && Array.isArray(data.roles)) {
+            setDynamicRoles(data.roles);
+          }
+        }
+      } catch {}
+    }
+    loadRoles();
+  }, [orgId]);
 
   const assignableRoles = currentUserRole === 'super_admin'
-    ? ['org_admin', 'supervisor', 'cashier']
-    : ['supervisor', 'cashier'];
+    ? (dynamicRoles.length > 0 ? dynamicRoles.map(r => r.id) : ['org_admin', 'supervisor', 'cashier'])
+    : (dynamicRoles.length > 0 ? dynamicRoles.filter(r => r.id !== 'org_admin').map(r => r.id) : ['supervisor', 'cashier']);
 
-  const roleLabel = { org_admin: t('users.orgAdmin'), supervisor: t('users.supervisor'), cashier: t('users.cashier') };
+  const roleLabelMap = {
+    org_admin: t('users.orgAdmin') || 'Org Admin',
+    supervisor: t('users.supervisor') || 'Supervisor',
+    cashier: t('users.cashier') || 'Cashier',
+  };
+  dynamicRoles.forEach((r) => {
+    roleLabelMap[r.id] = r.name;
+  });
 
   async function createUser(e) {
     e.preventDefault();
@@ -121,7 +144,7 @@ export default function UserManager({ orgId, orgName, initialUsers, currentUserR
                   onChange={(e) => setForm({ ...form, role: e.target.value })}
                 >
                   {assignableRoles.map((r) => (
-                    <option key={r} value={r}>{roleLabel[r]}</option>
+                    <option key={r} value={r}>{roleLabelMap[r] || r}</option>
                   ))}
                 </select>
               </div>
@@ -151,7 +174,7 @@ export default function UserManager({ orgId, orgName, initialUsers, currentUserR
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${u.role === 'org_admin' ? 'bg-purple-100 text-purple-700' : u.role === 'supervisor' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
-                      {roleLabel[u.role] || u.role}
+                      {roleLabelMap[u.role] || u.role}
                     </span>
                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${isSuspended ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
                       {isSuspended ? t('users.suspended') : t('users.active')}

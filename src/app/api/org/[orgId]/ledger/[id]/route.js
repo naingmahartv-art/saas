@@ -47,12 +47,14 @@ export async function PUT(request, { params }) {
     return NextResponse.json({ error: 'tokens must be a non-empty array' }, { status: 400 });
   }
 
-  const lockError = await assertCashierWriteAllowed(session, orgId);
-  if (lockError) return NextResponse.json({ error: lockError.error }, { status: lockError.status });
-
   const sid = buildSessionId(coords.onDate, coords.ampm, coords.onCount);
   let voucherRef = orgSessionVoucherDoc(orgId, sid, id);
   const sessionRef = orgSessionDoc(orgId, sid);
+  const sessionSnap = await sessionRef.get();
+  const sessionData = sessionSnap.exists ? sessionSnap.data() : null;
+
+  const lockError = await assertCashierWriteAllowed(session, orgId, sessionData);
+  if (lockError) return NextResponse.json({ error: lockError.error }, { status: lockError.status });
 
   let newEntries;
   try {
@@ -181,11 +183,14 @@ export async function DELETE(request, { params }) {
     return NextResponse.json({ error: 'onCount, ampm, and onDate query params are required' }, { status: 400 });
   }
 
-  const lockError = await assertCashierWriteAllowed(session, orgId);
-  if (lockError) return NextResponse.json({ error: lockError.error }, { status: lockError.status });
-
   const sid = buildSessionId(coords.onDate, coords.ampm, coords.onCount);
   let voucherRef = orgSessionVoucherDoc(orgId, sid, id);
+  const sessionRef = orgSessionDoc(orgId, sid);
+  const sessionSnap = await sessionRef.get();
+  const sessionData = sessionSnap.exists ? sessionSnap.data() : null;
+
+  const lockError = await assertCashierWriteAllowed(session, orgId, sessionData);
+  if (lockError) return NextResponse.json({ error: lockError.error }, { status: lockError.status });
 
   const db = getDb();
   let slip;

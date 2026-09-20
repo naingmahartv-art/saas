@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { getSession } from '@/lib/auth';
+import { getSession } from '@/lib/auth/session.js';
 import { orgAgentsCol, orgRatesDoc, orgRestrictionDoc, orgMachinesCol } from '@/lib/db/firestore.js';
 import { getActiveSession } from '@/lib/auth/permissions.js';
 import BuyWorkspace from './BuyWorkspace.js';
@@ -62,9 +62,9 @@ export default async function BuyPage({ params }) {
 
   const notBuyList = activeSession?.notBuyNumbers || [];
   const hotList = activeSession?.hotNumbers || [];
-  const luckyNumber = activeSession?.luckyNumber || null;
-
-  const canWrite = true;
+  const isUpperRole = ['super_admin', 'org_admin', 'supervisor'].includes(session.role);
+  const isSessionOpen = activeSession?.isActive === true;
+  const canWrite = isUpperRole || isSessionOpen;
 
   return (
     <BuyWorkspace
@@ -78,6 +78,7 @@ export default async function BuyPage({ params }) {
       luckyNumber={luckyNumber}
       machines={machines}
       canWrite={canWrite}
+      userRole={session.role}
     />
   );
 }

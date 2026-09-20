@@ -104,25 +104,45 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'tokens must be a non-empty array' }, { status: 400 });
     }
 
-    const lockError = await assertCashierWriteAllowed(session, orgId);
-    if (lockError) return NextResponse.json({ error: lockError.error }, { status: lockError.status });
-
     const sid = buildSessionId(onDate, ampm, onCount);
     let effectiveSid = sid;
     let sessionRef = orgSessionDoc(orgId, sid);
     let sessionSnap = await sessionRef.get();
+    let sessionData = sessionSnap.exists ? sessionSnap.data() : null;
 
-    if (!sessionSnap.exists || !sessionSnap.data()?.isActive) {
-      const activeSnap = await orgSessionsCol(orgId).where('isActive', '==', true).limit(1).get();
-      if (!activeSnap.empty) {
-        effectiveSid = activeSnap.docs[0].id;
-        sessionRef = activeSnap.docs[0].ref;
-        sessionSnap = activeSnap.docs[0];
+    // Check write policy against the targeted session
+    const lockError = await assertCashierWriteAllowed(session, orgId, sessionData);
+    if (lockError) {
+      return NextResponse.json({ error: lockError.error }, { status: lockError.status });
+    }
+
+    if (!sessionSnap.exists) {
+      // If session doc doesn't exist yet:
+      // Admins/Supervisors can create historical or custom sessions on the fly
+      const isUnrestricted = ['super_admin', 'org_admin', 'supervisor'].includes(session.role);
+      if (isUnrestricted) {
+        await sessionRef.set({
+          onDate,
+          ampm,
+          onCount: Number(onCount),
+          machineId: Number(machineId) || 1,
+          isActive: false,
+          totals: {},
+          createdAt: Date.now(),
+        }, { merge: true });
+        sessionSnap = await sessionRef.get();
       } else {
-        return NextResponse.json(
-          { error: 'No active session — voucher will sync when a session starts' },
-          { status: 503 }
-        );
+        const activeSnap = await orgSessionsCol(orgId).where('isActive', '==', true).limit(1).get();
+        if (!activeSnap.empty) {
+          effectiveSid = activeSnap.docs[0].id;
+          sessionRef = activeSnap.docs[0].ref;
+          sessionSnap = activeSnap.docs[0];
+        } else {
+          return NextResponse.json(
+            { error: 'No active session. Cashiers cannot enter vouchers when session is closed.' },
+            { status: 403 }
+          );
+        }
       }
     }
 

@@ -161,6 +161,7 @@ function createWindow() {
     width: 1280,
     height: 800,
     title: 'SaaS Platform',
+    icon: path.join(__dirname, 'assets', 'icon.png'),
     backgroundColor: '#0f172a',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

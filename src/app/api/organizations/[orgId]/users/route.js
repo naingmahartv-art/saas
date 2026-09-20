@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { usersCol } from '@/lib/db/firestore.js';
+import { usersCol, orgRolesCol } from '@/lib/db/firestore.js';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { canManageOrgUsers, getClientIp } from '@/lib/auth/permissions.js';
@@ -24,7 +24,7 @@ export async function GET(request, { params }) {
   return NextResponse.json(orgUsers);
 }
 
-// POST — create user in org. org_admin can only hand out supervisor/cashier
+// POST — create user in org. org_admin can hand out supervisor/cashier and custom org roles
 // (never org_admin); super_admin can additionally create org_admins.
 export async function POST(request, { params }) {
   const session = await getSession();
@@ -42,8 +42,21 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: 'Name, email and password required' }, { status: 400 });
   }
 
-  const allowedRoles = session.role === 'super_admin' ? ['org_admin', 'supervisor', 'cashier'] : ['supervisor', 'cashier'];
-  if (!allowedRoles.includes(role)) {
+  // Fetch dynamic custom roles configured for this organization
+  let customRoleIds = [];
+  try {
+    const snap = await orgRolesCol(orgId).get();
+    customRoleIds = snap.docs.map(d => d.id);
+  } catch {
+    // fallback
+  }
+
+  const baseAllowed = session.role === 'super_admin'
+    ? ['org_admin', 'supervisor', 'cashier']
+    : ['supervisor', 'cashier'];
+
+  const allowedRoles = Array.from(new Set([...baseAllowed, ...customRoleIds]));
+  if (!role || !allowedRoles.includes(role)) {
     return NextResponse.json({ error: `Role must be one of: ${allowedRoles.join(', ')}` }, { status: 400 });
   }
 

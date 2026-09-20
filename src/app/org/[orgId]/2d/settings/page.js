@@ -50,6 +50,10 @@ export default async function SettingsPage({ params }) {
 
   const agents = agentsSnap?.docs ? agentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) : [];
 
+  const orgData = orgSnap?.exists ? orgSnap.data() : null;
+  const initialOperatingMode = orgData?.operatingMode || (orgData?.isOfflineMode ? 'offline' : 'online');
+  const initialIsOfflineMode = Boolean(orgData?.isOfflineMode || orgData?.operatingMode === 'offline');
+
   const onCount = activeSession?.onCount ?? null;
   // Hot/not-buy numbers live as array fields on the active session's own
   // document (folded in per the Firestore data model) — already available
@@ -62,11 +66,13 @@ export default async function SettingsPage({ params }) {
       <SettingsPanel
         orgId={orgId}
         onCount={onCount}
-        initialRates={ratesSnap.exists ? ratesSnap.data() : null}
-        initialLimits={limitsSnap.exists ? limitsSnap.data() : null}
+        initialRates={ratesSnap?.exists ? ratesSnap.data() : null}
+        initialLimits={limitsSnap?.exists ? limitsSnap.data() : null}
         initialHotNumbers={hotNumbersList}
         initialNotBuyNumbers={notBuyNumbersList}
         initialAgents={agents}
+        initialOperatingMode={initialOperatingMode}
+        initialIsOfflineMode={initialIsOfflineMode}
       />
     </div>
   );

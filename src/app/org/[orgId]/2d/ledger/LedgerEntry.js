@@ -102,8 +102,8 @@ export default function LedgerEntry({
   onOpenReports,
   onOpenSale1,
   onOpenSale2,
-  onOpenLocalVouchers,
   canWrite = true,
+  userRole = 'cashier',
   shortcuts,
   replaceSlash = 'P',
   replaceAsterisk = 'R',
@@ -1529,6 +1529,17 @@ export default function LedgerEntry({
           {activeSession ? (
             <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-gray-900 dark:text-slate-100">
               <span className="badge-active">{t(`session.${SLOT_LABEL_KEY[activeSession.ampm] || 'slot0900'}`)}</span>
+              {activeSession.isActive === false && (
+                canWrite ? (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border border-purple-300">
+                    Finished Session (Admin Edit)
+                  </span>
+                ) : (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300">
+                    Session Closed (Read Only)
+                  </span>
+                )
+              )}
               <span className="text-gray-400">•</span>
               <span>{activeSession.onDate}</span>
               <span className="text-gray-400">•</span>
@@ -1586,27 +1597,6 @@ export default function LedgerEntry({
             >
               <span>📈</span>
               <span>Sale 2 (F10)</span>
-            </button>
-          )}
-
-          {onOpenLocalVouchers && (
-            <button
-              type="button"
-              onClick={onOpenLocalVouchers}
-              className={`flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-lg transition border ${
-                (voucherCounts.pending > 0 || voucherCounts.failed > 0)
-                  ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border-amber-300 dark:border-amber-700 animate-pulse'
-                  : 'border-gray-300 dark:border-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800'
-              }`}
-              title="Offline / Local Vouchers"
-            >
-              <span>📦</span>
-              <span>{t('nav.localVouchers') || 'Offline Vouchers'}</span>
-              {(voucherCounts.pending > 0 || voucherCounts.failed > 0) && (
-                <span className="px-1.5 py-0.2 text-xs font-bold rounded-full bg-red-600 text-white">
-                  {voucherCounts.pending + voucherCounts.failed}
-                </span>
-              )}
             </button>
           )}
 
@@ -1790,8 +1780,14 @@ export default function LedgerEntry({
                 value={inputValue}
                 onChange={handleChange}
                 onKeyDown={handleKeyDown}
-                disabled={!agentId}
-                placeholder={agentId ? `${t('ledger.enterNumbers')} (${formatCombo(shortcuts.focusNumber)})` : t('ledger.selectAgentFirst')}
+                disabled={!agentId || !canWrite}
+                placeholder={
+                  !canWrite
+                    ? 'Session is closed (Read Only)'
+                    : agentId
+                    ? `${t('ledger.enterNumbers')} (${formatCombo(shortcuts.focusNumber)})`
+                    : t('ledger.selectAgentFirst')
+                }
                 className="w-full px-3 py-2 text-sm font-mono tracking-wide border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100"
               />
             </div>
@@ -1803,25 +1799,15 @@ export default function LedgerEntry({
               </div>
             )}
 
+            {!canWrite && (
+              <div className="flex items-center gap-2 text-xs font-semibold text-rose-800 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 rounded-lg px-3 py-2 mt-3">
+                <span>🔒 Session has finished. Cashiers are in Read-Only mode. Only Admins can modify closed sessions.</span>
+              </div>
+            )}
+
             {error && (
               <div className="text-sm text-red-600 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 rounded-lg px-3 py-2 mt-3 space-y-1">
                 <p>{error}</p>
-                {onOpenLocalVouchers ? (
-                  <button
-                    type="button"
-                    onClick={onOpenLocalVouchers}
-                    className="text-xs font-semibold text-brand-600 dark:text-brand-400 hover:underline inline-flex items-center gap-1"
-                  >
-                    📦 {t('localVouchers.title') || 'View in Offline Vouchers'} →
-                  </button>
-                ) : (
-                  <Link
-                    href={`/org/${orgId}/2d/local-vouchers`}
-                    className="text-xs font-semibold text-brand-600 dark:text-brand-400 hover:underline inline-flex items-center gap-1"
-                  >
-                    📦 {t('localVouchers.title') || 'View in Offline Vouchers'} →
-                  </Link>
-                )}
               </div>
             )}
 
@@ -1829,14 +1815,18 @@ export default function LedgerEntry({
               <button
                 type="button"
                 onClick={() => handleSave(pendingTokens)}
-                disabled={saving || (pendingTokens.length === 0 && !editingId)}
+                disabled={!canWrite || saving || (pendingTokens.length === 0 && !editingId)}
                 className={`flex-1 text-white text-sm font-medium py-2.5 rounded-lg transition ${
-                  editingId && pendingTokens.length === 0
+                  !canWrite
+                    ? 'bg-gray-400 dark:bg-slate-700 cursor-not-allowed opacity-75'
+                    : editingId && pendingTokens.length === 0
                     ? 'bg-red-600 hover:bg-red-700 font-bold shadow-md'
                     : 'bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50'
                 }`}
               >
-                {saving
+                {!canWrite
+                  ? 'Session Closed (Read Only)'
+                  : saving
                   ? t('common.saving')
                   : editingId
                   ? pendingTokens.length === 0
