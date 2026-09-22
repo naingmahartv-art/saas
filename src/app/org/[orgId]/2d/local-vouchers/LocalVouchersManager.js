@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useI18n } from '@/lib/i18n/index.js';
 import {
   getLocalVouchers,
+  deleteLocalVoucher,
   pruneSyncedLocalVouchers,
   getLocalAgents,
   saveLocalAgentsBulk,
@@ -225,6 +226,17 @@ export default function LocalVouchersManager({ orgId, agents, initialAgents, act
       showNotification('success', t('localVouchers.prunedCount', { count: removed }));
     } catch (err) {
       showNotification('error', err.message || 'Prune failed');
+    }
+  }
+
+  async function handleDeleteLocal(voucher) {
+    if (!window.confirm('Are you sure you want to discard this local record?')) return;
+    try {
+      await deleteLocalVoucher(voucher.id, orgId);
+      await loadVouchers();
+      showNotification('success', 'Local record removed');
+    } catch (err) {
+      showNotification('error', err.message || 'Failed to remove');
     }
   }
 
@@ -650,7 +662,7 @@ export default function LocalVouchersManager({ orgId, agents, initialAgents, act
 
                       {/* Actions */}
                       <td className="py-3 px-4 text-right whitespace-nowrap space-x-2">
-                        {(isFailed || isPending) && (
+                        {(isFailed || isPending || isSyncing) && (
                           <button
                             type="button"
                             onClick={() => handleRetryOne(v)}
@@ -658,6 +670,15 @@ export default function LocalVouchersManager({ orgId, agents, initialAgents, act
                             className="px-2.5 py-1 text-xs font-semibold bg-brand-50 text-brand-700 hover:bg-brand-100 dark:bg-brand-950/60 dark:text-brand-300 dark:hover:bg-brand-900/60 border border-brand-200 dark:border-brand-800 rounded-lg transition disabled:opacity-50"
                           >
                             {retryingId === v.id ? t('localVouchers.retrying') : t('localVouchers.retryBtn')}
+                          </button>
+                        )}
+                        {isFailed && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteLocal(v)}
+                            className="px-2.5 py-1 text-xs font-semibold bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-950/60 dark:text-red-300 dark:hover:bg-red-900/60 border border-red-200 dark:border-red-800 rounded-lg transition"
+                          >
+                            Discard
                           </button>
                         )}
                         <button
