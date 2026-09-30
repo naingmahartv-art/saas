@@ -80,6 +80,13 @@ const ICONS = {
       <path d="M6.5 19a6 6 0 0 1 11 0" />
     </>
   ),
+  info: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="16" x2="12" y2="12" />
+      <line x1="12" y1="8" x2="12.01" y2="8" />
+    </>
+  ),
   settings: (
     <>
       <circle cx="12" cy="12" r="3" />
@@ -124,6 +131,7 @@ const NAV_SEGMENTS = [
   { key: 'agents',        segment: 'agents' },
   { key: 'reports',       segment: 'reports' },
   { key: 'balance',       segment: 'balance' },
+  { key: 'info',          segment: 'info' },
   { key: 'settings',      segment: 'settings' },
   { key: 'account',       segment: 'user-settings' },
 ];

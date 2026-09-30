@@ -9,4 +9,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('update-status', subscription);
   },
   quitAndInstall: () => ipcRenderer.send('quit-and-install'),
+  logAnalyticsEvent: (eventName, params) => {
+    ipcRenderer.send('telemetry-log-event', { eventName, params });
+  },
+  logError: (type, error, fatal = false) => {
+    ipcRenderer.send('telemetry-log-error', {
+      type,
+      error: typeof error === 'object' ? { message: error.message, stack: error.stack } : String(error),
+      fatal,
+    });
+  },
 });

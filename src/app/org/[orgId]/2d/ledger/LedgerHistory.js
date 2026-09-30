@@ -149,8 +149,9 @@ export default function LedgerHistory({ orgId, activeSession, onEdit, onDeleted,
   async function handleDelete(slip) {
     if (!confirm(t('ledger.historyDeleteConfirm', { n: slip.srNo }))) return;
     setDeletingId(slip.id);
+    const sid = slip.sessionId || (slip.onDate && slip.ampm ? `${slip.onDate}_${slip.ampm}_${slip.onCount || 1}` : '');
     try {
-      await deleteLocalVoucher(slip.id, orgId);
+      await deleteLocalVoucher(slip.id, orgId, sid);
 
       if (!getOfflineMode(orgId)) {
         const qs = new URLSearchParams({

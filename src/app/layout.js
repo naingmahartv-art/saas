@@ -1,5 +1,6 @@
 import './globals.css';
 import { I18nProvider } from '@/lib/i18n/index.js';
+import AnalyticsProvider from '@/components/AnalyticsProvider.js';
 
 export const metadata = {
   title: 'SaaS Platform',
@@ -28,9 +29,11 @@ export default function RootLayout({ children }) {
         />
       </head>
       <body suppressHydrationWarning>
-        <I18nProvider>
-          {children}
-        </I18nProvider>
+        <AnalyticsProvider>
+          <I18nProvider>
+            {children}
+          </I18nProvider>
+        </AnalyticsProvider>
       </body>
     </html>
   );

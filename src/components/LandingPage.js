@@ -41,9 +41,14 @@ export default function LandingPage({ initialResources = [] }) {
 
   useEffect(() => {
     fetch('/api/admin/resources', { cache: 'no-store' })
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) return null;
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) return null;
+        return res.json();
+      })
       .then((data) => {
-        if (data.resources && data.resources.length > 0) {
+        if (data?.resources && data.resources.length > 0) {
           const exeItems = data.resources
             .filter((r) => r.type === 'exe')
             .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
@@ -55,7 +60,7 @@ export default function LandingPage({ initialResources = [] }) {
           }
         }
       })
-      .catch((err) => console.error(err));
+      .catch(() => {});
   }, []);
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 font-sans selection:bg-indigo-500 selection:text-white">

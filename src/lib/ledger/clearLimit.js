@@ -1,10 +1,13 @@
 'use client';
 
+import { clearAllLocalLimitsForSession } from './localVoucherDb.js';
+
 /**
- * Clear limit amount keys from localStorage when session changes.
+ * Clear limit amount keys from localStorage and IndexedDB when session changes.
  * @param {string} [orgId]
+ * @param {string} [sessionId]
  */
-export function clearLimitLocalStorage(orgId) {
+export async function clearLimitLocalStorage(orgId, sessionId) {
   if (typeof window === 'undefined' || !window.localStorage) return;
   try {
     const keysToRemove = [];
@@ -19,7 +22,11 @@ export function clearLimitLocalStorage(orgId) {
     for (const key of keysToRemove) {
       localStorage.removeItem(key);
     }
+
+    if (orgId && sessionId) {
+      await clearAllLocalLimitsForSession(orgId, sessionId);
+    }
   } catch (err) {
-    console.warn('Error clearing limit from localStorage:', err);
+    console.warn('Error clearing limit storage:', err);
   }
 }

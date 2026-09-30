@@ -40,7 +40,7 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: permError.error }, { status: permError.status });
     }
 
-    const { onCount, ampm, onDate, machineId, agentId, tokens, items } = await request.json();
+    const { onCount, ampm, onDate, machineId, agentId, tokens, items, clientId } = await request.json();
 
     if (!onCount || !ampm || !onDate) {
       return NextResponse.json({ error: 'onCount, ampm, and onDate are required' }, { status: 400 });
@@ -94,7 +94,9 @@ export async function POST(request, { params }) {
 
     const now = Date.now();
     const db = getDb();
-    const voucherRef = orgSessionVouchersCol(orgId, sid).doc();
+    const voucherRef = clientId
+      ? orgSessionVouchersCol(orgId, sid).doc(clientId)
+      : orgSessionVouchersCol(orgId, sid).doc();
 
     const { srNo } = await db.runTransaction(async (tx) => {
       const sSnap = await tx.get(sessionRef);
@@ -106,6 +108,7 @@ export async function POST(request, { params }) {
 
       tx.set(voucherRef, {
         id: voucherRef.id,
+        clientId: clientId || voucherRef.id,
         orgId,
         sessionId: sid,
         srNo: nextSrNo,

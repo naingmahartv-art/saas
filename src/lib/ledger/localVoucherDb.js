@@ -1,11 +1,89 @@
 'use client';
 
-const DB_NAME = 'lottery_local_vouchers_db';
-const DB_VERSION = 3;
-const STORE_NAME = 'local_vouchers';
-const AGENTS_STORE_NAME = 'local_agents';
+import { DB_NAME, DB_VERSION, STORES, initDbSchema } from './dbSchema.js';
+import {
+  toCanonicalVoucher,
+  toIndexedDbRecord,
+  fromIndexedDbRecord,
+  fromFirestoreDoc,
+} from './voucherAdapter.js';
+import { toCanonicalSession, fromFirestoreSession } from './sessionAdapter.js';
+import { toCanonicalLimit, resolveEffectiveLimits } from './limitAdapter.js';
+import { toCanonicalAgent } from './agentAdapter.js';
+import { toCanonicalMachine, allocateNextSerial } from './machineAdapter.js';
 
 let dbPromise = null;
+
+// Cross-tab / cross-window instant event bus
+const SYNC_CHANNEL_NAME = 'lottery_ledger_sync';
+let syncBroadcastChannel = null;
+
+if (typeof window !== 'undefined' && typeof window.BroadcastChannel !== 'undefined') {
+  try {
+    syncBroadcastChannel = new BroadcastChannel(SYNC_CHANNEL_NAME);
+  } catch (e) {
+    console.warn('BroadcastChannel not supported or failed to init:', e);
+  }
+}
+
+/**
+ * Universal broadcast for any data change across all 5 stores.
+ */
+export function broadcastLocalChange(change = {}) {
+  if (syncBroadcastChannel) {
+    try {
+      syncBroadcastChannel.postMessage(change);
+    } catch (e) {
+      console.warn('Failed to broadcast message:', e);
+    }
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('lottery_local_sync_change', { detail: change }));
+    // Legacy event backward-compatibility
+    if (change.store === STORES.VOUCHERS || change.type === 'save' || change.type === 'update' || change.type === 'delete') {
+      window.dispatchEvent(new CustomEvent('lottery_local_voucher_change', { detail: change }));
+    }
+  }
+}
+
+export function broadcastVoucherChange(change) {
+  broadcastLocalChange({ store: STORES.VOUCHERS, ...change });
+}
+
+/**
+ * Universal subscriber for local data changes.
+ */
+export function onLocalSyncChange(callback) {
+  if (typeof window === 'undefined') return () => {};
+
+  const handleBroadcast = (event) => {
+    if (event.data) callback(event.data);
+  };
+
+  const handleWindowCustomEvent = (event) => {
+    if (event.detail) callback(event.detail);
+  };
+
+  if (syncBroadcastChannel) {
+    syncBroadcastChannel.addEventListener('message', handleBroadcast);
+  }
+  window.addEventListener('lottery_local_sync_change', handleWindowCustomEvent);
+
+  return () => {
+    if (syncBroadcastChannel) {
+      syncBroadcastChannel.removeEventListener('message', handleBroadcast);
+    }
+    window.removeEventListener('lottery_local_sync_change', handleWindowCustomEvent);
+  };
+}
+
+export function onLocalVoucherChange(callback) {
+  return onLocalSyncChange((data) => {
+    if (!data.store || data.store === STORES.VOUCHERS) {
+      callback(data);
+    }
+  });
+}
 
 function getDb() {
   if (typeof window === 'undefined' || !window.indexedDB) {
@@ -17,50 +95,8 @@ function getDb() {
         const request = window.indexedDB.open(DB_NAME, DB_VERSION);
         request.onupgradeneeded = (event) => {
           const db = event.target.result;
-          let store;
-          if (!db.objectStoreNames.contains(STORE_NAME)) {
-            store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-          } else {
-            store = event.target.transaction.objectStore(STORE_NAME);
-          }
-          if (!store.indexNames.contains('orgId')) {
-            store.createIndex('orgId', 'orgId', { unique: false });
-          }
-          if (!store.indexNames.contains('status')) {
-            store.createIndex('status', 'status', { unique: false });
-          }
-          if (!store.indexNames.contains('orgId_status')) {
-            store.createIndex('orgId_status', ['orgId', 'status'], { unique: false });
-          }
-          if (!store.indexNames.contains('createdAt')) {
-            store.createIndex('createdAt', 'createdAt', { unique: false });
-          }
-          if (!store.indexNames.contains('onDate')) {
-            store.createIndex('onDate', 'onDate', { unique: false });
-          }
-          if (!store.indexNames.contains('voucherType')) {
-            store.createIndex('voucherType', 'voucherType', { unique: false });
-          }
-
-          // local_agents store
-          let agentsStore;
-          if (!db.objectStoreNames.contains(AGENTS_STORE_NAME)) {
-            agentsStore = db.createObjectStore(AGENTS_STORE_NAME, { keyPath: 'id' });
-          } else {
-            agentsStore = event.target.transaction.objectStore(AGENTS_STORE_NAME);
-          }
-          if (!agentsStore.indexNames.contains('orgId')) {
-            agentsStore.createIndex('orgId', 'orgId', { unique: false });
-          }
-          if (!agentsStore.indexNames.contains('agentName')) {
-            agentsStore.createIndex('agentName', 'agentName', { unique: false });
-          }
-          if (!agentsStore.indexNames.contains('agentId')) {
-            agentsStore.createIndex('agentId', 'agentId', { unique: false });
-          }
-          if (!agentsStore.indexNames.contains('orgId_agentName')) {
-            agentsStore.createIndex('orgId_agentName', ['orgId', 'agentName'], { unique: false });
-          }
+          const tx = event.target.transaction;
+          initDbSchema(db, tx);
         };
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => {
@@ -76,12 +112,498 @@ function getDb() {
   return dbPromise;
 }
 
-// Fallback localStorage key
-const fallbackKey = (orgId) => `local_vouchers_fallback_${orgId}`;
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. SESSIONS STORE (local_sessions)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const sessionsFallbackKey = (orgId) => `local_sessions_fallback_${orgId}`;
+
+function readSessionsFallback(orgId) {
+  try {
+    const raw = localStorage.getItem(sessionsFallbackKey(orgId));
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSessionsFallback(orgId, items) {
+  try {
+    localStorage.setItem(sessionsFallbackKey(orgId), JSON.stringify(items));
+  } catch (err) {
+    console.error('Failed to write to sessions fallback storage:', err);
+  }
+}
+
+export async function saveLocalSession(session, orgId = '') {
+  const canonical = toCanonicalSession(session, orgId);
+  const db = await getDb();
+  if (db) {
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORES.SESSIONS, 'readwrite');
+        const store = tx.objectStore(STORES.SESSIONS);
+        const req = store.put(canonical);
+        req.onsuccess = () => resolve(canonical);
+        req.onerror = () => reject(req.error);
+      });
+    } catch (err) {
+      console.warn('Failed to save session to IndexedDB, saving to fallback:', err);
+    }
+  }
+
+  const list = readSessionsFallback(canonical.orgId).filter((s) => s.id !== canonical.id);
+  writeSessionsFallback(canonical.orgId, [canonical, ...list]);
+
+  broadcastLocalChange({
+    store: STORES.SESSIONS,
+    type: 'save',
+    orgId: canonical.orgId,
+    sessionId: canonical.sessionId,
+    session: canonical,
+  });
+
+  return canonical;
+}
+
+export async function getLocalSession(orgId, sessionId) {
+  if (!orgId || !sessionId) return null;
+  const db = await getDb();
+  const id = `${orgId}_${sessionId}`;
+  if (db) {
+    try {
+      const res = await new Promise((resolve) => {
+        const tx = db.transaction(STORES.SESSIONS, 'readonly');
+        const store = tx.objectStore(STORES.SESSIONS);
+        const req = store.get(id);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      });
+      if (res) return res;
+    } catch {
+      // fallback
+    }
+  }
+
+  const list = readSessionsFallback(orgId);
+  return list.find((s) => s.id === id || s.sessionId === sessionId) || null;
+}
+
+export async function getLocalSessions(orgId) {
+  if (!orgId) return [];
+  const db = await getDb();
+  if (db) {
+    try {
+      const list = await new Promise((resolve) => {
+        const tx = db.transaction(STORES.SESSIONS, 'readonly');
+        const store = tx.objectStore(STORES.SESSIONS);
+        const index = store.index('orgId');
+        const req = index.getAll(IDBKeyRange.only(orgId));
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => resolve([]);
+      });
+      if (list && list.length > 0) return list;
+    } catch {
+      // fallback
+    }
+  }
+  return readSessionsFallback(orgId);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. LIMITS STORE (local_limits)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const limitsFallbackKey = (orgId, sessionId) => `local_limits_${orgId}_${sessionId}`;
+
+function readLimitsFallback(orgId, sessionId) {
+  try {
+    const raw = localStorage.getItem(limitsFallbackKey(orgId, sessionId));
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLimitsFallback(orgId, sessionId, items) {
+  try {
+    localStorage.setItem(limitsFallbackKey(orgId, sessionId), JSON.stringify(items));
+  } catch (err) {
+    console.error('Failed to write limits fallback:', err);
+  }
+}
+
+export async function saveLocalLimit(orgId, sessionId, num, limitAmount, clearedAmount = 0) {
+  const canonical = toCanonicalLimit(num, limitAmount, clearedAmount, orgId, sessionId);
+  const db = await getDb();
+  if (db) {
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORES.LIMITS, 'readwrite');
+        const store = tx.objectStore(STORES.LIMITS);
+        const req = store.put(canonical);
+        req.onsuccess = () => resolve(canonical);
+        req.onerror = () => reject(req.error);
+      });
+    } catch (err) {
+      console.warn('Failed to save limit to IndexedDB:', err);
+    }
+  }
+
+  const list = readLimitsFallback(orgId, sessionId).filter((l) => l.id !== canonical.id);
+  writeLimitsFallback(orgId, sessionId, [canonical, ...list]);
+
+  broadcastLocalChange({
+    store: STORES.LIMITS,
+    type: 'save',
+    orgId,
+    sessionId,
+    limit: canonical,
+  });
+
+  return canonical;
+}
+
+export async function saveLocalLimitsBulk(orgId, sessionId, limitsArray) {
+  if (!orgId || !sessionId || !Array.isArray(limitsArray)) return;
+  const canonicals = limitsArray.map((l) =>
+    toCanonicalLimit(l.num, l.limitAmount, l.clearedAmount, orgId, sessionId)
+  );
+
+  const db = await getDb();
+  if (db) {
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORES.LIMITS, 'readwrite');
+        const store = tx.objectStore(STORES.LIMITS);
+        for (const item of canonicals) {
+          store.put(item);
+        }
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (err) {
+      console.warn('Failed to bulk save limits:', err);
+    }
+  }
+
+  writeLimitsFallback(orgId, sessionId, canonicals);
+
+  broadcastLocalChange({
+    store: STORES.LIMITS,
+    type: 'bulk_save',
+    orgId,
+    sessionId,
+    limits: canonicals,
+  });
+}
+
+export async function getLocalLimits(orgId, sessionId) {
+  if (!orgId || !sessionId) return [];
+  const db = await getDb();
+  if (db) {
+    try {
+      const list = await new Promise((resolve) => {
+        const tx = db.transaction(STORES.LIMITS, 'readonly');
+        const store = tx.objectStore(STORES.LIMITS);
+        const index = store.index('orgId_sessionId');
+        const req = index.getAll(IDBKeyRange.only([orgId, sessionId]));
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => resolve([]);
+      });
+      if (list && list.length > 0) return list;
+    } catch {
+      // fallback
+    }
+  }
+  return readLimitsFallback(orgId, sessionId);
+}
+
+export async function clearLocalLimitForNumber(orgId, sessionId, num, clearAmount) {
+  const currentLimits = await getLocalLimits(orgId, sessionId);
+  const numStr = String(num).padStart(2, '0');
+  const existing = currentLimits.find((l) => l.num === numStr);
+  const baseLimit = existing ? existing.limitAmount : 0;
+  const newCleared = (existing ? existing.clearedAmount : 0) + Number(clearAmount);
+
+  return saveLocalLimit(orgId, sessionId, numStr, baseLimit, newCleared);
+}
+
+export async function clearAllLocalLimitsForSession(orgId, sessionId) {
+  const db = await getDb();
+  if (db) {
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORES.LIMITS, 'readwrite');
+        const store = tx.objectStore(STORES.LIMITS);
+        const index = store.index('orgId_sessionId');
+        const req = index.openKeyCursor(IDBKeyRange.only([orgId, sessionId]));
+        req.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) {
+            store.delete(cursor.primaryKey);
+            cursor.continue();
+          } else {
+            resolve();
+          }
+        };
+        req.onerror = () => reject(req.error);
+      });
+    } catch (err) {
+      console.warn('Failed to clear limits in IndexedDB:', err);
+    }
+  }
+
+  localStorage.removeItem(limitsFallbackKey(orgId, sessionId));
+
+  broadcastLocalChange({
+    store: STORES.LIMITS,
+    type: 'clear_all',
+    orgId,
+    sessionId,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. AGENTS STORE (local_agents)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const agentsFallbackKey = (orgId) => `local_agents_fallback_${orgId}`;
+
+function readAgentsFallback(orgId) {
+  try {
+    const raw = localStorage.getItem(agentsFallbackKey(orgId)) || localStorage.getItem(`agents_cache_${orgId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeAgentsFallback(orgId, items) {
+  try {
+    localStorage.setItem(agentsFallbackKey(orgId), JSON.stringify(items));
+    localStorage.setItem(`agents_cache_${orgId}`, JSON.stringify(items));
+  } catch (err) {
+    console.error('Failed to write to agent fallback storage:', err);
+  }
+}
+
+export async function saveLocalAgent(agent, orgId = '') {
+  const canonical = toCanonicalAgent(agent, orgId);
+  const db = await getDb();
+  if (db) {
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORES.AGENTS, 'readwrite');
+        const store = tx.objectStore(STORES.AGENTS);
+        const req = store.put(canonical);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    } catch (err) {
+      console.warn('Failed to put agent to IndexedDB:', err);
+    }
+  }
+
+  const list = readAgentsFallback(canonical.orgId);
+  const idx = list.findIndex((a) => a.id === canonical.id || a.agentId === canonical.agentId);
+  if (idx >= 0) list[idx] = canonical;
+  else list.push(canonical);
+  list.sort((a, b) => (a.agentName || '').localeCompare(b.agentName || ''));
+  writeAgentsFallback(canonical.orgId, list);
+
+  broadcastLocalChange({
+    store: STORES.AGENTS,
+    type: 'save',
+    orgId: canonical.orgId,
+    agent: canonical,
+  });
+
+  return canonical;
+}
+
+export async function saveLocalAgentsBulk(orgId, agents) {
+  if (!orgId || !Array.isArray(agents)) return;
+  const normalized = agents.map((a) => toCanonicalAgent(a, orgId));
+
+  const db = await getDb();
+  if (db) {
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORES.AGENTS, 'readwrite');
+        const store = tx.objectStore(STORES.AGENTS);
+        normalized.forEach((item) => store.put(item));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (err) {
+      console.warn('Failed to bulk put agents in IndexedDB:', err);
+    }
+  }
+
+  writeAgentsFallback(orgId, normalized);
+
+  broadcastLocalChange({
+    store: STORES.AGENTS,
+    type: 'bulk_save',
+    orgId,
+    agents: normalized,
+  });
+}
+
+export async function getLocalAgents(orgId) {
+  if (!orgId) return [];
+  const db = await getDb();
+  if (db) {
+    try {
+      const items = await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORES.AGENTS, 'readonly');
+        const store = tx.objectStore(STORES.AGENTS);
+        const index = store.index('orgId');
+        const req = index.getAll(orgId);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      });
+      if (items && items.length > 0) {
+        items.sort((a, b) => (a.agentName || '').localeCompare(b.agentName || ''));
+        writeAgentsFallback(orgId, items);
+        return items;
+      }
+    } catch (err) {
+      console.warn('Failed to get agents from IndexedDB, using fallback:', err);
+    }
+  }
+
+  const fallback = readAgentsFallback(orgId);
+  fallback.sort((a, b) => (a.agentName || '').localeCompare(b.agentName || ''));
+  return fallback;
+}
+
+export async function deleteLocalAgent(orgId, agentId) {
+  if (!orgId || !agentId) return;
+  const db = await getDb();
+  if (db) {
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORES.AGENTS, 'readwrite');
+        const store = tx.objectStore(STORES.AGENTS);
+        const req = store.delete(agentId);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    } catch (err) {
+      console.warn('Failed to delete agent from IndexedDB:', err);
+    }
+  }
+
+  const list = readAgentsFallback(orgId).filter((a) => a.id !== agentId && a.agentId !== agentId);
+  writeAgentsFallback(orgId, list);
+
+  broadcastLocalChange({
+    store: STORES.AGENTS,
+    type: 'delete',
+    orgId,
+    agentId,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. MACHINES STORE (local_machines)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const machinesFallbackKey = (orgId) => `local_machines_fallback_${orgId}`;
+
+function readMachinesFallback(orgId) {
+  try {
+    const raw = localStorage.getItem(machinesFallbackKey(orgId)) || localStorage.getItem(`machines_cache_${orgId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeMachinesFallback(orgId, items) {
+  try {
+    localStorage.setItem(machinesFallbackKey(orgId), JSON.stringify(items));
+    localStorage.setItem(`machines_cache_${orgId}`, JSON.stringify(items));
+  } catch (err) {
+    console.error('Failed to write machines fallback:', err);
+  }
+}
+
+export async function saveLocalMachines(orgId, machines) {
+  if (!orgId || !Array.isArray(machines)) return;
+  const canonicals = machines.map((m) => toCanonicalMachine(m, orgId));
+
+  const db = await getDb();
+  if (db) {
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORES.MACHINES, 'readwrite');
+        const store = tx.objectStore(STORES.MACHINES);
+        canonicals.forEach((item) => store.put(item));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (err) {
+      console.warn('Failed to save machines to IndexedDB:', err);
+    }
+  }
+
+  writeMachinesFallback(orgId, canonicals);
+
+  broadcastLocalChange({
+    store: STORES.MACHINES,
+    type: 'bulk_save',
+    orgId,
+    machines: canonicals,
+  });
+}
+
+export async function getLocalMachines(orgId) {
+  if (!orgId) return [];
+  const db = await getDb();
+  if (db) {
+    try {
+      const items = await new Promise((resolve) => {
+        const tx = db.transaction(STORES.MACHINES, 'readonly');
+        const store = tx.objectStore(STORES.MACHINES);
+        const index = store.index('orgId');
+        const req = index.getAll(IDBKeyRange.only(orgId));
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => resolve([]);
+      });
+      if (items && items.length > 0) return items;
+    } catch {
+      // fallback
+    }
+  }
+  return readMachinesFallback(orgId);
+}
+
+export async function allocateLocalMachineSerial(orgId, machineId) {
+  const machines = await getLocalMachines(orgId);
+  const mid = Number(machineId) || 1;
+  const target = machines.find((m) => m.machineId === mid) || toCanonicalMachine({ machineId: mid }, orgId);
+  const { srNo, updatedMachine } = allocateNextSerial(target);
+
+  await saveLocalMachines(orgId, [
+    ...machines.filter((m) => m.machineId !== mid),
+    updatedMachine,
+  ]);
+
+  return srNo;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. VOUCHERS STORE (local_vouchers)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const vouchersFallbackKey = (orgId) => `local_vouchers_fallback_${orgId}`;
 
 function readFallback(orgId) {
   try {
-    const raw = localStorage.getItem(fallbackKey(orgId));
+    const raw = localStorage.getItem(vouchersFallbackKey(orgId));
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -90,79 +612,65 @@ function readFallback(orgId) {
 
 function writeFallback(orgId, items) {
   try {
-    localStorage.setItem(fallbackKey(orgId), JSON.stringify(items));
+    localStorage.setItem(vouchersFallbackKey(orgId), JSON.stringify(items));
   } catch (err) {
-    console.error('Failed to write to fallback storage:', err);
+    console.error('Failed to write to vouchers fallback storage:', err);
   }
 }
 
-/**
- * Save or insert a new voucher record into local storage.
- */
 export async function saveLocalVoucher(voucher) {
-  const isBuy = voucher.isBuyVoucher === true || voucher.voucherType === 'buy' || voucher.agentId === 'buy_offload';
-  const record = {
-    id: voucher.clientId || voucher.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `v_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
-    orgId: voucher.orgId,
-    agentId: voucher.agentId || '',
-    agentName: voucher.agentName || voucher.agentId || '',
-    tokens: Array.isArray(voucher.tokens) ? voucher.tokens : [],
-    entries: Array.isArray(voucher.entries) ? voucher.entries : [],
-    items: Array.isArray(voucher.items) ? voucher.items : [],
-    amount: typeof voucher.amount === 'number' ? voucher.amount : 0,
-    onDate: voucher.onDate || '',
-    ampm: voucher.ampm || '',
-    onCount: voucher.onCount || 1,
-    machineId: voucher.machineId || null,
-    voucherType: isBuy ? 'buy' : 'sale',
-    isBuyVoucher: isBuy,
-    action: voucher.action || 'create', // 'create' | 'update' | 'delete'
-    status: voucher.status || 'pending', // 'pending' | 'syncing' | 'synced' | 'failed'
-    srNo: voucher.srNo || null,
-    error: voucher.error || null,
-    retryCount: voucher.retryCount || 0,
-    createdAt: voucher.createdAt || Date.now(),
-    syncedAt: voucher.syncedAt || null,
-    lastAttemptAt: voucher.lastAttemptAt || null,
-  };
+  const canonical = toCanonicalVoucher(voucher);
+  const record = toIndexedDbRecord(canonical);
 
   const db = await getDb();
   if (db) {
-    return new Promise((resolve) => {
+    const res = await new Promise((resolve) => {
       try {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
+        const tx = db.transaction(STORES.VOUCHERS, 'readwrite');
+        const store = tx.objectStore(STORES.VOUCHERS);
         const req = store.put(record);
-        req.onsuccess = () => resolve(record);
+        req.onsuccess = () => resolve(canonical);
         req.onerror = () => {
-          const list = readFallback(voucher.orgId).filter(v => v.id !== record.id);
-          writeFallback(voucher.orgId, [record, ...list]);
-          resolve(record);
+          const list = readFallback(canonical.orgId).filter((v) => v.id !== record.id);
+          writeFallback(canonical.orgId, [record, ...list]);
+          resolve(canonical);
         };
       } catch (err) {
         console.warn('IndexedDB write error, saving to fallback', err);
-        const list = readFallback(voucher.orgId).filter(v => v.id !== record.id);
-        writeFallback(voucher.orgId, [record, ...list]);
-        resolve(record);
+        const list = readFallback(canonical.orgId).filter((v) => v.id !== record.id);
+        writeFallback(canonical.orgId, [record, ...list]);
+        resolve(canonical);
       }
     });
+
+    broadcastVoucherChange({
+      type: 'save',
+      orgId: canonical.orgId,
+      sessionId: canonical.sessionId,
+      voucher: canonical,
+    });
+    return res;
   }
 
-  const list = readFallback(voucher.orgId).filter(v => v.id !== record.id);
-  writeFallback(voucher.orgId, [record, ...list]);
-  return record;
+  const list = readFallback(canonical.orgId).filter((v) => v.id !== record.id);
+  writeFallback(canonical.orgId, [record, ...list]);
+
+  broadcastVoucherChange({
+    type: 'save',
+    orgId: canonical.orgId,
+    sessionId: canonical.sessionId,
+    voucher: canonical,
+  });
+  return canonical;
 }
 
-/**
- * Update an existing local voucher's status or metadata.
- */
 export async function updateLocalVoucher(id, updates, orgId) {
   const db = await getDb();
   if (db) {
-    return new Promise((resolve) => {
+    const updated = await new Promise((resolve) => {
       try {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
+        const tx = db.transaction(STORES.VOUCHERS, 'readwrite');
+        const store = tx.objectStore(STORES.VOUCHERS);
         const getReq = store.get(id);
         getReq.onsuccess = () => {
           const existing = getReq.result;
@@ -170,44 +678,62 @@ export async function updateLocalVoucher(id, updates, orgId) {
             resolve(null);
             return;
           }
-          const updated = { ...existing, ...updates };
-          const putReq = store.put(updated);
-          putReq.onsuccess = () => resolve(updated);
-          putReq.onerror = () => resolve(existing);
+          const mergedCanonical = toCanonicalVoucher({ ...existing, ...updates });
+          const mergedRecord = toIndexedDbRecord(mergedCanonical);
+          const putReq = store.put(mergedRecord);
+          putReq.onsuccess = () => resolve(mergedCanonical);
+          putReq.onerror = () => resolve(fromIndexedDbRecord(existing));
         };
         getReq.onerror = () => resolve(null);
       } catch {
         resolve(null);
       }
     });
+
+    if (updated) {
+      broadcastVoucherChange({
+        type: 'update',
+        orgId: updated.orgId || orgId,
+        sessionId: updated.sessionId,
+        voucher: updated,
+      });
+    }
+    return updated;
   }
 
   if (orgId) {
     const list = readFallback(orgId);
     let updatedRecord = null;
-    const newList = list.map(v => {
+    const newList = list.map((v) => {
       if (v.id === id) {
-        updatedRecord = { ...v, ...updates };
+        const mergedCanonical = toCanonicalVoucher({ ...v, ...updates });
+        updatedRecord = toIndexedDbRecord(mergedCanonical);
         return updatedRecord;
       }
       return v;
     });
     writeFallback(orgId, newList);
-    return updatedRecord;
+
+    if (updatedRecord) {
+      broadcastVoucherChange({
+        type: 'update',
+        orgId,
+        sessionId: updatedRecord.sessionId,
+        voucher: fromIndexedDbRecord(updatedRecord),
+      });
+    }
+    return updatedRecord ? fromIndexedDbRecord(updatedRecord) : null;
   }
   return null;
 }
 
-/**
- * Delete a voucher record from local storage.
- */
-export async function deleteLocalVoucher(id, orgId) {
+export async function deleteLocalVoucher(id, orgId, sessionId = '') {
   const db = await getDb();
   if (db) {
-    return new Promise((resolve) => {
+    const success = await new Promise((resolve) => {
       try {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
+        const tx = db.transaction(STORES.VOUCHERS, 'readwrite');
+        const store = tx.objectStore(STORES.VOUCHERS);
         const delReq = store.delete(id);
         delReq.onsuccess = () => resolve(true);
         delReq.onerror = () => resolve(false);
@@ -215,124 +741,141 @@ export async function deleteLocalVoucher(id, orgId) {
         resolve(false);
       }
     });
+
+    if (success) {
+      broadcastVoucherChange({
+        type: 'delete',
+        orgId,
+        sessionId,
+        voucherId: id,
+      });
+    }
+    return success;
   }
 
   if (orgId) {
-    const list = readFallback(orgId).filter(v => v.id !== id);
+    const list = readFallback(orgId).filter((v) => v.id !== id);
     writeFallback(orgId, list);
+    broadcastVoucherChange({
+      type: 'delete',
+      orgId,
+      sessionId,
+      voucherId: id,
+    });
     return true;
   }
   return false;
 }
 
-/**
- * Retrieve all vouchers for an organization with optional filtering.
- */
+export async function getLocalVouchersForSession(orgId, sessionId, filter = {}) {
+  if (!orgId) return [];
+  const db = await getDb();
+  if (db && sessionId) {
+    try {
+      const items = await new Promise((resolve) => {
+        const tx = db.transaction(STORES.VOUCHERS, 'readonly');
+        const store = tx.objectStore(STORES.VOUCHERS);
+        if (store.indexNames.contains('orgId_sessionId')) {
+          const index = store.index('orgId_sessionId');
+          const req = index.getAll(IDBKeyRange.only([orgId, sessionId]));
+          req.onsuccess = () => resolve(req.result || []);
+          req.onerror = () => resolve(null);
+        } else {
+          resolve(null);
+        }
+      });
+
+      if (Array.isArray(items)) {
+        let results = items.map(fromIndexedDbRecord);
+        if (filter.status) {
+          results = results.filter((v) => v.status === filter.status);
+        }
+        if (filter.voucherType) {
+          results = results.filter((v) => v.voucherType === filter.voucherType);
+        }
+        if (filter.agentId) {
+          results = results.filter((v) => v.agentId === filter.agentId || v.agentName === filter.agentId);
+        }
+        results.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        return results;
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  return getLocalVouchers(orgId, { ...filter, sessionId });
+}
+
 export async function getLocalVouchers(orgId, filter = {}) {
   const db = await getDb();
   if (db) {
     return new Promise((resolve) => {
       try {
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const store = tx.objectStore(STORE_NAME);
+        const tx = db.transaction(STORES.VOUCHERS, 'readonly');
+        const store = tx.objectStore(STORES.VOUCHERS);
         const index = store.index('orgId');
         const req = index.getAll(IDBKeyRange.only(orgId));
         req.onsuccess = () => {
-          let results = req.result || [];
+          let results = (req.result || []).map(fromIndexedDbRecord);
+          if (filter.sessionId) {
+            results = results.filter((v) => v.sessionId === filter.sessionId);
+          }
           if (filter.status) {
-            results = results.filter(v => v.status === filter.status);
+            results = results.filter((v) => v.status === filter.status);
           }
           if (filter.voucherType) {
-            results = results.filter(v => (v.voucherType || (v.isBuyVoucher ? 'buy' : 'sale')) === filter.voucherType);
+            results = results.filter((v) => v.voucherType === filter.voucherType);
           }
           if (filter.onDate) {
-            results = results.filter(v => v.onDate === filter.onDate);
+            results = results.filter((v) => v.onDate === filter.onDate);
           }
           if (filter.ampm) {
-            results = results.filter(v => v.ampm === filter.ampm);
+            results = results.filter((v) => v.ampm === filter.ampm);
           }
           if (filter.agentId) {
-            results = results.filter(v => v.agentId === filter.agentId || v.agentName === filter.agentId);
+            results = results.filter((v) => v.agentId === filter.agentId || v.agentName === filter.agentId);
           }
-          // Sort newest first
           results.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
           resolve(results);
         };
         req.onerror = () => {
-          resolve(readFallback(orgId));
+          const fb = readFallback(orgId).map(fromIndexedDbRecord);
+          resolve(fb);
         };
       } catch {
-        resolve(readFallback(orgId));
+        const fb = readFallback(orgId).map(fromIndexedDbRecord);
+        resolve(fb);
       }
     });
   }
 
-  let list = readFallback(orgId);
-  if (filter.status) {
-    list = list.filter(v => v.status === filter.status);
-  }
-  if (filter.voucherType) {
-    list = list.filter(v => (v.voucherType || (v.isBuyVoucher ? 'buy' : 'sale')) === filter.voucherType);
-  }
-  if (filter.onDate) {
-    list = list.filter(v => v.onDate === filter.onDate);
-  }
-  if (filter.ampm) {
-    list = list.filter(v => v.ampm === filter.ampm);
-  }
-  if (filter.agentId) {
-    list = list.filter(v => v.agentId === filter.agentId || v.agentName === filter.agentId);
-  }
+  let list = readFallback(orgId).map(fromIndexedDbRecord);
+  if (filter.sessionId) list = list.filter((v) => v.sessionId === filter.sessionId);
+  if (filter.status) list = list.filter((v) => v.status === filter.status);
+  if (filter.voucherType) list = list.filter((v) => v.voucherType === filter.voucherType);
+  if (filter.onDate) list = list.filter((v) => v.onDate === filter.onDate);
+  if (filter.ampm) list = list.filter((v) => v.ampm === filter.ampm);
+  if (filter.agentId) list = list.filter((v) => v.agentId === filter.agentId || v.agentName === filter.agentId);
   list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   return list;
 }
 
-/**
- * Direct cache remote snapshot documents into IndexedDB.
- * Ensures local IndexedDB is kept fresh with server changes without overriding
- * locally queued pending changes.
- */
-export async function cacheRemoteVouchersIntoLocalDb(orgId, remoteDocs) {
+export async function cacheRemoteVouchersIntoLocalDb(orgId, remoteDocs, defaultSessionId = '') {
   if (!orgId || !Array.isArray(remoteDocs) || remoteDocs.length === 0) return 0;
   const db = await getDb();
   if (!db) return 0;
 
   return new Promise((resolve) => {
     try {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
+      const tx = db.transaction(STORES.VOUCHERS, 'readwrite');
+      const store = tx.objectStore(STORES.VOUCHERS);
       let cachedCount = 0;
 
       for (const d of remoteDocs) {
-        const v = typeof d.data === 'function' ? d.data() : d;
-        const id = d.id || v.id || v.clientId;
-        if (!id) continue;
-
-        const isBuy = v.isBuyVoucher === true || v.voucherType === 'buy' || v.agentId === 'buy_offload';
-        const record = {
-          id,
-          orgId,
-          agentId: v.agentId || '',
-          agentName: v.agentName || v.agentId || '',
-          tokens: Array.isArray(v.tokens) ? v.tokens : [],
-          entries: Array.isArray(v.details) ? v.details : Array.isArray(v.entries) ? v.entries : [],
-          amount: typeof v.amount === 'number' ? v.amount : 0,
-          onDate: v.onDate || '',
-          ampm: v.ampm || '',
-          onCount: v.onCount || 1,
-          machineId: v.machineId || null,
-          voucherType: isBuy ? 'buy' : 'sale',
-          isBuyVoucher: isBuy,
-          luckyNo: v.luckyNo || v.winningNumber || null,
-          rate: typeof v.rate === 'number' ? v.rate : null,
-          agentCommissions: v.agentCommissions || null,
-          agentRates: v.agentRates || null,
-          status: 'synced',
-          srNo: v.srNo ?? null,
-          createdAt: v.createdAt ? (v.createdAt._seconds ? v.createdAt._seconds * 1000 : Number(v.createdAt)) : Date.now(),
-          syncedAt: Date.now(),
-        };
-
+        const canonical = fromFirestoreDoc(d, defaultSessionId, orgId);
+        if (!canonical || !canonical.id) continue;
+        const record = toIndexedDbRecord(canonical);
         store.put(record);
         cachedCount++;
       }
@@ -345,9 +888,6 @@ export async function cacheRemoteVouchersIntoLocalDb(orgId, remoteDocs) {
   });
 }
 
-/**
- * Get count summary of pending and failed vouchers for quick badge display.
- */
 export async function getLocalVoucherCounts(orgId) {
   const all = await getLocalVouchers(orgId);
   let pending = 0;
@@ -361,27 +901,18 @@ export async function getLocalVoucherCounts(orgId) {
   return { pending, failed, synced, total: all.length };
 }
 
-/**
- * Clean local vouchers on or before a chosen date (Date-based partial cleanup).
- * Does NOT wipe current or future operational data.
- */
 export async function cleanLocalVouchersBeforeDate(orgId, targetDate) {
   if (!orgId || !targetDate) return 0;
   const db = await getDb();
   if (db) {
     const all = await getLocalVouchers(orgId);
-    // targetDate is 'YYYY-MM-DD'
-    const toDelete = all.filter(v => {
-      if (!v.onDate) return false;
-      return v.onDate <= targetDate;
-    });
-
+    const toDelete = all.filter((v) => v.onDate && v.onDate <= targetDate);
     if (toDelete.length === 0) return 0;
 
     return new Promise((resolve) => {
       try {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
+        const tx = db.transaction(STORES.VOUCHERS, 'readwrite');
+        const store = tx.objectStore(STORES.VOUCHERS);
         for (const item of toDelete) {
           store.delete(item.id);
         }
@@ -394,27 +925,24 @@ export async function cleanLocalVouchersBeforeDate(orgId, targetDate) {
   }
 
   const list = readFallback(orgId);
-  const remaining = list.filter(v => !v.onDate || v.onDate > targetDate);
+  const remaining = list.filter((v) => !v.onDate || v.onDate > targetDate);
   const removedCount = list.length - remaining.length;
   writeFallback(orgId, remaining);
   return removedCount;
 }
 
-/**
- * Delete confirmed synced vouchers older than N days (maintenance cleanup).
- */
 export async function pruneSyncedLocalVouchers(orgId, daysOld = 3) {
   const cutoff = Date.now() - daysOld * 24 * 60 * 60 * 1000;
   const db = await getDb();
   if (db) {
     const all = await getLocalVouchers(orgId);
-    const toDelete = all.filter(v => v.status === 'synced' && v.syncedAt && v.syncedAt < cutoff);
+    const toDelete = all.filter((v) => v.status === 'synced' && v.syncedAt && v.syncedAt < cutoff);
     if (toDelete.length === 0) return 0;
 
     return new Promise((resolve) => {
       try {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
+        const tx = db.transaction(STORES.VOUCHERS, 'readwrite');
+        const store = tx.objectStore(STORES.VOUCHERS);
         for (const item of toDelete) {
           store.delete(item.id);
         }
@@ -427,15 +955,12 @@ export async function pruneSyncedLocalVouchers(orgId, daysOld = 3) {
   }
 
   const list = readFallback(orgId);
-  const remaining = list.filter(v => !(v.status === 'synced' && v.syncedAt && v.syncedAt < cutoff));
+  const remaining = list.filter((v) => !(v.status === 'synced' && v.syncedAt && v.syncedAt < cutoff));
   const removedCount = list.length - remaining.length;
   writeFallback(orgId, remaining);
   return removedCount;
 }
 
-/**
- * Standalone / Fully Offline Mode state helpers.
- */
 export function getOfflineMode(orgId) {
   if (typeof window === 'undefined') return false;
   try {
@@ -463,9 +988,6 @@ export function setOfflineMode(orgId, enabled) {
   }
 }
 
-/**
- * Sync offline mode preference from DB when online, with fallback to local storage.
- */
 export async function syncOfflineModeWithDb(orgId) {
   if (typeof window === 'undefined' || !orgId) return getOfflineMode(orgId);
   try {
@@ -473,7 +995,7 @@ export async function syncOfflineModeWithDb(orgId) {
       return getOfflineMode(orgId);
     }
     const res = await fetch(`/api/org/${orgId}/settings/operating-mode`);
-    if (res.ok) {
+    if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
       const data = await res.json();
       if (typeof data.isOfflineMode === 'boolean') {
         setOfflineMode(orgId, data.isOfflineMode);
@@ -481,14 +1003,11 @@ export async function syncOfflineModeWithDb(orgId) {
       }
     }
   } catch {
-    // Offline / network failure fallback
+    // Offline fallback
   }
   return getOfflineMode(orgId);
 }
 
-/**
- * Migrate legacy queue items from localStorage `voucher_queue_${orgId}` to IndexedDB.
- */
 export async function migrateLegacyLocalStorageQueue(orgId) {
   if (typeof window === 'undefined') return;
   try {
@@ -518,185 +1037,3 @@ export async function migrateLegacyLocalStorageQueue(orgId) {
     console.warn('Migration from localStorage queue skipped/failed:', err);
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Local Agents Store (IndexedDB 'local_agents' table)
-// ─────────────────────────────────────────────────────────────────────────────
-
-const agentsFallbackKey = (orgId) => `local_agents_fallback_${orgId}`;
-
-function readAgentsFallback(orgId) {
-  try {
-    const raw = localStorage.getItem(agentsFallbackKey(orgId)) || localStorage.getItem(`agents_cache_${orgId}`);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeAgentsFallback(orgId, items) {
-  try {
-    localStorage.setItem(agentsFallbackKey(orgId), JSON.stringify(items));
-    localStorage.setItem(`agents_cache_${orgId}`, JSON.stringify(items));
-  } catch (err) {
-    console.error('Failed to write to agent fallback storage:', err);
-  }
-}
-
-/**
- * Save / Upsert a single agent into IndexedDB `local_agents` store.
- */
-export async function saveLocalAgent(agent) {
-  if (!agent || !agent.orgId) return null;
-  const agentRecord = {
-    id: agent.id || agent.agentId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ag_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`),
-    agentId: agent.agentId || agent.id || '',
-    orgId: agent.orgId,
-    agentName: agent.agentName || '',
-    address: agent.address || '',
-    phone: agent.phone || '',
-    commission: agent.commission !== undefined ? Number(agent.commission) : 0,
-    rate: agent.rate !== undefined ? Number(agent.rate) : 80,
-    status: agent.status || 'active',
-    updatedAt: agent.updatedAt || Date.now(),
-  };
-  if (!agentRecord.agentId) agentRecord.agentId = agentRecord.id;
-
-  const db = await getDb();
-  if (db) {
-    try {
-      await new Promise((resolve, reject) => {
-        const tx = db.transaction(AGENTS_STORE_NAME, 'readwrite');
-        const store = tx.objectStore(AGENTS_STORE_NAME);
-        const req = store.put(agentRecord);
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-    } catch (err) {
-      console.warn('Failed to put agent to IndexedDB, updating fallback:', err);
-    }
-  }
-
-  // Update fallback
-  const list = readAgentsFallback(agent.orgId);
-  const idx = list.findIndex(a => (a.id === agentRecord.id || a.agentId === agentRecord.agentId));
-  if (idx >= 0) {
-    list[idx] = agentRecord;
-  } else {
-    list.push(agentRecord);
-  }
-  list.sort((a, b) => (a.agentName || '').localeCompare(b.agentName || ''));
-  writeAgentsFallback(agent.orgId, list);
-
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(
-      new CustomEvent('local_agents_updated', { detail: { orgId: agent.orgId, agent: agentRecord } })
-    );
-  }
-
-  return agentRecord;
-}
-
-/**
- * Bulk save / sync agents into IndexedDB `local_agents`.
- */
-export async function saveLocalAgentsBulk(orgId, agents) {
-  if (!orgId || !Array.isArray(agents)) return;
-  const normalized = agents.map(a => ({
-    id: a.id || a.agentId || `ag_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    agentId: a.agentId || a.id || '',
-    orgId,
-    agentName: a.agentName || '',
-    address: a.address || '',
-    phone: a.phone || '',
-    commission: a.commission !== undefined ? Number(a.commission) : 0,
-    rate: a.rate !== undefined ? Number(a.rate) : 80,
-    status: a.status || 'active',
-    updatedAt: a.updatedAt || Date.now(),
-  })).map(a => ({ ...a, agentId: a.agentId || a.id }));
-
-  const db = await getDb();
-  if (db) {
-    try {
-      await new Promise((resolve, reject) => {
-        const tx = db.transaction(AGENTS_STORE_NAME, 'readwrite');
-        const store = tx.objectStore(AGENTS_STORE_NAME);
-        normalized.forEach(item => store.put(item));
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
-    } catch (err) {
-      console.warn('Failed to bulk put agents in IndexedDB:', err);
-    }
-  }
-
-  writeAgentsFallback(orgId, normalized);
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(
-      new CustomEvent('local_agents_updated', { detail: { orgId, agents: normalized } })
-    );
-  }
-}
-
-/**
- * Get all agents for an organization from IndexedDB `local_agents` (with fallback).
- */
-export async function getLocalAgents(orgId) {
-  if (!orgId) return [];
-  const db = await getDb();
-  if (db) {
-    try {
-      const items = await new Promise((resolve, reject) => {
-        const tx = db.transaction(AGENTS_STORE_NAME, 'readonly');
-        const store = tx.objectStore(AGENTS_STORE_NAME);
-        const index = store.index('orgId');
-        const req = index.getAll(orgId);
-        req.onsuccess = () => resolve(req.result || []);
-        req.onerror = () => reject(req.error);
-      });
-      if (items && items.length > 0) {
-        items.sort((a, b) => (a.agentName || '').localeCompare(b.agentName || ''));
-        writeAgentsFallback(orgId, items);
-        return items;
-      }
-    } catch (err) {
-      console.warn('Failed to get agents from IndexedDB, using fallback:', err);
-    }
-  }
-
-  const fallback = readAgentsFallback(orgId);
-  fallback.sort((a, b) => (a.agentName || '').localeCompare(b.agentName || ''));
-  return fallback;
-}
-
-/**
- * Delete an agent from IndexedDB `local_agents`.
- */
-export async function deleteLocalAgent(orgId, agentId) {
-  if (!orgId || !agentId) return;
-  const db = await getDb();
-  if (db) {
-    try {
-      await new Promise((resolve, reject) => {
-        const tx = db.transaction(AGENTS_STORE_NAME, 'readwrite');
-        const store = tx.objectStore(AGENTS_STORE_NAME);
-        const req = store.delete(agentId);
-        req.onsuccess = () => resolve();
-        req.onerror = () => reject(req.error);
-      });
-    } catch (err) {
-      console.warn('Failed to delete agent from IndexedDB:', err);
-    }
-  }
-
-  const list = readAgentsFallback(orgId).filter(a => a.id !== agentId && a.agentId !== agentId);
-  writeAgentsFallback(orgId, list);
-
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(
-      new CustomEvent('local_agents_updated', { detail: { orgId, deletedAgentId: agentId } })
-    );
-  }
-}
-
-

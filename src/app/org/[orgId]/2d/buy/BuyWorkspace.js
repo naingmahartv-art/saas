@@ -76,8 +76,12 @@ export default function BuyWorkspace({
         `/api/org/${orgId}/ledger/totals?onCount=${activeSession.onCount}&ampm=${activeSession.ampm}`
       );
       const data = await res.json();
-      setTotals(data.totals || {});
-      setBuyTotals(data.buyTotals || {});
+      if (data.totals && Object.keys(data.totals).length > 0) {
+        setTotals(prev => (Object.keys(prev).length === 0 ? data.totals : prev));
+      }
+      if (data.buyTotals && Object.keys(data.buyTotals).length > 0) {
+        setBuyTotals(prev => (Object.keys(prev).length === 0 ? data.buyTotals : prev));
+      }
     } catch {
       // keep last known totals on failure
     }
@@ -87,7 +91,7 @@ export default function BuyWorkspace({
     refreshTotals();
   }, [refreshTotals]);
 
-  const live = useLiveSession(orgId, activeSession?.id, { scope: 'buy' });
+  const live = useLiveSession(orgId, activeSession, { scope: 'all' });
   useEffect(() => {
     if (!live) return;
     setTotals(live.totals || {});

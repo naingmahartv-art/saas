@@ -209,11 +209,15 @@ export default function LedgerWorkspace({
         `/api/org/${orgId}/ledger/totals?onCount=${effectiveSession.onCount}&ampm=${effectiveSession.ampm}`
       );
       const data = await res.json();
-      setTotals(data.totals || {});
-      setBuyTotals(data.buyTotals || {});
-      if (data.luckyNumber !== undefined) setLuckyNumber(data.luckyNumber);
-      if (typeof data.vouchersCount === 'number') {
-        setVouchersCount(data.vouchersCount);
+      if (data.totals && Object.keys(data.totals).length > 0) {
+        setTotals(prev => (Object.keys(prev).length === 0 ? data.totals : prev));
+      }
+      if (data.buyTotals && Object.keys(data.buyTotals).length > 0) {
+        setBuyTotals(prev => (Object.keys(prev).length === 0 ? data.buyTotals : prev));
+      }
+      if (data.luckyNumber !== undefined && data.luckyNumber !== null) setLuckyNumber(data.luckyNumber);
+      if (typeof data.vouchersCount === 'number' && data.vouchersCount > 0) {
+        setVouchersCount(prev => Math.max(prev, data.vouchersCount));
       }
     } catch {
       // keep last known totals on failure
@@ -229,7 +233,7 @@ export default function LedgerWorkspace({
   // covered by the optimistic bump below). See session-stream/route.js and
   // useLiveSession.js. Falls back gracefully to the fetch-based paths above
   // if the stream hasn't connected yet or drops.
-  const live = useLiveSession(orgId, effectiveSession?.id, { scope: 'sale' });
+  const live = useLiveSession(orgId, effectiveSession, { scope: 'all' });
   useEffect(() => {
     if (!live) return;
     setTotals(live.totals || {});

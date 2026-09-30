@@ -15,7 +15,7 @@ export default function useLedgerShortcuts() {
   useEffect(() => {
     let cancelled = false;
     fetch('/api/user/shortcuts')
-      .then(res => (res.ok ? res.json() : null))
+      .then(res => (res.ok && res.headers.get('content-type')?.includes('application/json') ? res.json() : null))
       .then(data => {
         if (!cancelled) {
           setPrefs({

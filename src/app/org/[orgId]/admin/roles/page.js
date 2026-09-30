@@ -6,6 +6,8 @@ import { DEFAULT_ROLES, PERMISSION_GROUPS } from '@/lib/auth/permissionMatrix.js
 import RoleManager from './RoleManager.js';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 export default async function RolesAdminPage({ params }) {
   const { orgId } = await params;
@@ -40,7 +42,7 @@ export default async function RolesAdminPage({ params }) {
         customRoleMap.delete(def.id);
         return { ...def, ...override, isSystem: true };
       }
-      return def;
+      return { ...def, isSystem: true };
     });
 
     customRoleMap.forEach((role) => {

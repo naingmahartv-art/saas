@@ -79,7 +79,7 @@ function FontSizeSection() {
     } catch {}
 
     fetch('/api/user/shortcuts')
-      .then(res => (res.ok ? res.json() : null))
+      .then(res => (res.ok && res.headers.get('content-type')?.includes('application/json') ? res.json() : null))
       .then(data => {
         if (data?.fontSize) {
           setFontSize(String(data.fontSize));
@@ -235,7 +235,7 @@ function ShortcutsSection() {
 
   useEffect(() => {
     fetch('/api/user/shortcuts')
-      .then(res => (res.ok ? res.json() : null))
+      .then(res => (res.ok && res.headers.get('content-type')?.includes('application/json') ? res.json() : null))
       .then(data => {
         if (data?.shortcuts) setShortcuts(data.shortcuts);
       })
@@ -442,7 +442,7 @@ function ReplacementsSection() {
 
   useEffect(() => {
     fetch('/api/user/shortcuts')
-      .then(res => (res.ok ? res.json() : null))
+      .then(res => (res.ok && res.headers.get('content-type')?.includes('application/json') ? res.json() : null))
       .then(data => {
         if (data) {
           setReplaceSlash(data.replaceSlash ?? 'P');

@@ -1,3 +1,4 @@
+import { NextResponse } from 'next/server';
 import { orgAgentsCol, orgAgentDoc } from '@/lib/db/firestore.js';
 import { getSession } from '@/lib/auth/session.js';
 import { assertPermission } from '@/lib/auth/permissions.js';

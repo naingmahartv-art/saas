@@ -4,6 +4,9 @@ import { orgRoleDoc } from '@/lib/db/firestore.js';
 import { DEFAULT_ROLES } from '@/lib/auth/permissionMatrix.js';
 import { logActivity } from '@/lib/db/log-activity.js';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function PUT(request, { params }) {
   try {
     const { orgId, roleId } = await params;
@@ -38,7 +41,14 @@ export async function PUT(request, { params }) {
       details: `Updated permissions for role "${name || roleId}" (${safePermissions.length} permissions)`,
     }).catch(() => {});
 
-    return NextResponse.json({ success: true, roleId, ...updateData });
+    return NextResponse.json(
+      { success: true, roleId, ...updateData },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        },
+      }
+    );
   } catch (err) {
     return NextResponse.json({ error: err.message || 'Failed to update role' }, { status: 500 });
   }
@@ -56,7 +66,14 @@ export async function DELETE(request, { params }) {
     if (isSystem) {
       // If it's a system role, deleting custom overrides will restore factory defaults
       await orgRoleDoc(orgId, roleId).delete();
-      return NextResponse.json({ success: true, restoredDefault: true });
+      return NextResponse.json(
+        { success: true, restoredDefault: true },
+        {
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          },
+        }
+      );
     }
 
     await orgRoleDoc(orgId, roleId).delete();
@@ -72,7 +89,14 @@ export async function DELETE(request, { params }) {
       details: `Deleted custom user role "${roleId}"`,
     }).catch(() => {});
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json(
+      { success: true },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        },
+      }
+    );
   } catch (err) {
     return NextResponse.json({ error: err.message || 'Failed to delete role' }, { status: 500 });
   }

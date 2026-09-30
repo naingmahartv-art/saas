@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const net = require('net');
+const { setupTelemetry, trackAnalyticsEvent } = require('./telemetry');
 
 // Disable Chromium disk cache to prevent backend_impl.cc cache error logs
 app.commandLine.appendSwitch('disable-http-cache');
@@ -267,6 +268,7 @@ app.whenReady().then(async () => {
   setupAutoUpdater();
 
   const config = loadEmbeddedConfig();
+  setupTelemetry(config);
   const remoteUrl = config.REMOTE_URL || process.env.REMOTE_URL;
 
   // 1. Try loading Vercel Hosted URL first if configured
@@ -275,6 +277,7 @@ app.whenReady().then(async () => {
     const isRemoteOnline = await isServerReady(remoteUrl);
     if (isRemoteOnline) {
       console.log(`Remote Vercel server online. Loading ${remoteUrl}`);
+      trackAnalyticsEvent('desktop_connected_remote', { url: remoteUrl });
       if (mainWindow) mainWindow.loadURL(remoteUrl);
       
       app.on('activate', () => {
@@ -311,7 +314,10 @@ app.whenReady().then(async () => {
     return;
   }
 
-  if (mainWindow) mainWindow.loadURL(serverUrl + '/');
+  if (mainWindow) {
+    mainWindow.loadURL(serverUrl + '/');
+    trackAnalyticsEvent('desktop_local_server_started', { port });
+  }
 
   if (isFreshInstall) {
     dialog.showMessageBox(mainWindow, {

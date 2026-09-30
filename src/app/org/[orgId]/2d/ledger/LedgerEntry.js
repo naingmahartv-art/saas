@@ -11,6 +11,8 @@ import { enqueue, onQueueEvent, startAutoDrain } from '@/lib/ledger/voucherQueue
 import { getLocalVoucherCounts, saveLocalVoucher, deleteLocalVoucher } from '@/lib/ledger/localVoucherDb.js';
 import useLedgerFontSize from '@/lib/ledger/useLedgerFontSize.js';
 import { todayStr, getCurrentSlotKey } from '@/lib/lottery/sessionSlots.js';
+import LotteryGuideModal from '@/components/LotteryGuideModal.js';
+import MixedLedgerGrid from './MixedLedgerGrid.js';
 
 const ALLOWED_CHARS = /[^0-9RAGPBWNFXT+\-*/.[\]]/gi;
 
@@ -151,7 +153,11 @@ export default function LedgerEntry({
   const [checkAgentResults, setCheckAgentResults] = useState(null);
   const [checkAgentLoading, setCheckAgentLoading] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [guideModalOpen, setGuideModalOpen] = useState(false);
+  const [importStep, setImportStep] = useState(1);
   const [importJsonText, setImportJsonText] = useState('');
+  const [importPreviewItems, setImportPreviewItems] = useState([]);
+  const [importSearch, setImportSearch] = useState('');
   const [exceedSortKey, setExceedSortKey] = useState('excess');
   const [exceedSortDir, setExceedSortDir] = useState('desc');
   const [syncLoading, setSyncLoading] = useState(false);
@@ -183,6 +189,24 @@ export default function LedgerEntry({
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
   const [gridSortKey, setGridSortKey] = useState('number');
   const [gridSortDir, setGridSortDir] = useState('asc');
+  const [ledgerGridMode, setLedgerGridMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(`ledger_grid_mode_${orgId}`);
+        if (saved === 'mixed' || saved === 'classic') return saved;
+      } catch {}
+    }
+    return 'classic';
+  });
+
+  const handleSetLedgerGridMode = (mode) => {
+    setLedgerGridMode(mode);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(`ledger_grid_mode_${orgId}`, mode);
+      } catch {}
+    }
+  };
   const inputRef = useRef(null);
   const rateInputRef = useRef(null);
   const agentSelectRef = useRef(null);
@@ -431,14 +455,17 @@ export default function LedgerEntry({
   }
 
   async function handleCopyExceedLimit() {
-    if (exceedList.length === 0) {
+    const validItems = exceedList.filter(e => {
+      const amt = e.total !== undefined ? e.total : e.excess;
+      return (typeof amt === 'number' ? amt : parseFloat(String(amt).replace(/,/g, ''))) > 0;
+    });
+
+    if (validItems.length === 0) {
       setError(t('ledger.nothingToExport') || 'Nothing to export');
       return;
     }
 
-    const headers = 'Number,Exceed';
-    const lines = exceedList.map(e => `${e.num},${e.excess}`);
-    const text = [headers, ...lines].join('\n');
+    const text = validItems.map(e => `${e.num} - ${e.total !== undefined ? e.total : e.excess}`).join('\n');
 
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -458,38 +485,65 @@ export default function LedgerEntry({
     }
   }
 
-  function handleDoImportJson(rawText) {
+  function handleOpenImportModal() {
+    setImportStep(1);
+    setImportJsonText('');
+    setImportPreviewItems([]);
+    setImportSearch('');
+    setError('');
+    setImportModalOpen(true);
+  }
+
+  function handleCloseImportModal() {
+    setImportModalOpen(false);
+    setImportStep(1);
+    setImportJsonText('');
+    setImportPreviewItems([]);
+    setImportSearch('');
+  }
+
+  function handleParseToPreview(rawText) {
     try {
       if (!rawText || !rawText.trim()) {
-        setError('Please paste JSON/CSV text or select a file');
+        setError('Please paste entries or select a file');
         return;
       }
       const text = rawText.trim();
-      let itemsToImport = [];
+      let rawItems = [];
 
-      // 1. Try parsing as JSON first
+      // 1. Try parsing as JSON first (if formatted as JSON)
       if (text.startsWith('{') || text.startsWith('[')) {
         try {
           const parsed = JSON.parse(text);
           if (Array.isArray(parsed)) {
-            itemsToImport = parsed;
+            rawItems = parsed;
           } else if (parsed && Array.isArray(parsed.items)) {
-            itemsToImport = parsed.items;
+            rawItems = parsed.items;
           } else if (parsed && typeof parsed === 'object') {
-            itemsToImport = Object.entries(parsed).map(([num, amount]) => ({ num, amount }));
+            rawItems = Object.entries(parsed).map(([num, amount]) => ({ num, amount }));
           }
         } catch {
-          // If JSON parse fails, fall back to CSV parsing below
+          // If JSON parse fails, fall back to line parsing below
         }
       }
 
-      // 2. Fall back to CSV / plain text parsing if not JSON
-      if (itemsToImport.length === 0) {
+      // 2. Line-by-line parsing: supports custom "20 - 200", "20-200", "20 200", CSV "20, 200", etc.
+      if (rawItems.length === 0) {
         const lines = text.split(/\r?\n/).filter(line => line.trim());
         for (const line of lines) {
           const trimmed = line.trim();
           if (/^#|^\[|^total|^num|^number|^sr|^item|^code/i.test(trimmed)) continue;
 
+          // Check dash-separated format e.g. "20 - 200" or "20-200"
+          if (trimmed.includes('-')) {
+            const dashParts = trimmed.split('-').map(p => p.trim()).filter(Boolean);
+            if (dashParts.length >= 2) {
+              rawItems.push({ num: dashParts[0], amount: dashParts[1] });
+              continue;
+            }
+          }
+
+          // Check comma/semicolon/tab delimiter
           const parts = trimmed.split(/[,;\t]+/).map(p => p.trim()).filter(Boolean);
 
           if (parts.length >= 2) {
@@ -501,37 +555,54 @@ export default function LedgerEntry({
               amtCandidate = parts[2];
             }
 
-            itemsToImport.push({ num: numCandidate, amount: amtCandidate });
+            rawItems.push({ num: numCandidate, amount: amtCandidate });
           } else if (parts.length === 1) {
-            // Remove spaces, hyphens, and combine without separation (e.g., "12 - 32000" -> "1232000")
-            const cleanedExpr = parts[0].replace(/[\s\-]+/g, '');
-            if (cleanedExpr) {
-              const { token } = tokenFromText(cleanedExpr, t);
-              if (token) {
-                newTokens.push(token);
-              } else {
-                itemsToImport.push({ num: cleanedExpr, amount: '' });
+            // Space separated e.g. "20 200"
+            const spaceParts = trimmed.split(/\s+/).map(p => p.trim()).filter(Boolean);
+            if (spaceParts.length >= 2 && !isNaN(parseFloat(spaceParts[1].replace(/,/g, '')))) {
+              rawItems.push({ num: spaceParts[0], amount: spaceParts[1] });
+            } else {
+              // Lottery expression e.g. "20300R200"
+              const cleanedExpr = parts[0].replace(/[\s\-]+/g, '');
+              if (cleanedExpr) {
+                const { token } = tokenFromText(cleanedExpr, t);
+                if (token && token.entries) {
+                  for (const ent of token.entries) {
+                    rawItems.push({ num: ent.num, amount: ent.amount });
+                  }
+                } else {
+                  rawItems.push({ num: cleanedExpr, amount: '' });
+                }
               }
             }
           }
         }
       }
 
-      if (!itemsToImport.length) {
-        setError('No valid JSON or CSV items found in data');
+      if (!rawItems.length) {
+        setError('No valid entries found in data (e.g. 20 - 200)');
         return;
       }
 
-      const newTokens = [];
-      for (const item of itemsToImport) {
+      const previewList = [];
+      for (const item of rawItems) {
         if (typeof item === 'string') {
           const { token } = tokenFromText(item, t);
-          if (token) newTokens.push(token);
+          if (token && token.entries) {
+            for (const ent of token.entries) {
+              previewList.push({
+                id: nextTokenId(),
+                num: ent.num,
+                amount: ent.amount,
+                selected: true,
+              });
+            }
+          }
           continue;
         }
 
         const rawNum = item.num ?? item.number ?? item.n ?? item.key;
-        const rawAmt = item.amount ?? item.excess ?? item.amt ?? item.a ?? item.value;
+        const rawAmt = item.amount ?? item.excess ?? item.amt ?? item.a ?? item.value ?? item.total;
 
         if (rawNum !== undefined && rawAmt !== undefined) {
           let numStr = String(rawNum).trim().replace(/[^0-9]/g, '');
@@ -541,29 +612,72 @@ export default function LedgerEntry({
           const amtVal = parseFloat(String(rawAmt).replace(/,/g, '')) || 0;
 
           if (numStr.length === 2 && amtVal > 0) {
-            newTokens.push({
+            previewList.push({
               id: nextTokenId(),
-              tokenText: `${numStr}${amtVal}`,
-              entries: [{ num: numStr, amount: amtVal }],
+              num: numStr,
+              amount: amtVal,
+              selected: true,
             });
           }
         }
       }
 
-      if (newTokens.length === 0) {
-        setError('No valid 2-digit number & amount entries found in JSON/CSV data');
+      if (previewList.length === 0) {
+        setError('No valid 2-digit number & amount entries found (e.g. 20 - 200)');
         return;
       }
 
-      setPendingTokens(prev => [...prev, ...newTokens]);
-      setImportModalOpen(false);
-      setImportJsonText('');
+      setImportPreviewItems(previewList);
+      setImportStep(2);
       setError('');
-      setSuccessMsg(`Successfully imported ${newTokens.length} entries into ထည့်သွင်းမှုများ!`);
-      setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err) {
-      setError('Invalid JSON/CSV format: ' + err.message);
+      setError('Invalid entry format: ' + err.message);
     }
+  }
+
+  function handleTogglePreviewItem(id) {
+    setImportPreviewItems(prev =>
+      prev.map(it => (it.id === id ? { ...it, selected: !it.selected } : it))
+    );
+  }
+
+  function handleUpdatePreviewAmount(id, newAmount) {
+    setImportPreviewItems(prev =>
+      prev.map(it => (it.id === id ? { ...it, amount: newAmount } : it))
+    );
+  }
+
+  function handleRemovePreviewItem(id) {
+    setImportPreviewItems(prev => prev.filter(it => it.id !== id));
+  }
+
+  function handleSelectAllPreview(select = true) {
+    setImportPreviewItems(prev => prev.map(it => ({ ...it, selected: select })));
+  }
+
+  function handleFinalImport() {
+    const activeItems = importPreviewItems.filter(
+      it => it.selected && parseFloat(String(it.amount).replace(/,/g, '')) > 0
+    );
+    if (activeItems.length === 0) {
+      setError('Please select at least one valid entry to import');
+      return;
+    }
+
+    const newTokens = activeItems.map(item => {
+      const amtVal = parseFloat(String(item.amount).replace(/,/g, '')) || 0;
+      return {
+        id: nextTokenId(),
+        tokenText: `${item.num}${amtVal}`,
+        entries: [{ num: item.num, amount: amtVal }],
+      };
+    });
+
+    setPendingTokens(prev => [...prev, ...newTokens]);
+    handleCloseImportModal();
+    setError('');
+    setSuccessMsg(`Successfully imported ${newTokens.length} entries into ${t('ledger.entries') || 'Entries'}!`);
+    setTimeout(() => setSuccessMsg(''), 4000);
   }
 
   function handleExportExceedJson() {
@@ -866,8 +980,9 @@ export default function LedgerEntry({
 
     setSaving(true);
     setError('');
+    const sid = editingVoucher?.sessionId || `${sessionOnDate}_${sessionAmpm}_${sessionOnCount}`;
     try {
-      await deleteLocalVoucher(targetId, orgId);
+      await deleteLocalVoucher(targetId, orgId, sid);
       enqueue(orgId, {
         id: targetId,
         voucherId: targetId,
@@ -1299,10 +1414,10 @@ export default function LedgerEntry({
     for (const num of allNums) {
       const amount = totals?.[num] || 0;
       const buy = buyTotals?.[num] || 0;
-      const excess = isLimitActive && limitValue > 0 ? Math.max(0, amount - limitValue) : amount;
+      const excess = isLimitActive && limitValue > 0 ? Math.max(0, amount - limitValue) : 0;
       const total = excess - buy;
 
-      if ((isLimitActive && amount > limitValue) || buy > 0) {
+      if ((isLimitActive && limitValue > 0 && amount > limitValue) || buy > 0) {
         list.push({ num, amount, excess, buy, total });
       }
     }
@@ -1745,9 +1860,6 @@ export default function LedgerEntry({
               <span>Reports (F6)</span>
             </button>
           )}
-
-
-
         </div>
       </div>
 
@@ -1864,9 +1976,9 @@ export default function LedgerEntry({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setImportModalOpen(true)}
-                  className="text-[11px] px-2.5 py-1 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 font-semibold rounded hover:bg-emerald-500/30 transition flex items-center gap-1.5 backdrop-blur-sm"
-                  title="Import JSON or CSV data/file"
+                  onClick={handleOpenImportModal}
+                  className="text-[11px] px-2.5 py-1 bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 font-semibold rounded hover:bg-emerald-500/30 transition flex items-center gap-1.5 backdrop-blur-sm cursor-pointer"
+                  title="Import entries (e.g. 20 - 200, CSV, or JSON)"
                 >
                   <span>📥</span> Import
                 </button>
@@ -2013,125 +2125,176 @@ export default function LedgerEntry({
           </div>
         </div>
 
-        {/* Center panel: 00-99 aggregate table, session-wide — legacy
-            layout: 3 column-groups of [Num, Amount] pairs, read top-to-bottom
-            within each group, not a 10x10 button grid. */}
+        {/* Center panel: 00-99 aggregate table, session-wide — switchable between Classic (Sale only) and Mixed (Sale + Buy + Net) */}
         <div ref={middlePanelRef} className="bg-white rounded-xl border border-gray-200 shadow-sm p-2.5 h-full overflow-hidden flex flex-col min-h-0">
           <div className="flex items-center justify-between mb-2 shrink-0">
-            <h2 className="text-sm font-semibold text-gray-800">00 – 99</h2>
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1">
+              <h2 className="text-sm font-semibold text-gray-800">00 – 99</h2>
+              <div className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-gray-100/90 text-xs">
                 <button
                   type="button"
-                  onClick={() => toggleGridSort('number')}
-                  className="text-[10px] font-medium text-gray-500 hover:text-gray-800 px-1.5 py-0.5 rounded hover:bg-gray-100 transition flex items-center gap-0.5"
-                  title={`${t('ledger.numberCol')} (${formatCombo(shortcuts.sortGridNum)})`}
+                  onClick={() => handleSetLedgerGridMode('classic')}
+                  className={`px-2 py-0.5 font-bold rounded-md transition cursor-pointer text-[11px] flex items-center gap-1 ${
+                    ledgerGridMode === 'classic'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                  title="Classic Sale Ledger Grid"
                 >
-                  {t('ledger.numberCol')} ({formatCombo(shortcuts.sortGridNum)})
-                  {gridSortKey === 'number' && <span>{gridSortDir === 'asc' ? '▲' : '▼'}</span>}
+                  <span>🛒</span>
+                  <span>Classic</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => toggleGridSort('amount')}
-                  className="text-[10px] font-medium text-gray-500 hover:text-gray-800 px-1.5 py-0.5 rounded hover:bg-gray-100 transition flex items-center gap-0.5"
-                  title={`${t('ledger.amountCol')} (${formatCombo(shortcuts.sortGridAmount)})`}
+                  onClick={() => handleSetLedgerGridMode('mixed')}
+                  className={`px-2 py-0.5 font-bold rounded-md transition cursor-pointer text-[11px] flex items-center gap-1 ${
+                    ledgerGridMode === 'mixed'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                  title="Mixed 3-in-1 (Sale + Buy + Net) Ledger Grid"
                 >
-                  {t('ledger.amountCol')} ({formatCombo(shortcuts.sortGridAmount)})
-                  {gridSortKey === 'amount' && <span>{gridSortDir === 'asc' ? '▲' : '▼'}</span>}
+                  <span>⚖️</span>
+                  <span>Mixed</span>
                 </button>
               </div>
-              <button
-                type="button"
-                onClick={handleExportGrid}
-                className="text-[10px] px-1.5 py-0.5 bg-indigo-50 border border-indigo-200 text-indigo-700 font-medium rounded hover:bg-indigo-100 transition flex items-center gap-0.5"
-                title={`${t('ledger.exportCsv')} (${formatCombo(shortcuts.exportGrid)})`}
-              >
-                <span>📥</span> {t('ledger.exportCsv')} ({formatCombo(shortcuts.exportGrid)})
-              </button>
             </div>
-          </div>
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            <table className="w-full h-full text-base border border-collapse border-gray-200 table-fixed">
-              <colgroup>
-                <col className="w-[10%]" />
-                <col className="w-[15%]" />
-                <col className="w-[10%]" />
-                <col className="w-[15%]" />
-                <col className="w-[10%]" />
-                <col className="w-[15%]" />
-                <col className="w-[10%]" />
-                <col className="w-[15%]" />
-              </colgroup>
-              <tbody className="h-full">
-                {numberTable.map((row, rowIdx) => (
-                  <tr key={rowIdx}>
-                    {row.map((num, colIdx) => {
-                      if (num === null) {
-                        return <td key={colIdx} colSpan={2} className="border border-gray-200" />;
-                      }
 
-                      const amount = totals?.[num] ?? 0;
-                      const isNotBuy = notBuySet.has(num);
-                      const isHot = hotSet.has(num);
-                      const isLucky = num === luckyNo;
-                      const isOverLimit = isLimitActive && amount > limitValue;
-
-                      // Purple (over limit) and red (winning number) carry
-                      // through to the amount cell too — green ("has
-                      // amount") stays on the number cell only.
-                      let cls = 'bg-gray-50 text-gray-600';
-                      let amountCls = 'text-gray-700';
-                      if (isLucky) {
-                        cls = 'bg-red-600 text-white';
-                        amountCls = 'bg-red-600 text-white';
-                      } else if (isOverLimit) {
-                        cls = 'bg-purple-500 text-white';
-                        amountCls = 'bg-purple-500 text-white';
-                      } else if (amount > 0) {
-                        cls = 'bg-green-500 text-white';
-                      } else if (isNotBuy) {
-                        cls = 'bg-gray-300 text-gray-500';
-                      } else if (isHot) {
-                        cls = 'bg-yellow-300 text-yellow-900';
-                      }
-
-                      return (
-                        <Fragment key={colIdx}>
-                          <td
-                            onClick={() => handleCellClick(num)}
-                            title={amount ? `${num}: ${amount}${isLucky ? ' — 🎯' : ''}` : isLucky ? `${num} — 🎯` : num}
-                            className={`px-0.5 py-0.5 text-xs font-mono font-semibold text-center cursor-pointer hover:opacity-90 transition border border-gray-200 ${cls}`}
-                          >
-                            {num}
-                          </td>
-                          <td className={`px-1 py-0.5 text-xs text-right font-mono whitespace-nowrap border border-gray-200 ${amountCls}`}>
-                            {amount > 0 ? amount.toLocaleString() : ''}
-                          </td>
-                        </Fragment>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {ledgerGridMode === 'classic' && (
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => toggleGridSort('number')}
+                    className="text-[10px] font-medium text-gray-500 hover:text-gray-800 px-1.5 py-0.5 rounded hover:bg-gray-100 transition flex items-center gap-0.5"
+                    title={`${t('ledger.numberCol')} (${formatCombo(shortcuts.sortGridNum)})`}
+                  >
+                    {t('ledger.numberCol')} ({formatCombo(shortcuts.sortGridNum)})
+                    {gridSortKey === 'number' && <span>{gridSortDir === 'asc' ? '▲' : '▼'}</span>}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleGridSort('amount')}
+                    className="text-[10px] font-medium text-gray-500 hover:text-gray-800 px-1.5 py-0.5 rounded hover:bg-gray-100 transition flex items-center gap-0.5"
+                    title={`${t('ledger.amountCol')} (${formatCombo(shortcuts.sortGridAmount)})`}
+                  >
+                    {t('ledger.amountCol')} ({formatCombo(shortcuts.sortGridAmount)})
+                    {gridSortKey === 'amount' && <span>{gridSortDir === 'asc' ? '▲' : '▼'}</span>}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportGrid}
+                  className="text-[10px] px-1.5 py-0.5 bg-indigo-50 border border-indigo-200 text-indigo-700 font-medium rounded hover:bg-indigo-100 transition flex items-center gap-0.5 cursor-pointer"
+                  title={`${t('ledger.exportCsv')} (${formatCombo(shortcuts.exportGrid)})`}
+                >
+                  <span>📥</span> {t('ledger.exportCsv')} ({formatCombo(shortcuts.exportGrid)})
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Bottom stat row (2/4, 1/4, 1/4 width ratio) */}
-          <div className="grid grid-cols-4 gap-1.5 mt-2">
-            <div className="col-span-2 bg-orange-500 text-white rounded-lg px-2 py-1.5 text-center font-mono font-semibold text-xs truncate" title={bestSeller && bestSeller.amount > 0 ? `[${bestSeller.num}] ${bestSeller.amount.toLocaleString()} × ${rateValue || 0} = ${orangeLiability.toLocaleString()}` : ''}>
-              {bestSeller && bestSeller.amount > 0 ? (
-                `[${bestSeller.num}] ${bestSeller.amount.toLocaleString()} × ${rateValue || 0} = ${orangeLiability.toLocaleString()}`
-              ) : (
-                '—'
-              )}
-            </div>
-            <div className="col-span-1 bg-pink-100 text-pink-900 rounded-lg px-2 py-1.5 text-center font-mono font-semibold text-xs truncate">
-              {pinkStat ? pinkStat.toFixed(2) : '—'}
-            </div>
-            <div className="col-span-1 bg-purple-100 text-purple-900 rounded-lg px-2 py-1.5 text-center font-mono font-semibold text-xs truncate">
-              {grandTotal.toLocaleString()}
-            </div>
-          </div>
+          {ledgerGridMode === 'mixed' ? (
+            <MixedLedgerGrid
+              totals={totals}
+              buyTotals={buyTotals}
+              limitValue={limitValue}
+              isLimitActive={isLimitActive}
+              rateValue={rateValue}
+              hotSet={hotSet}
+              notBuySet={notBuySet}
+              luckyNo={luckyNo}
+              handleCellClick={handleCellClick}
+              shortcuts={shortcuts}
+              formatCombo={formatCombo}
+              t={t}
+            />
+          ) : (
+            <>
+              <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                <table className="w-full h-full text-base border border-collapse border-gray-200 table-fixed">
+                  <colgroup>
+                    <col className="w-[10%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[15%]" />
+                  </colgroup>
+                  <tbody className="h-full">
+                    {numberTable.map((row, rowIdx) => (
+                      <tr key={rowIdx}>
+                        {row.map((num, colIdx) => {
+                          if (num === null) {
+                            return <td key={colIdx} colSpan={2} className="border border-gray-200" />;
+                          }
+
+                          const amount = totals?.[num] ?? 0;
+                          const isNotBuy = notBuySet.has(num);
+                          const isHot = hotSet.has(num);
+                          const isLucky = num === luckyNo;
+                          const isOverLimit = isLimitActive && amount > limitValue;
+
+                          // Purple (over limit) and red (winning number) carry
+                          // through to the amount cell too — green ("has
+                          // amount") stays on the number cell only.
+                          let cls = 'bg-gray-50 text-gray-600';
+                          let amountCls = 'text-gray-700';
+                          if (isLucky) {
+                            cls = 'bg-red-600 text-white';
+                            amountCls = 'bg-red-600 text-white';
+                          } else if (isOverLimit) {
+                            cls = 'bg-purple-500 text-white';
+                            amountCls = 'bg-purple-500 text-white';
+                          } else if (amount > 0) {
+                            cls = 'bg-green-500 text-white';
+                          } else if (isNotBuy) {
+                            cls = 'bg-gray-300 text-gray-500';
+                          } else if (isHot) {
+                            cls = 'bg-yellow-300 text-yellow-900';
+                          }
+
+                          return (
+                            <Fragment key={colIdx}>
+                              <td
+                                onClick={() => handleCellClick(num)}
+                                title={amount ? `${num}: ${amount}${isLucky ? ' — 🎯' : ''}` : isLucky ? `${num} — 🎯` : num}
+                                className={`px-0.5 py-0.5 text-xs font-mono font-semibold text-center cursor-pointer hover:opacity-90 transition border border-gray-200 ${cls}`}
+                              >
+                                {num}
+                              </td>
+                              <td className={`px-1 py-0.5 text-xs text-right font-mono whitespace-nowrap border border-gray-200 ${amountCls}`}>
+                                {amount > 0 ? amount.toLocaleString() : ''}
+                              </td>
+                            </Fragment>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Bottom stat row (2/4, 1/4, 1/4 width ratio) */}
+              <div className="grid grid-cols-4 gap-1.5 mt-2">
+                <div className="col-span-2 bg-orange-500 text-white rounded-lg px-2 py-1.5 text-center font-mono font-semibold text-xs truncate" title={bestSeller && bestSeller.amount > 0 ? `[${bestSeller.num}] ${bestSeller.amount.toLocaleString()} × ${rateValue || 0} = ${orangeLiability.toLocaleString()}` : ''}>
+                  {bestSeller && bestSeller.amount > 0 ? (
+                    `[${bestSeller.num}] ${bestSeller.amount.toLocaleString()} × ${rateValue || 0} = ${orangeLiability.toLocaleString()}`
+                  ) : (
+                    '—'
+                  )}
+                </div>
+                <div className="col-span-1 bg-pink-100 text-pink-900 rounded-lg px-2 py-1.5 text-center font-mono font-semibold text-xs truncate">
+                  {pinkStat ? pinkStat.toFixed(2) : '—'}
+                </div>
+                <div className="col-span-1 bg-purple-100 text-purple-900 rounded-lg px-2 py-1.5 text-center font-mono font-semibold text-xs truncate">
+                  {grandTotal.toLocaleString()}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         <div
@@ -2147,122 +2310,125 @@ export default function LedgerEntry({
                 <span>🛒</span> {t('ledger.exceedPanelTitle')}
               </Link>
             </h2>
-            {isLimitActive && exceedList.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Link
-                  href={`/org/${orgId}/2d/buy`}
-                  className="text-xs px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition flex items-center gap-1 shadow-xs"
-                  title="Go to Buy Page to enter buy vouchers"
-                >
-                  <span>🛒</span> Buy
-                </Link>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Link
+                href={`/org/${orgId}/2d/buy`}
+                className="text-xs px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition flex items-center gap-1 shadow-xs"
+                title="Go to Buy Page to enter buy vouchers"
+              >
+                <span>🛒</span> Buy
+              </Link>
+              {exceedList.length > 0 && (
                 <button
                   type="button"
                   onClick={handleCopyExceedLimit}
-                  className="text-xs px-2.5 py-1 bg-blue-50 border border-blue-200 text-blue-700 font-medium rounded-lg hover:bg-blue-100 transition flex items-center gap-1"
-                  title="Copy Exceed list as CSV (Number,Exceed)"
+                  className="text-xs px-2.5 py-1 bg-blue-50 border border-blue-200 text-blue-700 font-medium rounded-lg hover:bg-blue-100 transition flex items-center gap-1 cursor-pointer"
+                  title="Copy Exceed list (Number - Amount)"
                 >
                   <span>📋</span> Copy
                 </button>
-              </div>
-            )}
-          </div>
-          {!isLimitActive ? (
-            <p className="text-xs text-gray-400 text-center py-6">{t('ledger.noLimitHint')}</p>
-          ) : (
-            <div className="flex flex-col flex-1 min-h-0 justify-between">
-              {exceedList.length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-6">{t('ledger.noExceedEntries')}</p>
-              ) : (
-                <div className="flex-1 min-h-0 overflow-y-auto mb-2">
-                  <table className="w-full text-sm border border-collapse border-gray-200">
-                    <thead>
-                      <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide border-b border-gray-200 font-medium">
-                        <th className="px-1 py-1 border border-gray-200 text-center font-medium">
-                          <button
-                            type="button"
-                            onClick={() => toggleExceedSort('num')}
-                            className="hover:text-gray-800 transition font-semibold flex items-center justify-center gap-0.5 mx-auto"
-                          >
-                            Number ({formatCombo(shortcuts.sortExceedNum)})
-                            {exceedSortKey === 'num' && <span>{exceedSortDir === 'asc' ? '▲' : '▼'}</span>}
-                          </button>
-                        </th>
-                        <th className="px-1 py-1 border border-gray-200 text-right font-medium bg-purple-50">
-                          <button
-                            type="button"
-                            onClick={() => toggleExceedSort('excess')}
-                            className="hover:text-gray-800 transition font-semibold flex items-center justify-center gap-0.5 ml-auto text-purple-900"
-                          >
-                            Exceed ({formatCombo(shortcuts.sortExceedExcess)})
-                            {exceedSortKey === 'excess' && <span>{exceedSortDir === 'asc' ? '▲' : '▼'}</span>}
-                          </button>
-                        </th>
-                        <th className="px-1 py-1 border border-gray-200 text-right font-medium bg-amber-50">
-                          <button
-                            type="button"
-                            onClick={() => toggleExceedSort('buy')}
-                            className="hover:text-gray-800 transition font-semibold flex items-center justify-center gap-0.5 ml-auto text-amber-900"
-                          >
-                            Buy ({formatCombo(shortcuts.sortExceedAmount)})
-                            {exceedSortKey === 'buy' && <span>{exceedSortDir === 'asc' ? '▲' : '▼'}</span>}
-                          </button>
-                        </th>
-                        <th className="px-1 py-1 border border-gray-200 text-right font-medium bg-indigo-50">
-                          <button
-                            type="button"
-                            onClick={() => toggleExceedSort('total')}
-                            className="hover:text-gray-800 transition font-semibold flex items-center justify-center gap-0.5 ml-auto text-indigo-900"
-                          >
-                            Total ({formatCombo(shortcuts.sortExceedAmount)})
-                            {exceedSortKey === 'total' && <span>{exceedSortDir === 'asc' ? '▲' : '▼'}</span>}
-                          </button>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {exceedList.map(e => (
-                        <tr
-                          key={e.num}
-                          onClick={() => router.push(`/org/${orgId}/2d/buy`)}
-                          className="cursor-pointer hover:bg-purple-100/60 transition"
-                          title="Click to go to Buy Page"
-                        >
-                          <td className="px-1.5 py-1 font-mono font-semibold text-center bg-purple-500 text-white border border-gray-200">
-                            {e.num}
-                          </td>
-                          <td className="px-1.5 py-1 text-right font-mono whitespace-nowrap border border-gray-200 bg-purple-50 text-purple-900 font-semibold">
-                            {e.excess.toLocaleString()}
-                          </td>
-                          <td className="px-1.5 py-1 text-right font-mono whitespace-nowrap border border-gray-200 bg-amber-50 text-amber-900 font-semibold">
-                            {e.buy > 0 ? e.buy.toLocaleString() : '0'}
-                          </td>
-                          <td className="px-1.5 py-1 text-right font-mono whitespace-nowrap border border-gray-200 bg-indigo-50 text-indigo-900 font-bold">
-                            {e.total.toLocaleString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
               )}
+            </div>
+          </div>
 
-              <div className="border-t border-gray-200 pt-2.5 space-y-1.5 text-base font-mono">
-                <div className="flex justify-between text-gray-600 px-1 font-semibold">
-                  <span>Exceed Total:</span>
-                  <span className="text-purple-900">{totalExcess.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-gray-600 px-1 font-semibold">
-                  <span>Buy Total:</span>
-                  <span className="text-amber-700">{totalBuy.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-gray-900 font-bold border-t border-gray-200 pt-1.5 px-1 text-sm">
-                  <span>Total (Exceed - Buy):</span>
-                  <span className="text-indigo-700 font-extrabold">{totalRemaining.toLocaleString()}</span>
-                </div>
+          <div className="flex flex-col flex-1 min-h-0 justify-between">
+            <div className="flex-1 min-h-0 overflow-y-auto mb-2 border border-gray-200 rounded-lg">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 text-[11px] text-gray-600 uppercase tracking-wide border-b border-gray-200 font-medium">
+                    <th className="px-1 py-1.5 border-r border-gray-200 text-center font-semibold bg-purple-600 text-white w-16">
+                      <button
+                        type="button"
+                        onClick={() => toggleExceedSort('num')}
+                        className="hover:text-gray-100 transition font-bold flex items-center justify-center gap-0.5 mx-auto text-white"
+                      >
+                        Number
+                        {exceedSortKey === 'num' && <span>{exceedSortDir === 'asc' ? '▲' : '▼'}</span>}
+                      </button>
+                    </th>
+                    <th className="px-1 py-1.5 border-r border-gray-200 text-right font-semibold bg-purple-50 text-purple-900">
+                      <button
+                        type="button"
+                        onClick={() => toggleExceedSort('excess')}
+                        className="hover:text-purple-700 transition font-bold flex items-center justify-center gap-0.5 ml-auto text-purple-900"
+                      >
+                        Exceed
+                        {exceedSortKey === 'excess' && <span>{exceedSortDir === 'asc' ? '▲' : '▼'}</span>}
+                      </button>
+                    </th>
+                    <th className="px-1 py-1.5 border-r border-gray-200 text-right font-semibold bg-amber-50 text-amber-900">
+                      <button
+                        type="button"
+                        onClick={() => toggleExceedSort('buy')}
+                        className="hover:text-amber-700 transition font-bold flex items-center justify-center gap-0.5 ml-auto text-amber-900"
+                      >
+                        Buy
+                        {exceedSortKey === 'buy' && <span>{exceedSortDir === 'asc' ? '▲' : '▼'}</span>}
+                      </button>
+                    </th>
+                    <th className="px-1 py-1.5 text-right font-semibold bg-indigo-50 text-indigo-900">
+                      <button
+                        type="button"
+                        onClick={() => toggleExceedSort('total')}
+                        className="hover:text-indigo-700 transition font-bold flex items-center justify-center gap-0.5 ml-auto text-indigo-900"
+                      >
+                        Total
+                        {exceedSortKey === 'total' && <span>{exceedSortDir === 'asc' ? '▲' : '▼'}</span>}
+                      </button>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {exceedList.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-10 text-center text-gray-400 text-xs font-medium">
+                        {!isLimitActive
+                          ? 'No active limit (Buy vouchers will appear here when entered)'
+                          : t('ledger.noExceedEntries')}
+                      </td>
+                    </tr>
+                  ) : (
+                    exceedList.map(e => (
+                      <tr
+                        key={e.num}
+                        onClick={() => router.push(`/org/${orgId}/2d/buy`)}
+                        className="cursor-pointer hover:bg-purple-100/60 transition border-b border-gray-100"
+                        title="Click to go to Buy Page"
+                      >
+                        <td className="px-1.5 py-1 font-mono font-semibold text-center bg-purple-500 text-white border-r border-gray-200">
+                          {e.num}
+                        </td>
+                        <td className="px-1.5 py-1 text-right font-mono whitespace-nowrap border-r border-gray-200 bg-purple-50 text-purple-900 font-semibold">
+                          {e.excess.toLocaleString()}
+                        </td>
+                        <td className="px-1.5 py-1 text-right font-mono whitespace-nowrap border-r border-gray-200 bg-amber-50 text-amber-900 font-semibold">
+                          {e.buy > 0 ? `-${e.buy.toLocaleString()}` : '0'}
+                        </td>
+                        <td className="px-1.5 py-1 text-right font-mono whitespace-nowrap bg-indigo-50 text-indigo-900 font-bold">
+                          {e.total.toLocaleString()}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="border-t border-gray-200 pt-2 space-y-1 text-xs font-mono shrink-0">
+              <div className="flex justify-between text-gray-600 px-1 font-semibold">
+                <span>Exceed Total:</span>
+                <span className="text-purple-900 font-bold">{totalExcess.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-gray-600 px-1 font-semibold">
+                <span>Buy Total:</span>
+                <span className="text-amber-700 font-bold">{totalBuy > 0 ? `-${totalBuy.toLocaleString()}` : '0'}</span>
+              </div>
+              <div className="flex justify-between text-gray-900 font-bold border-t border-gray-200 pt-1 px-1 text-xs">
+                <span>Total (Exceed - Buy):</span>
+                <span className="text-indigo-700 font-extrabold">{totalRemaining.toLocaleString()}</span>
               </div>
             </div>
-          )}
+          </div>
         </div>
       </div>
 
@@ -2367,78 +2533,315 @@ export default function LedgerEntry({
           </div>
         </div>
       )}
-      {/* Import JSON/CSV Modal */}
+      {/* Import Entries Modal */}
       {importModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 shadow-2xl border border-gray-100 max-w-lg w-full space-y-4">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
-                <span>📥</span> Import Entries (JSON or CSV)
-              </h3>
+          <div className="bg-white rounded-2xl p-6 shadow-2xl border border-gray-100 max-w-2xl w-full max-h-[90vh] flex flex-col space-y-4">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                  <span>📥</span> Import Entries
+                </h3>
+                {/* Step indicator pills */}
+                <div className="flex items-center gap-1.5 text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setImportStep(1)}
+                    className={`px-2.5 py-0.5 rounded-full transition cursor-pointer ${
+                      importStep === 1
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                    }`}
+                  >
+                    1. Import Tokens
+                  </button>
+                  <span className="text-gray-400">→</span>
+                  <button
+                    type="button"
+                    disabled={importPreviewItems.length === 0}
+                    onClick={() => importPreviewItems.length > 0 && setImportStep(2)}
+                    className={`px-2.5 py-0.5 rounded-full transition ${
+                      importStep === 2
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : importPreviewItems.length > 0
+                        ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 cursor-pointer'
+                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    2. Preview & Edit
+                  </button>
+                </div>
+              </div>
               <button
                 type="button"
-                onClick={() => { setImportModalOpen(false); setImportJsonText(''); }}
-                className="text-gray-400 hover:text-gray-600 text-lg font-bold px-2"
+                onClick={handleCloseImportModal}
+                className="text-gray-400 hover:text-gray-600 text-lg font-bold px-2 cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-4">
+            {error && (
+              <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg flex items-center justify-between shrink-0">
+                <span>{error}</span>
+                <button type="button" onClick={() => setError('')} className="font-bold ml-2">✕</button>
+              </div>
+            )}
+
+            {/* Step 1: Input Data */}
+            {importStep === 1 && (
+              <div className="space-y-4 overflow-y-auto flex-1 min-h-0 py-1">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                    1. Choose File (.txt, .csv, .json)
+                  </label>
+                  <input
+                    type="file"
+                    accept=".txt,.csv,.json,text/plain,text/csv,application/json"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (evt) => {
+                          setImportJsonText(evt.target?.result || '');
+                        };
+                        reader.readAsText(file);
+                      }
+                    }}
+                    className="block w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                    2. Or Paste Entries Directly (e.g. 20 - 200)
+                  </label>
+                  <textarea
+                    rows={8}
+                    value={importJsonText}
+                    onChange={(e) => setImportJsonText(e.target.value)}
+                    placeholder={`Paste entries here (number - amount)...\n\nExample:\n20 - 200\n12 - 1000\n16 - 700\n26 - 700`}
+                    className="w-full p-2.5 text-xs font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Preview & Edit Tokens */}
+            {importStep === 2 && (
+              <div className="flex flex-col flex-1 min-h-0 space-y-3">
+                {/* Stats and toolbar */}
+                <div className="p-3 bg-emerald-50/70 border border-emerald-200/80 rounded-xl flex flex-wrap items-center justify-between gap-2 shrink-0">
+                  <div className="flex items-center gap-4 text-xs font-mono">
+                    <div>
+                      <span className="text-gray-500">Total: </span>
+                      <strong className="text-gray-900 font-bold">{importPreviewItems.length}</strong>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Selected: </span>
+                      <strong className="text-emerald-700 font-bold">
+                        {importPreviewItems.filter(it => it.selected).length}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Total Amount: </span>
+                      <strong className="text-indigo-700 font-bold">
+                        {importPreviewItems
+                          .filter(it => it.selected)
+                          .reduce((sum, it) => sum + (parseFloat(String(it.amount).replace(/,/g, '')) || 0), 0)
+                          .toLocaleString()}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectAllPreview(true)}
+                      className="text-[11px] px-2.5 py-1 bg-white border border-emerald-300 text-emerald-700 font-semibold rounded hover:bg-emerald-100 transition cursor-pointer"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectAllPreview(false)}
+                      className="text-[11px] px-2.5 py-1 bg-white border border-gray-300 text-gray-700 font-semibold rounded hover:bg-gray-100 transition cursor-pointer"
+                    >
+                      Deselect All
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filter and search */}
+                <div className="flex items-center justify-between gap-2 shrink-0">
+                  <span className="text-xs text-gray-500">Edit amounts or uncheck numbers to skip:</span>
+                  <input
+                    type="text"
+                    value={importSearch}
+                    onChange={(e) => setImportSearch(e.target.value)}
+                    placeholder="Filter number..."
+                    className="px-2.5 py-1 text-xs font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 w-36 text-slate-900"
+                  />
+                </div>
+
+                {/* Table list of numbers */}
+                <div className="flex-1 min-h-[220px] max-h-[360px] overflow-y-auto border border-gray-200 rounded-xl">
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead className="bg-slate-100 text-slate-700 sticky top-0 border-b border-gray-200 z-10">
+                      <tr>
+                        <th className="p-2 w-12 text-center">
+                          <input
+                            type="checkbox"
+                            checked={importPreviewItems.length > 0 && importPreviewItems.every(it => it.selected)}
+                            onChange={(e) => handleSelectAllPreview(e.target.checked)}
+                            className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                          />
+                        </th>
+                        <th className="p-2 w-24 text-center font-bold">Number</th>
+                        <th className="p-2 font-bold">Amount (Editable)</th>
+                        <th className="p-2 w-28 text-center font-bold">Status</th>
+                        <th className="p-2 w-16 text-center font-bold">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 font-mono">
+                      {importPreviewItems
+                        .filter(it => !importSearch.trim() || it.num.includes(importSearch.trim()))
+                        .map((item, idx) => {
+                          const isNotBuy = notBuyNumbers && notBuyNumbers.includes(item.num);
+                          const isHot = hotNumbers && hotNumbers.includes(item.num);
+
+                          return (
+                            <tr
+                              key={item.id || idx}
+                              className={`hover:bg-slate-50 transition ${
+                                item.selected ? 'bg-white' : 'bg-gray-50/70 opacity-60'
+                              }`}
+                            >
+                              <td className="p-2 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={!!item.selected}
+                                  onChange={() => handleTogglePreviewItem(item.id)}
+                                  className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                />
+                              </td>
+                              <td className="p-2 text-center">
+                                <div className="inline-flex items-center gap-1">
+                                  <span className="px-2.5 py-0.5 rounded bg-purple-100 border border-purple-200 text-purple-900 font-bold text-sm">
+                                    {item.num}
+                                  </span>
+                                  {isNotBuy && <span className="text-[10px] bg-red-100 text-red-700 px-1 rounded font-bold">Blocked</span>}
+                                  {isHot && <span className="text-[10px] bg-orange-100 text-orange-700 px-1 rounded font-bold">Hot</span>}
+                                </div>
+                              </td>
+                              <td className="p-2">
+                                <div className="flex items-center gap-1.5 max-w-[200px]">
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    value={item.amount}
+                                    onChange={(e) => handleUpdatePreviewAmount(item.id, e.target.value)}
+                                    className="w-full px-2.5 py-1 text-xs font-mono font-bold bg-white border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-900"
+                                  />
+                                </div>
+                              </td>
+                              <td className="p-2 text-center">
+                                {item.selected ? (
+                                  <span className="text-[11px] px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-semibold">
+                                    ✓ Include
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] px-2 py-0.5 bg-gray-200 text-gray-600 rounded font-medium">
+                                    ✕ Skip
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemovePreviewItem(item.id)}
+                                  className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded transition text-xs cursor-pointer"
+                                  title="Remove from import"
+                                >
+                                  🗑️
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between border-t border-gray-100 pt-3 shrink-0">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                  1. Choose JSON or CSV File (.json, .csv)
-                </label>
-                <input
-                  type="file"
-                  accept=".json,.csv,text/csv,application/json"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onload = (evt) => {
-                        setImportJsonText(evt.target?.result || '');
-                      };
-                      reader.readAsText(file);
-                    }
-                  }}
-                  className="block w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 cursor-pointer"
-                />
+                {importStep === 2 ? (
+                  <button
+                    type="button"
+                    onClick={() => setImportStep(1)}
+                    className="px-3.5 py-2 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition cursor-pointer flex items-center gap-1"
+                  >
+                    <span>←</span> Back to Edit Data
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleCloseImportModal}
+                    className="px-3.5 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                )}
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                  2. Or Paste JSON or CSV Text Directly
-                </label>
-                <textarea
-                  rows={6}
-                  value={importJsonText}
-                  onChange={(e) => setImportJsonText(e.target.value)}
-                  placeholder={`Paste JSON or CSV data here...\n\nExample CSV:\n35, 1100\n11, 900\n12, 900\n\nExample JSON:\n{"items": [{"num": "35", "amount": 1100}]}`}
-                  className="w-full p-2.5 text-xs font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+              <div className="flex items-center gap-2">
+                {importStep === 1 ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleParseToPreview(importJsonText)}
+                      disabled={!importJsonText.trim()}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-4 py-2 font-semibold rounded-lg disabled:opacity-50 transition cursor-pointer flex items-center gap-1.5 shadow-sm"
+                    >
+                      <span>Next: Preview Entries</span>
+                      <span>→</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleCloseImportModal}
+                      className="px-3.5 py-2 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleFinalImport}
+                      disabled={importPreviewItems.filter(it => it.selected && parseFloat(String(it.amount).replace(/,/g, '')) > 0).length === 0}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-4 py-2 font-semibold rounded-lg disabled:opacity-50 transition cursor-pointer shadow-sm"
+                    >
+                      Import {importPreviewItems.filter(it => it.selected && parseFloat(String(it.amount).replace(/,/g, '')) > 0).length} Entries
+                    </button>
+                  </>
+                )}
               </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-3">
-              <button
-                type="button"
-                onClick={() => { setImportModalOpen(false); setImportJsonText(''); }}
-                className="btn-secondary text-xs px-3.5 py-2"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDoImportJson(importJsonText)}
-                disabled={!importJsonText.trim()}
-                className="btn-primary bg-emerald-600 hover:bg-emerald-700 text-xs px-4 py-2 disabled:opacity-50"
-              >
-                Import Entries
-              </button>
             </div>
           </div>
         </div>
+      )}
+
+      {guideModalOpen && (
+        <LotteryGuideModal
+          isOpen={guideModalOpen}
+          onClose={() => setGuideModalOpen(false)}
+        />
       )}
 
       </div>

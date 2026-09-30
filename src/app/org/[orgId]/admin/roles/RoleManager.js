@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useI18n } from '@/lib/i18n/index.js';
 
 export default function RoleManager({
@@ -11,7 +12,17 @@ export default function RoleManager({
   currentUserRole,
 }) {
   const { t } = useI18n();
+  const router = useRouter();
+
   const [roles, setRoles] = useState(initialRoles);
+  const [savedBaseline, setSavedBaseline] = useState(() => {
+    const map = {};
+    initialRoles.forEach((r) => {
+      map[r.id] = Array.isArray(r.permissions) ? [...r.permissions].sort() : [];
+    });
+    return map;
+  });
+
   const [selectedRoleId, setSelectedRoleId] = useState(initialRoles[0]?.id || 'cashier');
   const [searchFilter, setSearchFilter] = useState('');
 
@@ -27,6 +38,41 @@ export default function RoleManager({
   const [statusMsg, setStatusMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Sync with initialRoles prop
+  useEffect(() => {
+    setRoles(initialRoles);
+    const map = {};
+    initialRoles.forEach((r) => {
+      map[r.id] = Array.isArray(r.permissions) ? [...r.permissions].sort() : [];
+    });
+    setSavedBaseline(map);
+  }, [initialRoles]);
+
+  // Fetch latest roles on mount with cache-busting
+  const reloadRolesFromApi = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/org/${orgId}/roles`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.roles)) {
+          setRoles(data.roles);
+          const map = {};
+          data.roles.forEach((r) => {
+            map[r.id] = Array.isArray(r.permissions) ? [...r.permissions].sort() : [];
+          });
+          setSavedBaseline(map);
+        }
+      }
+    } catch {}
+  }, [orgId]);
+
+  useEffect(() => {
+    reloadRolesFromApi();
+  }, [reloadRolesFromApi]);
+
   const activeRole = useMemo(() => {
     return roles.find((r) => r.id === selectedRoleId) || roles[0] || null;
   }, [roles, selectedRoleId]);
@@ -34,6 +80,19 @@ export default function RoleManager({
   const activePermissions = useMemo(() => {
     return new Set(activeRole?.permissions || []);
   }, [activeRole]);
+
+  // Check if a role has unsaved permission changes
+  const dirtyRolesMap = useMemo(() => {
+    const dirty = {};
+    roles.forEach((r) => {
+      const currentSorted = (r.permissions || []).slice().sort().join(',');
+      const savedSorted = (savedBaseline[r.id] || []).slice().sort().join(',');
+      dirty[r.id] = currentSorted !== savedSorted;
+    });
+    return dirty;
+  }, [roles, savedBaseline]);
+
+  const isActiveRoleDirty = Boolean(activeRole && dirtyRolesMap[activeRole.id]);
 
   // Toggle single permission for the active role
   function handleTogglePermission(key) {
@@ -98,7 +157,7 @@ export default function RoleManager({
         body: JSON.stringify({
           name: activeRole.name,
           description: activeRole.description,
-          permissions: activeRole.permissions,
+          permissions: activeRole.permissions || [],
         }),
       });
 
@@ -107,8 +166,15 @@ export default function RoleManager({
         throw new Error(data.error || 'Failed to save role permissions');
       }
 
-      setStatusMsg(`✓ Permissions for role "${activeRole.name}" updated successfully!`);
-      setTimeout(() => setStatusMsg(''), 4000);
+      // Update baseline state for active role so dirty state clears
+      setSavedBaseline((prev) => ({
+        ...prev,
+        [activeRole.id]: (activeRole.permissions || []).slice().sort(),
+      }));
+
+      setStatusMsg(`✓ Permissions for role "${activeRole.name}" updated and saved successfully!`);
+      setTimeout(() => setStatusMsg(''), 5000);
+      router.refresh();
     } catch (err) {
       setErrorMsg(err.message || 'Network error while saving role');
     } finally {
@@ -145,12 +211,17 @@ export default function RoleManager({
 
       const created = data.role;
       setRoles((prev) => [...prev, created]);
+      setSavedBaseline((prev) => ({
+        ...prev,
+        [created.id]: (created.permissions || []).slice().sort(),
+      }));
       setSelectedRoleId(created.id);
       setShowCreateModal(false);
       setNewRoleName('');
       setNewRoleDesc('');
       setStatusMsg(`✓ Custom role "${created.name}" created successfully!`);
-      setTimeout(() => setStatusMsg(''), 4000);
+      setTimeout(() => setStatusMsg(''), 5000);
+      router.refresh();
     } catch (err) {
       setErrorMsg(err.message || 'Failed to create custom role');
     } finally {
@@ -158,8 +229,8 @@ export default function RoleManager({
     }
   }
 
-  // Delete custom role
-  async function handleDeleteRole() {
+  // Delete custom role or reset system role to factory default
+  async function handleDeleteOrResetRole() {
     if (!activeRole) return;
     if (activeRole.isSystem) {
       if (!confirm(`Reset system role "${activeRole.name}" to factory default permissions?`)) return;
@@ -181,16 +252,23 @@ export default function RoleManager({
       }
 
       if (activeRole.isSystem) {
-        setStatusMsg(`✓ Reset role "${activeRole.name}" to default.`);
-        window.location.reload();
+        setStatusMsg(`✓ Reset role "${activeRole.name}" to factory default.`);
+        await reloadRolesFromApi();
+        router.refresh();
       } else {
         setRoles((prev) => prev.filter((r) => r.id !== activeRole.id));
+        setSavedBaseline((prev) => {
+          const next = { ...prev };
+          delete next[activeRole.id];
+          return next;
+        });
         setSelectedRoleId(roles[0]?.id || 'cashier');
         setStatusMsg(`✓ Deleted custom role "${activeRole.name}".`);
+        router.refresh();
       }
-      setTimeout(() => setStatusMsg(''), 4000);
+      setTimeout(() => setStatusMsg(''), 5000);
     } catch (err) {
-      setErrorMsg(err.message || 'Error deleting role');
+      setErrorMsg(err.message || 'Error deleting/resetting role');
     } finally {
       setDeleting(false);
     }
@@ -247,13 +325,14 @@ export default function RoleManager({
       <div className="bg-white rounded-2xl border border-gray-200 p-2 shadow-sm flex flex-wrap gap-2 items-center">
         {roles.map((r) => {
           const isActive = r.id === selectedRoleId;
+          const isDirty = dirtyRolesMap[r.id];
           const permCount = (r.permissions || []).length;
           return (
             <button
               key={r.id}
               type="button"
               onClick={() => setSelectedRoleId(r.id)}
-              className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl font-semibold text-sm transition cursor-pointer ${
+              className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl font-semibold text-sm transition cursor-pointer relative ${
                 isActive
                   ? 'bg-indigo-600 text-white shadow-md'
                   : 'bg-gray-50 text-gray-700 hover:bg-gray-100 hover:text-gray-900'
@@ -273,6 +352,12 @@ export default function RoleManager({
                 <span className={`text-[10px] uppercase font-bold tracking-wider opacity-75`}>
                   System
                 </span>
+              )}
+              {isDirty && (
+                <span
+                  title="Unsaved changes in this role"
+                  className="w-2.5 h-2.5 rounded-full bg-amber-400 ring-2 ring-white shadow-xs animate-pulse"
+                />
               )}
             </button>
           );
@@ -295,6 +380,11 @@ export default function RoleManager({
                 >
                   {activeRole.isSystem ? 'System Template' : 'Custom Role'}
                 </span>
+                {isActiveRoleDirty && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-semibold flex items-center gap-1 animate-pulse">
+                    <span>●</span> Unsaved Changes
+                  </span>
+                )}
               </div>
               <p className="text-xs text-gray-500 mt-1">
                 {activeRole.description || 'Configured access permissions for this role.'}
@@ -305,32 +395,48 @@ export default function RoleManager({
               <button
                 type="button"
                 onClick={() => handleToggleAll(true)}
-                className="btn-secondary text-xs py-1.5 px-3"
+                className="btn-secondary text-xs py-1.5 px-3 cursor-pointer"
               >
                 Select All
               </button>
               <button
                 type="button"
                 onClick={() => handleToggleAll(false)}
-                className="btn-secondary text-xs py-1.5 px-3"
+                className="btn-secondary text-xs py-1.5 px-3 cursor-pointer"
               >
                 Clear All
               </button>
-              {!activeRole.isSystem && (
+
+              {activeRole.isSystem ? (
                 <button
                   type="button"
-                  onClick={handleDeleteRole}
+                  onClick={handleDeleteOrResetRole}
                   disabled={deleting}
-                  className="btn-danger text-xs py-1.5 px-3"
+                  className="btn-secondary text-xs py-1.5 px-3 text-slate-600 hover:text-slate-800 cursor-pointer"
+                  title="Reset to system defaults"
+                >
+                  {deleting ? 'Resetting...' : 'Reset to Default'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleDeleteOrResetRole}
+                  disabled={deleting}
+                  className="btn-danger text-xs py-1.5 px-3 cursor-pointer"
                 >
                   {deleting ? 'Deleting...' : 'Delete Role'}
                 </button>
               )}
+
               <button
                 type="button"
                 onClick={handleSavePermissions}
                 disabled={saving}
-                className="btn-primary text-xs py-1.5 px-4 shadow-sm flex items-center gap-1.5"
+                className={`text-xs py-1.5 px-4 shadow-sm flex items-center gap-1.5 rounded-xl font-semibold transition cursor-pointer ${
+                  isActiveRoleDirty
+                    ? 'bg-indigo-600 text-white hover:bg-indigo-700 ring-2 ring-indigo-300 shadow-md'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                }`}
               >
                 <span>💾</span>
                 <span>{saving ? 'Saving...' : 'Save Permissions'}</span>
@@ -342,13 +448,13 @@ export default function RoleManager({
           {statusMsg && (
             <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center justify-between">
               <span>{statusMsg}</span>
-              <button type="button" onClick={() => setStatusMsg('')} className="font-bold">✕</button>
+              <button type="button" onClick={() => setStatusMsg('')} className="font-bold cursor-pointer">✕</button>
             </div>
           )}
           {errorMsg && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-semibold flex items-center justify-between">
               <span>⚠️ {errorMsg}</span>
-              <button type="button" onClick={() => setErrorMsg('')} className="font-bold">✕</button>
+              <button type="button" onClick={() => setErrorMsg('')} className="font-bold cursor-pointer">✕</button>
             </div>
           )}
 
@@ -452,7 +558,7 @@ export default function RoleManager({
               <button
                 type="button"
                 onClick={() => setShowCreateModal(false)}
-                className="text-gray-400 hover:text-gray-600 font-bold px-2"
+                className="text-gray-400 hover:text-gray-600 font-bold px-2 cursor-pointer"
               >
                 ✕
               </button>
@@ -507,14 +613,14 @@ export default function RoleManager({
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="btn-secondary text-xs px-3.5 py-2"
+                  className="btn-secondary text-xs px-3.5 py-2 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving || !newRoleName.trim()}
-                  className="btn-primary text-xs px-4 py-2 disabled:opacity-50"
+                  className="btn-primary text-xs px-4 py-2 disabled:opacity-50 cursor-pointer"
                 >
                   {saving ? 'Creating...' : 'Create Role'}
                 </button>

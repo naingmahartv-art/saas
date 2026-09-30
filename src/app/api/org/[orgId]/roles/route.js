@@ -4,6 +4,9 @@ import { orgRolesCol, orgRoleDoc } from '@/lib/db/firestore.js';
 import { DEFAULT_ROLES, ALL_PERMISSION_KEYS } from '@/lib/auth/permissionMatrix.js';
 import { logActivity } from '@/lib/db/log-activity.js';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET(request, { params }) {
   try {
     const { orgId } = await params;
@@ -34,7 +37,10 @@ export async function GET(request, { params }) {
           isSystem: true,
         };
       }
-      return def;
+      return {
+        ...def,
+        isSystem: true,
+      };
     });
 
     // Append custom created roles
@@ -45,7 +51,14 @@ export async function GET(request, { params }) {
       });
     });
 
-    return NextResponse.json({ roles: mergedRoles });
+    return NextResponse.json(
+      { roles: mergedRoles },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        },
+      }
+    );
   } catch (err) {
     return NextResponse.json({ error: err.message || 'Failed to fetch roles' }, { status: 500 });
   }
@@ -91,7 +104,14 @@ export async function POST(request, { params }) {
       details: `Created user role "${name.trim()}" with ${safePermissions.length} permissions`,
     }).catch(() => {});
 
-    return NextResponse.json({ role: { id, ...roleData, isSystem: false } });
+    return NextResponse.json(
+      { role: { id, ...roleData, isSystem: false } },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        },
+      }
+    );
   } catch (err) {
     return NextResponse.json({ error: err.message || 'Failed to save role' }, { status: 500 });
   }

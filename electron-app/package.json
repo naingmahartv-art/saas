@@ -1,6 +1,6 @@
 {
   "name": "saas-platform-desktop",
-  "version": "1.2.9",
+  "version": "1.4.1",
   "private": true,
   "description": "Electron desktop shell for saas-platform — runs the existing Next.js app locally and opens it in a native window. Fully isolated from the web app's own package.json and node_modules.",
   "main": "main.js",
@@ -14,6 +14,7 @@
     "dist:win": "node scripts/prepare-bundle.js && node scripts/rebuild-native.js --platform=win32 --arch=x64 && electron-builder --win"
   },
   "dependencies": {
+    "@sentry/electron": "^7.20.0",
     "electron-updater": "^6.8.9"
   },
   "devDependencies": {
@@ -38,6 +39,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "telemetry.js",
       "package.json",
       "assets/**/*"
     ],
